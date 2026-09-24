@@ -1,9 +1,8 @@
 <h1 align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="resources/melo-icon-light.svg">
-    <img src="resources/melo-icon-black.svg" height="46" align="absmiddle" alt="">
+    <source media="(prefers-color-scheme: dark)" srcset="resources/melo-lockup-white.svg">
+    <img src="resources/melo-lockup-black.svg" height="64" alt="melo">
   </picture>
-  melo
 </h1>
 
 <p align="center">A YouTube integrated native desktop music player.</p>
