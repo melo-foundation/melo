@@ -1,0 +1,6 @@
+// documents a KNOWN GAP, not a guarantee: qmlRegisterType writes to a
+// process-global registry that importPathList does not gate, so a C++-registered
+// URI resolves in a plugin engine. The test binary registers this URI itself.
+import QtQuick
+import MeloProbeRegistry 1.0
+Item { GapWitness { } }

@@ -1,0 +1,6 @@
+build*/
+vendor/
+node_modules/
+sidecar/dist/
+src/qml/components/nowplaying/vinyl.frag.qsb
+src/qml/components/*.frag.qsb

@@ -1,0 +1,46 @@
+#version 440
+layout(std140, binding = 0) uniform buf {
+    mat4 qt_Matrix;
+    float qt_Opacity;
+    float time;
+    float resW; float resH;
+    float speed;
+    int nColors;
+    vec4 c0; vec4 c1; vec4 c2; vec4 c3; vec4 c4; vec4 c5; vec4 c6; vec4 c7;
+    float count;
+    float sizeRange;
+    float ss;    // size scale (mode-aware, computed QML-side)
+    float n;     // effective element count (count scaling)
+    float baseSize;
+};
+//COMMON//
+// premultiplied source-over accumulation (painter default composition)
+vec4 over(vec4 dst, vec4 src) { return src + dst * (1.0 - src.a); }
+void main() {
+    vec2 p = qt_TexCoord0 * vec2(resW, resH);
+    seed();
+    vec4 acc = vec4(0.0);
+    int nn = int(n);
+    for (int i = 0; i < 256; i++) {
+        if (i >= nn) break;
+        float ang = rnd() * 6.28318530718;
+        float v = 0.2 + rnd() * 0.8;
+        float nx = rnd(), ny = rnd();
+        float vx = cos(ang) * v, vy = sin(ang) * v;
+        float sz = baseSize + rnd() * sizeRange;
+        float alpha = 0.1 + rnd() * 0.2;
+        int ci = int(rnd() * 100.0);
+        float r = sz * ss;
+        vec2 c = vec2(wrapM(nx + vx * speed * 0.06 * time) * resW,
+                      wrapM(ny + vy * speed * 0.06 * time) * resH);
+        float d = distance(p, c);
+        vec4 col = colorAt(ci);
+        float aa = max(ss, 1.0);   // ~1px edge
+        float fillA = col.a * min(1.0, alpha) * (1.0 - smoothstep(r - aa, r + aa, d));
+        float ringA = col.a * min(1.0, alpha + 0.15)
+                      * (1.0 - smoothstep(0.75 + aa, 0.75 + aa * 1.5, abs(d - r)));
+        float a = max(fillA, ringA);
+        if (a > 0.0) acc = over(acc, vec4(col.rgb * a, a));
+    }
+    fragColor = acc * qt_Opacity;
+}

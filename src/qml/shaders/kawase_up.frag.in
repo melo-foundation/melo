@@ -1,0 +1,28 @@
+#version 440
+// Dual Kawase, upsample half. Eight taps in a ring, the diagonals weighted
+// double, which is what keeps the result smooth rather than boxy as the chain
+// unwinds — the artefact a plain repeated box blur gives.
+layout(location = 0) in vec2 qt_TexCoord0;
+layout(location = 0) out vec4 fragColor;
+layout(std140, binding = 0) uniform buf {
+    mat4 qt_Matrix;
+    float qt_Opacity;
+    float offset;
+    float texW;
+    float texH;
+};
+layout(binding = 1) uniform sampler2D src;
+
+void main() {
+    vec2 hp = vec2(0.5 / texW, 0.5 / texH);
+    vec2 uv = qt_TexCoord0;
+    vec4 sum  = texture(src, uv + vec2(-hp.x * 2.0, 0.0) * offset);
+    sum      += texture(src, uv + vec2(-hp.x,  hp.y) * offset) * 2.0;
+    sum      += texture(src, uv + vec2( 0.0,  hp.y * 2.0) * offset);
+    sum      += texture(src, uv + vec2( hp.x,  hp.y) * offset) * 2.0;
+    sum      += texture(src, uv + vec2( hp.x * 2.0, 0.0) * offset);
+    sum      += texture(src, uv + vec2( hp.x, -hp.y) * offset) * 2.0;
+    sum      += texture(src, uv + vec2( 0.0, -hp.y * 2.0) * offset);
+    sum      += texture(src, uv + vec2(-hp.x, -hp.y) * offset) * 2.0;
+    fragColor = (sum / 12.0) * qt_Opacity;
+}

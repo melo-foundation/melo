@@ -1,0 +1,18 @@
+{
+  "id": "hello-intercept",
+  "name": "Hello Intercept",
+  "version": "0.1.0",
+  "apiVersion": 3,
+  "description": "fixture: intercept play, swallow or call through",
+  "capabilities": ["ui"],
+  "permissions": { "intercept": ["play"] },
+  "entry": { "qml": "ui/Entry.qml" },
+  "ui": {
+    "windows": [
+      { "id": "main", "qml": "ui/Main.qml", "width": 320, "height": 80, "primary": true }
+    ]
+  },
+  "settings": [
+    { "key": "swallowPlay", "type": "toggle", "label": "Swallow play", "default": false }
+  ]
+}

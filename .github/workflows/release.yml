@@ -1,0 +1,536 @@
+name: release
+
+# An alpha-N tag (alpha-N.P for a fix) builds Alpha N as a draft release,
+# after the tests pass. Packages carry the version in CMakeLists.txt, 0.N.P.
+# The nightly builds once a day from main, and only when main has moved since
+# the last one.
+on:
+  push:
+    tags: ['alpha-*']
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  QT_VERSION: 6.11.2
+  ICU_VERSION: 73.2
+  NODE_VERSION: 22.23.2
+  PNPM_VERSION: 10.30.3
+  # 22.04 is the oldest supported LTS, so the builds run on its glibc
+  APT_PACKAGES: >-
+    ninja-build cmake libgl1-mesa-dev libglew-dev
+    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+    gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
+    gstreamer1.0-pulseaudio gstreamer1.0-alsa
+    glib-networking patchelf libsoup2.4-1 libfuse2
+    libwayland-dev libssl-dev zlib1g-dev xvfb
+    fontconfig libfontconfig-dev libfreetype-dev
+    libx11-dev libxext-dev libxrender-dev libxi-dev libxfixes-dev
+    ^libxcb.*-dev libxkbcommon-dev libxkbcommon-x11-dev libegl-dev
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      kind: ${{ steps.plan.outputs.kind }}
+      build: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: plan
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/alpha-* ]]; then
+            [[ "$GITHUB_REF_NAME" =~ ^alpha-([0-9]+)(\.([0-9]+))?$ ]] \
+              || { echo "::error::alpha tags are alpha-N or alpha-N.P, got $GITHUB_REF_NAME"; exit 1; }
+            want="0.${BASH_REMATCH[1]}.${BASH_REMATCH[3]:-0}"
+            have=$(sed -n 's/^project(melo VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+            [ "$want" = "$have" ] \
+              || { echo "::error::tag $GITHUB_REF_NAME wants version $want, but CMakeLists.txt says $have"; exit 1; }
+            echo "kind=alpha" >> "$GITHUB_OUTPUT"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$GITHUB_REF" = refs/heads/main ] \
+            || { echo "::error::the nightly builds from main, not $GITHUB_REF"; exit 1; }
+          echo "kind=nightly" >> "$GITHUB_OUTPUT"
+          last=$(git ls-remote origin refs/tags/nightly | cut -f1)
+          if [ "$GITHUB_EVENT_NAME" = schedule ] && [ "$last" = "$GITHUB_SHA" ]; then
+            echo "The nightly is already ${GITHUB_SHA::7}."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  tests:
+    needs: plan
+    if: needs.plan.outputs.kind == 'alpha'
+    uses: ./.github/workflows/ci.yml
+
+  # Static Qt 6.11.2 with melo's patch, linked against a static ICU whose data
+  # is filtered by scripts/icu-filter.json. Built only when the cache is empty.
+  qt:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Look up ICU
+        id: icu
+        uses: actions/cache/restore@v6
+        with:
+          path: icu-out
+          key: icu-${{ env.ICU_VERSION }}-${{ hashFiles('scripts/icu-filter.json') }}
+          lookup-only: true
+      - name: Look up Qt
+        id: qt
+        uses: actions/cache/restore@v6
+        with:
+          path: qt-static
+          key: qt-static-${{ env.QT_VERSION }}-${{ hashFiles(format('patches/qtdeclarative-{0}-stacking-walk.patch', env.QT_VERSION)) }}
+          lookup-only: true
+
+      - name: Packages
+        if: steps.qt.outputs.cache-hit != 'true'
+        run: |
+          # The runner's azure mirror stalls for 15-30 minutes at a time; it is
+          # listed in apt-mirrors.txt, which apt tries before sources.list.
+          for f in /etc/apt/apt-mirrors.txt /etc/apt/sources.list \
+                   /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "$f" ] && sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' "$f"
+          done
+          echo 'Acquire::Retries "2";' | sudo tee /etc/apt/apt.conf.d/99retries >/dev/null
+          sudo apt-get update
+          # the image's libunwind-14-dev conflicts with gstreamer1.0-plugins-bad
+          sudo apt-get remove -y 'libunwind-*-dev' || true
+          sudo apt-get install -y --no-install-recommends $APT_PACKAGES
+
+      - name: Restore ICU
+        if: steps.icu.outputs.cache-hit == 'true' && steps.qt.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: icu-out
+          key: ${{ steps.icu.outputs.cache-primary-key }}
+          fail-on-cache-miss: true
+
+      - name: Build ICU
+        if: steps.icu.outputs.cache-hit != 'true'
+        run: |
+          U=${ICU_VERSION/./-}; F=${ICU_VERSION/./_}
+          curl -fsSLo icu-src.tgz "https://github.com/unicode-org/icu/releases/download/release-$U/icu4c-$F-src.tgz"
+          curl -fsSLo icu-data.zip "https://github.com/unicode-org/icu/releases/download/release-$U/icu4c-$F-data.zip"
+          tar xzf icu-src.tgz
+          # the source tarball's prebuilt .dat ignores the filter; build the data
+          # from the separate data sources instead
+          rm -rf icu/source/data
+          (cd icu/source && unzip -q ../../icu-data.zip)
+          cd icu/source
+          ICU_DATA_FILTER_FILE="$GITHUB_WORKSPACE/scripts/icu-filter.json" \
+            ./runConfigureICU Linux --disable-tests --disable-samples \
+            --enable-static --disable-shared --prefix="$GITHUB_WORKSPACE/icu-out" > /dev/null
+          make -j"$(nproc)" > /dev/null
+          make install > /dev/null
+
+      - name: Save ICU
+        if: steps.icu.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: icu-out
+          key: ${{ steps.icu.outputs.cache-primary-key }}
+
+      - name: Free disk
+        if: steps.qt.outputs.cache-hit != 'true'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+                      /usr/local/share/boost /usr/share/swift
+          df -h / | tail -1
+
+      - name: Build Qt
+        if: steps.qt.outputs.cache-hit != 'true'
+        run: |
+          # prints the log's last line every two minutes and keeps the exit status
+          hb() {
+            local label="$1" log="$2"; shift 2
+            "$@" > "$log" 2>&1 &
+            local pid=$!
+            while kill -0 "$pid" 2>/dev/null; do
+              sleep 120
+              printf '[%s] %s: %s\n' "$(date -u +%H:%M:%S)" "$label" "$(tail -n1 "$log" 2>/dev/null)"
+            done
+            wait "$pid"
+          }
+          QTP="$GITHUB_WORKSPACE/qt-static"
+          V="$QT_VERSION"
+          BASE="https://download.qt.io/archive/qt/${V%.*}/$V/submodules"
+          for m in qtbase qtshadertools qtdeclarative qtwayland qtimageformats qt5compat; do
+            curl -fsSLo $m.tar.xz "$BASE/$m-everywhere-src-$V.tar.xz"
+            tar xJf $m.tar.xz
+          done
+          # QTBUG-134949: Gerrit 736359 backported; not merged upstream
+          patch -d qtdeclarative-everywhere-src-$V -p1 \
+            < "$GITHUB_WORKSPACE/patches/qtdeclarative-$V-stacking-walk.patch"
+          # Qt's host tools and each module's configure must find our ICU
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/icu-out/lib:${LD_LIBRARY_PATH:-}"
+          export CMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/icu-out"
+          cd qtbase-everywhere-src-$V
+          ./configure -static -release -optimize-size -ltcg -prefix "$QTP" \
+            -no-zstd -no-feature-brotli \
+            -opensource -confirm-license -nomake examples -nomake tests \
+            -no-widgets -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-zlib \
+            -fontconfig -xcb \
+            -- -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/icu-out" > configure.log \
+            || { tail -40 configure.log; exit 1; }
+          hb qtbase build.log cmake --build . --parallel || { tail -80 build.log; exit 1; }
+          cmake --install . > install.log 2>&1 || { tail -40 install.log; exit 1; }
+          cd ..
+          # each source tree is several GB; the runner runs out of disk otherwise
+          rm -rf qtbase-everywhere-src-$V ./*.tar.xz
+          for m in qtshadertools qtdeclarative qtwayland qtimageformats qt5compat; do
+            mkdir -p b-$m && cd b-$m
+            "$QTP/bin/qt-configure-module" ../$m-everywhere-src-$V > configure.log 2>&1 \
+              || { tail -60 configure.log; exit 1; }
+            hb "$m" build.log cmake --build . --parallel || { tail -80 build.log; exit 1; }
+            cmake --install . > install.log 2>&1 || { tail -40 install.log; exit 1; }
+            cd ..
+            rm -rf b-$m $m-everywhere-src-$V
+            df -h / | tail -1
+          done
+
+      - name: Save Qt
+        if: steps.qt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: qt-static
+          key: ${{ steps.qt.outputs.cache-primary-key }}
+
+  # Node for the full AppImage, with English-only ICU built in (about 25 MB
+  # smaller); the full ICU data ships beside it. Built only when the cache is
+  # empty, which takes hours on a two-core runner.
+  node:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 330
+    steps:
+      - name: Look up Node
+        id: node
+        uses: actions/cache/restore@v6
+        with:
+          path: node-small
+          key: node-small-icu-${{ env.NODE_VERSION }}-v1
+          lookup-only: true
+
+      - name: Build Node
+        if: steps.node.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSLo node.tar.xz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION.tar.xz"
+          tar xJf node.tar.xz
+          cd "node-v$NODE_VERSION"
+          ./configure --with-intl=small-icu --without-amaro \
+            --without-inspector --without-sqlite --enable-lto > /dev/null
+          make -j"$(nproc)" > build.log 2>&1 &
+          pid=$!
+          while kill -0 "$pid" 2>/dev/null; do
+            sleep 120
+            printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$(tail -n1 build.log 2>/dev/null)"
+          done
+          wait "$pid" || { tail -60 build.log; exit 1; }
+          mkdir -p ../node-small
+          cp out/Release/node LICENSE ../node-small/
+          strip ../node-small/node
+
+      - name: Save Node
+        if: steps.node.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: node-small
+          key: ${{ steps.node.outputs.cache-primary-key }}
+
+  package:
+    needs: [plan, tests, qt, node]
+    if: >-
+      !cancelled() && needs.plan.outputs.build == 'true'
+      && needs.qt.result == 'success' && needs.node.result == 'success'
+      && (needs.tests.result == 'success' || needs.tests.result == 'skipped')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      KIND: ${{ needs.plan.outputs.kind }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Packages
+        run: |
+          for f in /etc/apt/apt-mirrors.txt /etc/apt/sources.list \
+                   /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "$f" ] && sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' "$f"
+          done
+          echo 'Acquire::Retries "2";' | sudo tee /etc/apt/apt.conf.d/99retries >/dev/null
+          sudo apt-get update
+          sudo apt-get remove -y 'libunwind-*-dev' || true
+          sudo apt-get install -y --no-install-recommends $APT_PACKAGES
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: icu-out
+          key: icu-${{ env.ICU_VERSION }}-${{ hashFiles('scripts/icu-filter.json') }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v6
+        with:
+          path: qt-static
+          key: qt-static-${{ env.QT_VERSION }}-${{ hashFiles(format('patches/qtdeclarative-{0}-stacking-walk.patch', env.QT_VERSION)) }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v6
+        with:
+          path: node-small
+          key: node-small-icu-${{ env.NODE_VERSION }}-v1
+          fail-on-cache-miss: true
+
+      - uses: pnpm/action-setup@v6
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: sidecar/pnpm-lock.yaml
+
+      - name: Cache vendor
+        uses: actions/cache@v6
+        with:
+          path: |
+            vendor/projectm4
+            vendor/ffmpeg
+            vendor/presets
+          key: vendor-static-${{ hashFiles('scripts/setup-vendor.sh', 'scripts/build-ffmpeg.sh', 'scripts/fetch-presets.sh', 'patches/projectm-caller-fbo.patch') }}
+      # static archives, so dead visualiser code is dropped at link; CMake
+      # finds this and skips its own shared build
+      - name: projectM
+        run: scripts/setup-vendor.sh --static
+
+      - name: Build melo
+        run: |
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/icu-out/lib:${LD_LIBRARY_PATH:-}"
+          cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/qt-static;$GITHUB_WORKSPACE/icu-out" \
+            -DMELO_STATIC_QT=ON -DCMAKE_EXE_LINKER_FLAGS=-flto=auto | tee configure.log
+          grep -q "melo: glass blur NATIVE" configure.log \
+            || { echo "::error::blur compiled out"; exit 1; }
+          if grep -q "static platform plugin missing" configure.log; then
+            echo "::error::a Qt platform plugin is missing"; exit 1
+          fi
+          # the tests run in ci.yml; each one here is a full LTO link
+          cmake --build build -j"$(nproc)" --target melo
+
+      - name: Check the build
+        run: |
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/icu-out/lib:${LD_LIBRARY_PATH:-}"
+          # the visualiser draws with this Qt, projectM and preset pack; the
+          # test skips itself where the runner has no GL 3.3
+          cmake --build build -j"$(nproc)" --target tst_visualizer
+          xvfb-run -a ./build/tst_visualizer \
+            || { echo "::error::the packaged visualiser rendered black"; exit 1; }
+          # ICU is static: a dynamic ubrk_ symbol means break data is unread
+          nm -D --undefined-only build/melo > undefined.txt
+          if grep -q ' ubrk_' undefined.txt; then echo "::error::ICU is linked dynamically"; exit 1; fi
+          plats=$(QT_QPA_PLATFORM=zzz timeout 15 ./build/melo 2>&1 | grep -i "available platform" || true)
+          echo "$plats"
+          for p in wayland xcb offscreen; do
+            echo "$plats" | grep -q "$p" || { echo "::error::platform $p missing"; exit 1; }
+          done
+
+      - name: Assemble AppDir
+        run: |
+          D=AppDir/usr
+          mkdir -p $D/bin $D/lib $D/share/melo
+          cp build/melo $D/bin/
+          cp -r src/qml $D/bin/melo-qml
+          rm -f $D/bin/melo-qml/shaders/*.frag.in $D/bin/melo-qml/shaders/common.glsl \
+                $D/bin/melo-qml/shaders/build-shaders.sh
+          cp -r vendor/presets $D/bin/presets
+          cp -r assets/fonts $D/bin/fonts
+          cp vendor/ffmpeg/bin/ffmpeg $D/bin/ffmpeg
+          cp vendor/ffmpeg/COPYING.LGPLv2.1 $D/share/melo/ffmpeg-COPYING.LGPLv2.1
+          cp LICENSE THIRD-PARTY.md $D/share/melo/
+          cp -r LICENSES $D/share/melo/
+          cp sidecar/dist/melo-sidecar.mjs sidecar/dist/melo-plugin-host.mjs $D/share/melo/
+          # jsdom reads data files beside its package, so it ships unbundled
+          JSDOM_VER=$(node -p "require('./sidecar/node_modules/jsdom/package.json').version")
+          npm install --omit=dev --no-fund --no-audit --silent --prefix $D/share/melo "jsdom@$JSDOM_VER"
+          rm -f $D/share/melo/package.json $D/share/melo/package-lock.json
+          NM=$D/share/melo/node_modules
+          find "$NM" \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \
+                        -o -iname '*.md' -o -iname 'CHANGELOG*' \) -delete
+          find "$NM" -type d \( -name test -o -name tests -o -name __tests__ \
+                               -o -name .github -o -name example -o -name examples \) \
+               -prune -exec rm -rf {} + || true
+          test -d "$NM/jsdom"
+          cp -a AppDir AppDir-lite
+
+      - name: Tools
+        run: |
+          curl -fsSLo linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSLo appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          # the lite AppImage's runtime; release-sources.sh ships its source
+          curl -fsSLo runtime-x86_64 https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+          sha256sum -c <<'SUMS'
+          ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool
+          2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64
+          SUMS
+          DW=https://github.com/mhx/dwarfs/releases/download/v0.15.6/dwarfs-universal-0.15.6-Linux-x86_64
+          if curl -fsSLo dwarfs.tar.zst "$DW.tar.zst"; then
+            tar --zstd -xf dwarfs.tar.zst && mv dwarfs-universal-* dwarfs-universal
+          else
+            curl -fsSLo dwarfs-universal "$DW"
+          fi
+          ln -sf dwarfs-universal mkdwarfs
+          curl -fsSLo uruntime https://github.com/VHSgunzo/uruntime/releases/download/v0.5.9/uruntime-appimage-dwarfs-x86_64
+          curl -fsSL https://github.com/goreleaser/nfpm/releases/download/v2.43.0/nfpm_2.43.0_Linux_x86_64.tar.gz | tar xz nfpm
+          chmod +x linuxdeploy appimagetool dwarfs-universal uruntime nfpm
+
+      # small-icu Node segfaults on non-English Intl (nodejs/node#51752), so the
+      # full ICU data ships beside it, minus what JS Intl cannot reach
+      - name: Node ICU data
+        run: |
+          IV=$(node-small/node -p "process.versions.icu")
+          MAJ=${IV%%.*}; MIN=${IV#*.}; MIN=${MIN%%.*}
+          curl -fsSLo icu-bin.zip "https://github.com/unicode-org/icu/releases/download/release-$IV/icu4c-$IV-data-bin-l.zip" \
+            || curl -fsSLo icu-bin.zip "https://github.com/unicode-org/icu/releases/download/release-$MAJ-$MIN/icu4c-${MAJ}_$MIN-data-bin-l.zip"
+          unzip -o -q icu-bin.zip -d icu-node
+          DAT=$(find icu-node -name 'icudt*.dat' | head -1)
+          printf '%s\n' '*.cnv' 'translit/*' 'rbnf/*' '*.spp' 'confusables.cfu' 'confusablesWholeScript.cfu' > icu-remove.lst
+          # ICU installs its packaging tool under sbin, not bin
+          ICUPKG=$(ls icu-out/sbin/icupkg icu-out/bin/icupkg 2>/dev/null | head -1)
+          [ -n "$ICUPKG" ] || { echo "::error::icupkg not found in icu-out"; ls -R icu-out | head -40; exit 1; }
+          "$ICUPKG" -r icu-remove.lst "$DAT"
+          mkdir -p icu-node-out && cp "$DAT" icu-node-out/
+
+      # Full: Node, an audio-only set of GStreamer plugins, and TLS for them
+      - name: Full AppImage
+        run: |
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/icu-out/lib:${LD_LIBRARY_PATH:-}"
+          GST=/usr/lib/x86_64-linux-gnu/gstreamer-1.0
+          mkdir -p AppDir/usr/lib/gstreamer-1.0 AppDir/usr/lib/gio/modules
+          for p in coreelements app playback typefindfunctions audioconvert \
+                   audioresample volume autodetect audiomixer equalizer \
+                   audioparsers ogg vorbis opus opusparse faad mpg123 flac \
+                   wavparse isomp4 matroska id3demux soup pulseaudio alsa; do
+            cp "$GST/libgst$p.so" AppDir/usr/lib/gstreamer-1.0/
+          done
+          cp /usr/lib/x86_64-linux-gnu/gio/modules/libgiognutls.so AppDir/usr/lib/gio/modules/
+          cp node-small/node AppDir/usr/bin/node
+          cp node-small/LICENSE AppDir/usr/share/melo/node-LICENSE
+          cp icu-node-out/icudt*.dat AppDir/usr/share/melo/
+          NODE_ICU_DATA=AppDir/usr/share/melo AppDir/usr/bin/node -e '
+            const segs=[...new Intl.Segmenter("th",{granularity:"word"}).segment("สวัสดีครับ")];
+            if (segs.length < 2) throw new Error("Thai segmentation broken");
+            if (/Thursday/.test(new Intl.DateTimeFormat("km",{dateStyle:"full"}).format(0)))
+              throw new Error("Khmer fell back to English");'
+          # libsoup is dlopened by libgstsoup, so it is named; the system
+          # libxml2 is used, because it would pull in Ubuntu's 29 MB ICU
+          ./linuxdeploy --appdir AppDir -e AppDir/usr/bin/melo \
+            -d resources/melo.desktop -i resources/melo.png \
+            --deploy-deps-only AppDir/usr/lib/gstreamer-1.0 \
+            --deploy-deps-only AppDir/usr/lib/gio/modules \
+            -l /usr/lib/x86_64-linux-gnu/libsoup-2.4.so.1 \
+            --exclude-library "*libxml2*"
+          patchelf --set-rpath '$ORIGIN/..' AppDir/usr/lib/gstreamer-1.0/*.so
+          patchelf --set-rpath '$ORIGIN/../..' AppDir/usr/lib/gio/modules/*.so
+          rm -f AppDir/usr/lib/libicu*.so.70*
+          python3 scripts/prune-appdir-libs.py AppDir usr/lib/libsoup-2.4.so.1
+          cp -L /usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0 AppDir/usr/lib/libxcb-cursor.so.0
+          mkdir -p AppDir/apprun-hooks
+          cat > AppDir/apprun-hooks/melo-env.sh <<'EOF'
+          export GST_PLUGIN_SYSTEM_PATH_1_0="$APPDIR/usr/lib/gstreamer-1.0"
+          export GST_PLUGIN_PATH_1_0="$APPDIR/usr/lib/gstreamer-1.0"
+          export GST_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/melo-appimage-gst-registry.bin"
+          export GIO_EXTRA_MODULES="$APPDIR/usr/lib/gio/modules"
+          export MELO_NODE="$APPDIR/usr/bin/node"
+          export NODE_ICU_DATA="$APPDIR/usr/share/melo"
+          EOF
+          # linuxdeploy's AppRun is a symlink to the binary; replace, never write through
+          rm -f AppDir/AppRun
+          cat > AppDir/AppRun <<'EOF'
+          #!/bin/bash
+          HERE="$(readlink -f "$(dirname "$0")")"
+          export APPDIR="${APPDIR:-$HERE}"
+          for f in "$HERE"/apprun-hooks/*.sh; do . "$f"; done
+          exec "$HERE/usr/bin/melo" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+          ./mkdwarfs -i AppDir -o melo.dwarfs -l7 -S26 -B8 --order=nilsimsa -C zstd:level=22
+          cat uruntime melo.dwarfs > melo-x86_64.AppImage
+          chmod +x melo-x86_64.AppImage
+
+      # Lite: the system's GStreamer and glib, and Node from the system or
+      # melo's first-run download
+      - name: Lite AppImage
+        run: |
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/icu-out/lib:${LD_LIBRARY_PATH:-}"
+          ./linuxdeploy --appdir AppDir-lite -e AppDir-lite/usr/bin/melo \
+            -d resources/melo.desktop -i resources/melo.png
+          rm -f AppDir-lite/usr/lib/libgst* AppDir-lite/usr/lib/libglib* \
+                AppDir-lite/usr/lib/libgobject* AppDir-lite/usr/lib/libgio-2* \
+                AppDir-lite/usr/lib/libgmodule* AppDir-lite/usr/lib/libgthread*
+          python3 scripts/prune-appdir-libs.py AppDir-lite
+          cp -L /usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0 AppDir-lite/usr/lib/libxcb-cursor.so.0
+          rm -f AppDir-lite/AppRun
+          cat > AppDir-lite/AppRun <<'EOF'
+          #!/bin/bash
+          HERE="$(readlink -f "$(dirname "$0")")"
+          exec "$HERE/usr/bin/melo" "$@"
+          EOF
+          chmod +x AppDir-lite/AppRun
+          ARCH=x86_64 ./appimagetool --runtime-file runtime-x86_64 --comp zstd \
+            --mksquashfs-opt -Xcompression-level --mksquashfs-opt 19 \
+            --mksquashfs-opt -b --mksquashfs-opt 1M \
+            AppDir-lite melo-lite-x86_64.AppImage
+
+      - name: rpm, deb and Arch packages
+        run: |
+          mkdir -p pkgroot/bin pkgroot/share/melo
+          cp -r AppDir-lite/usr/bin/{melo,melo-qml,presets,fonts,ffmpeg} pkgroot/bin/
+          cp -r AppDir-lite/usr/share/melo/. pkgroot/share/melo/
+          v=$(sed -n 's/^project(melo VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          if [ "$KIND" = alpha ]; then export MELO_PKG_VERSION="$v"
+          else export MELO_PKG_VERSION="$v+git$(date -u +%Y%m%d).${GITHUB_SHA::7}"; fi
+          for p in rpm deb archlinux; do ./nfpm package -f packaging/nfpm.yaml -p $p -t .; done
+          mv melo-*.rpm melo-x86_64.rpm
+          mv melo_*.deb melo-amd64.deb
+          mv melo-*.pkg.tar.zst melo-x86_64.pkg.tar.zst
+          du -m melo-x86_64.AppImage melo-lite-x86_64.AppImage melo-x86_64.rpm melo-amd64.deb melo-x86_64.pkg.tar.zst
+
+      - name: Sources
+        run: |
+          sed -n 's/^deb /deb-src /p' /etc/apt/sources.list | sudo tee /etc/apt/sources.list.d/melo-src.list >/dev/null
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends ubuntu-dev-tools   # pull-lp-source
+          scripts/release-sources.sh AppDir melo-sources.tar
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files="melo-x86_64.AppImage melo-lite-x86_64.AppImage melo-x86_64.rpm
+                 melo-amd64.deb melo-x86_64.pkg.tar.zst melo-sources.tar"
+          if [ "$KIND" = alpha ]; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+              --title "Alpha ${GITHUB_REF_NAME#alpha-}" --notes "" $files
+          else
+            git push -f origin "$GITHUB_SHA:refs/tags/nightly"
+            notes="Built from ${GITHUB_SHA::7} on $(date -u +%F). Not tested."
+            if gh release view nightly >/dev/null 2>&1; then
+              gh release edit nightly --notes "$notes"
+            else
+              gh release create nightly --prerelease --verify-tag --title "Nightly" --notes "$notes"
+            fi
+            gh release upload nightly $files --clobber
+          fi

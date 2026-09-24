@@ -1,0 +1,97 @@
+// What MeloUi.archives lets a hostile plugin reach. No API here accepts a path:
+// a plugin names a settings key its manifest declared, and the shell maps it
+// into the plugin's data dir. Each probe expresses a path anyway (through the
+// key, an entry name, a hand-written image:// url) and must come back empty.
+// Reports through MeloUi, the only object a plugin gets. Hostile.qml calls
+// run() again after the shell changes the setting, which tests the reload path
+// for an archive that never lets go of its first file.
+import QtQuick
+
+Item {
+    id: root
+
+    // A failed name lookup is a ReferenceError, and a null facade turns
+    // `.image(...)` into a TypeError. Both mean "not reachable", never "the
+    // probe aborted half way and the rest went unreported".
+    function probe(f) { try { return f() } catch (e) { return false } }
+    function probeStr(f) { try { return String(f()) } catch (e) { return "" } }
+
+    // Loads one image:// url and reports what QML made of it. asynchronous is
+    // false so the load has finished by the time createQmlObject returns —
+    // Image.status is settled here, not later.
+    function loadImage(src) {
+        var o = null;
+        try {
+            o = Qt.createQmlObject(
+                'import QtQuick\nImage { asynchronous: false; source: "' + src + '" }',
+                root);
+        } catch (e) { return { status: -1, w: 0, h: 0 } }
+        var r = { status: o.status, w: o.sourceSize.width, h: o.sourceSize.height };
+        o.destroy();
+        return r;
+    }
+
+    function run(tag) {
+        var A = probe(function() { return MeloUi.archives });
+        MeloUi.report(tag + "_present", !!A);
+
+        // --- POSITIVE CONTROL --------------------------------------------
+        // The key the manifest DID declare, resolved to the file the user
+        // picked. Without this every "empty" below could just mean archives
+        // never works at all.
+        var skin = probe(function() { return A.get("skin") });
+        MeloUi.report(tag + "_ready", probe(function() { return skin.ready === true }));
+        MeloUi.report(tag + "_error", probeStr(function() { return skin.error }));
+        MeloUi.report(tag + "_names", probe(function() { return skin.names.length }) || 0);
+        var url = probeStr(function() { return skin.image("main.bmp") });
+        MeloUi.report(tag + "_url", url);
+        var ok = url.length > 0 ? loadImage(url) : { status: -1, w: 0, h: 0 };
+        MeloUi.report(tag + "_img_ready", ok.status === Image.Ready);
+        MeloUi.report(tag + "_img_w", ok.w);
+        // Case folding: a skin that stored MAIN.BMP must answer main.bmp.
+        MeloUi.report(tag + "_url_upper",
+                      probeStr(function() { return skin.image("MAIN.BMP") }).length > 0);
+
+        // --- the key is not a path ---------------------------------------
+        MeloUi.report(tag + "_key_traversal",
+                      probe(function() { return A.get("../../etc") !== null }));
+        MeloUi.report(tag + "_key_abs",
+                      probe(function() { return A.get("/etc/passwd") !== null }));
+        // A key the manifest never declared.
+        MeloUi.report(tag + "_key_undeclared",
+                      probe(function() { return A.get("nope") !== null }));
+        // A key ANOTHER plugin's manifest declared. The schema this object
+        // answers from is its own plugin's, so this must be as dead as "nope".
+        MeloUi.report(tag + "_key_other_plugin",
+                      probe(function() { return A.get("otherskin") !== null }));
+
+        // --- the entry name is not a path --------------------------------
+        MeloUi.report(tag + "_entry_traversal",
+                      probeStr(function() { return skin.image("../../../etc/passwd") }));
+        MeloUi.report(tag + "_entry_traversal_text",
+                      probeStr(function() { return skin.text("../../../etc/passwd") }));
+        MeloUi.report(tag + "_entry_abs",
+                      probeStr(function() { return skin.image("/etc/passwd") }));
+
+        // --- the url is not a path ---------------------------------------
+        // Hand-written urls bypassing image(). %2F reaches requestImage
+        // undecoded (%20 and the rest arrive decoded), so it is the one way to
+        // put a separator into an id component; the provider decodes after
+        // splitting.
+        var pid = probeStr(function() { return MeloUi.pluginId });
+        var pct = loadImage("image://plugin-archive/" + pid
+                            + "/skin/..%2F..%2F..%2Fetc%2Fpasswd");
+        MeloUi.report(tag + "_url_pct_status", pct.status);
+        MeloUi.report(tag + "_url_pct_w", pct.w);
+        // Traversal in the pluginId component: it reaches the resolver intact
+        // (tst_skinarchive pins that), so the resolver must refuse it.
+        var dots = loadImage("image://plugin-archive/..%2F..%2Fetc/skin/main.bmp");
+        MeloUi.report(tag + "_url_dots_status", dots.status);
+        // Another plugin's id, with a key that plugin declared.
+        var other = loadImage("image://plugin-archive/other/otherskin/main.bmp");
+        MeloUi.report(tag + "_url_other_status", other.status);
+        // The plugin's own id with a key it never declared.
+        var undecl = loadImage("image://plugin-archive/" + pid + "/nope/main.bmp");
+        MeloUi.report(tag + "_url_undeclared_status", undecl.status);
+    }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "hello-ui",
+  "name": "Hello UI",
+  "version": "0.1.0",
+  "apiVersion": 3,
+  "description": "minimal ui plugin used to validate the capability",
+  "capabilities": ["ui"],
+  "entry": { "qml": "ui/Entry.qml" },
+  "ui": {
+    "windows": [
+      { "id": "main", "qml": "ui/Main.qml", "width": 320, "height": 80, "primary": true }
+    ]
+  },
+  "settings": [
+    { "key": "showTitle", "type": "toggle", "label": "Show title", "default": true },
+    { "key": "accent", "type": "select", "label": "Accent", "default": "green",
+      "options": [
+        { "label": "Green", "value": "green" },
+        { "label": "Blue", "value": "blue" },
+        { "label": "Red", "value": "red" }
+      ] },
+    { "key": "resetAccent", "type": "action", "label": "Reset accent" }
+  ]
+}

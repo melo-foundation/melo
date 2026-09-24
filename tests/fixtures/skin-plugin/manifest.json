@@ -1,0 +1,174 @@
+{
+  "id": "skin-fixture",
+  "name": "Skin fixture",
+  "version": "0.1.0",
+  "apiVersion": 3,
+  "author": "melo",
+  "description": "Window declaration from the Winamp skin plugin for tst_windowsnap.",
+  "capabilities": [
+    "ui"
+  ],
+  "entry": {
+    "qml": "ui/window.qml"
+  },
+  "permissions": {
+    "intercept": [
+      "toggleEq"
+    ]
+  },
+  "commands": [
+    {
+      "id": "toggleGroup",
+      "label": "Show / hide Winamp",
+      "default": ""
+    },
+    {
+      "id": "toggleMain",
+      "label": "Winamp: main window",
+      "default": ""
+    },
+    {
+      "id": "toggleEq",
+      "label": "Winamp: equaliser",
+      "default": ""
+    },
+    {
+      "id": "togglePlaylist",
+      "label": "Winamp: playlist",
+      "default": ""
+    },
+    {
+      "id": "toggleShade",
+      "label": "Winamp: shade",
+      "default": ""
+    }
+  ],
+  "ui": {
+    "snap": {
+      "distance": 10
+    },
+    "windows": [
+      {
+        "id": "main",
+        "qml": "ui/window.qml",
+        "width": 275,
+        "height": 116,
+        "primary": true,
+        "shade": {
+          "height": 14
+        }
+      },
+      {
+        "id": "eq",
+        "qml": "ui/window.qml",
+        "width": 275,
+        "height": 116,
+        "snapTo": "main",
+        "initial": "hidden"
+      },
+      {
+        "id": "playlist",
+        "qml": "ui/window.qml",
+        "width": 275,
+        "height": 232,
+        "snapTo": "eq",
+        "initial": "hidden",
+        "resize": {
+          "axes": "vh",
+          "stepW": 25,
+          "stepH": 29,
+          "minWidth": 275,
+          "minHeight": 116
+        }
+      }
+    ],
+    "buttons": [
+      {
+        "id": "group",
+        "bar": "player",
+        "command": "toggleGroup",
+        "icon": "ui/icon.png",
+        "label": "Winamp windows"
+      }
+    ]
+  },
+  "settings": [
+    {
+      "key": "skin",
+      "type": "file",
+      "label": "Skin",
+      "dir": "skins",
+      "extensions": [
+        "wsz"
+      ]
+    },
+    {
+      "key": "scale",
+      "type": "slider",
+      "label": "Scale",
+      "from": 0.5,
+      "to": 4.0,
+      "step": 0.05,
+      "default": 1.0
+    },
+    {
+      "key": "filtering",
+      "type": "select",
+      "label": "Scaling filter",
+      "default": "auto",
+      "options": [
+        {
+          "label": "Automatic",
+          "value": "auto"
+        },
+        {
+          "label": "Nearest (sharp pixels)",
+          "value": "nearest"
+        },
+        {
+          "label": "Smooth",
+          "value": "smooth"
+        }
+      ]
+    },
+    {
+      "key": "fontMode",
+      "type": "select",
+      "label": "Title and playlist font",
+      "default": "skin",
+      "options": [
+        {
+          "label": "Automatic Unicode fallback",
+          "value": "skin"
+        },
+        {
+          "label": "Force bitmap title (ignore unsupported)",
+          "value": "bitmap"
+        },
+        {
+          "label": "Force Unicode font",
+          "value": "unicode"
+        }
+      ]
+    },
+    {
+      "key": "fontOverride",
+      "type": "text",
+      "label": "Unicode font override",
+      "placeholder": "Bundled Fusion Pixel 8px",
+      "default": ""
+    },
+    {
+      "key": "hideShell",
+      "type": "toggle",
+      "label": "Hide melo while Winamp is showing",
+      "default": false
+    },
+    {
+      "key": "alwaysUp",
+      "type": "toggle",
+      "label": "Stay up when melo is minimized",
+      "default": false
+    }
+  ]
+}

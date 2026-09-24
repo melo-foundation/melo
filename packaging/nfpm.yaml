@@ -1,0 +1,97 @@
+# nfpm manifest — .rpm / .deb / arch from the same definition.
+# Layout mirrors the AppDir so the binary's exe-relative resource
+# resolution (melo-qml, presets, ../share/melo) works unchanged:
+# real binary under /usr/lib/melo/bin, symlink in /usr/bin.
+name: melo
+arch: amd64
+platform: linux
+version: ${MELO_PKG_VERSION}
+maintainer: melo
+description: A YouTube integrated native desktop music player.
+license: GPL-3.0-or-later
+contents:
+  - src: ./pkgroot/bin/
+    dst: /usr/lib/melo/bin
+  - src: ./pkgroot/share/melo/
+    dst: /usr/lib/melo/share/melo
+  - src: /usr/lib/melo/bin/melo
+    dst: /usr/bin/melo
+    type: symlink
+  - src: ./resources/melo.desktop
+    dst: /usr/share/applications/melo.desktop
+  - src: ./resources/melo.png
+    dst: /usr/share/icons/hicolor/512x512/apps/melo.png
+  # GPL-3.0 s4/s5: the licence is conveyed with the work. Debian expects it at
+  # this path and rpmlint looks for a %license file; one path satisfies both
+  # since the packages share this definition.
+  - src: ./pkgroot/share/melo/LICENSE
+    dst: /usr/share/doc/melo/copyright
+  - src: ./pkgroot/share/melo/THIRD-PARTY.md
+    dst: /usr/share/doc/melo/THIRD-PARTY.md
+# shared libraries the binary needs, per distro
+overrides:
+  deb:
+    depends:
+      - libgstreamer1.0-0
+      - gstreamer1.0-plugins-base
+      - gstreamer1.0-plugins-good
+      - libxkbcommon0
+      - libxkbcommon-x11-0
+      - fontconfig
+      - libopengl0
+      - libglx0
+      - libegl1
+      - libgbm1
+      - libwayland-client0
+      - libwayland-cursor0
+      - libwayland-egl1
+      - libwayland-server0
+      - libxcb-cursor0
+      - libxcb-glx0
+      - libxcb-icccm4
+      - libxcb-image0
+      - libxcb-keysyms1
+      - libxcb-randr0
+      - libxcb-render-util0
+      - libxcb-shape0
+      - libxcb-sync1
+      - libxcb-xfixes0
+      - libxcb-xkb1
+      - libsm6
+      - libice6
+    recommends:
+      - nodejs
+  rpm:
+    depends:
+      - gstreamer1
+      - gstreamer1-plugins-base
+      - gstreamer1-plugins-good
+      - libxkbcommon
+      - libxkbcommon-x11
+      - fontconfig
+      - libglvnd-opengl
+      - libwayland-server
+      - xcb-util-cursor
+      - xcb-util-wm
+      - xcb-util-image
+      - xcb-util-keysyms
+      - xcb-util-renderutil
+      - libSM
+      - libICE
+    recommends:
+      - nodejs
+  archlinux:
+    depends:
+      - gstreamer
+      - gst-plugins-base
+      - gst-plugins-good
+      - libxkbcommon
+      - libxkbcommon-x11
+      - fontconfig
+      - xcb-util-cursor
+      - xcb-util-wm
+      - xcb-util-image
+      - xcb-util-keysyms
+      - xcb-util-renderutil
+      - libsm
+      - libice

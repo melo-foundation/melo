@@ -1,0 +1,4 @@
+# esbuild bundles the sidecar; its install script fetches the platform binary.
+# pnpm 12 fails the install on an unapproved build script (pnpm 10 skipped it).
+allowBuilds:
+  esbuild: true

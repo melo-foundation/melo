@@ -1,0 +1,8 @@
+// Arbitrary local file read: XmlListModel fetches `source` through QNAM, which
+// serves file:// with no gate (XMLHttpRequest refuses file:// unless
+// QML_XHR_ALLOW_FILE_READ is set; melo does not set it). A file:// source
+// reached Ready with the file's contents, so resolving this import means read,
+// then exfiltrate.
+import QtQuick
+import QtQml.XmlListModel
+Item { XmlListModel { source: "file:///etc/hostname"; query: "/x" } }

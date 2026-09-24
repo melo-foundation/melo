@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in melo doesn't work
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installed from
+      options:
+        - AppImage
+        - .deb
+        - .rpm
+        - Arch package
+        - Built from source
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or build date
+      placeholder: 0.1.0, or nightly from 2026-09-23
+  - type: input
+    id: system
+    attributes:
+      label: System
+      placeholder: Fedora 43, KDE Plasma 6.4, Wayland
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: "`journalctl --user -b _COMM=melo -o cat`, or the output of `melo` run from a terminal"
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots

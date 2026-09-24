@@ -1,0 +1,41 @@
+From: melo-foundation <333192008+melo-foundation@users.noreply.github.com>
+Subject: [PATCH] render into the caller-bound FBO instead of binding one
+
+Modified by melo-foundation for melo on 2026-09-02.
+
+projectM is LGPL-2.1-or-later. This patch is the whole of melo's change to
+it, applied by scripts/setup-vendor.sh at build time; the upstream source it
+applies to is fetched from projectM's own repository at the revision that
+script pins. Distributing a melo binary that links the result carries the
+LGPL's obligations, and this file plus that script are how the modified
+source is conveyed. See THIRD-PARTY.md.
+
+diff --git a/src/libprojectM/ProjectM.cpp b/src/libprojectM/ProjectM.cpp
+index 88fa014..cbfb7d7 100644
+--- a/src/libprojectM/ProjectM.cpp
++++ b/src/libprojectM/ProjectM.cpp
+@@ -98,6 +98,13 @@ void ProjectM::RenderFrame()
+         return;
+     }
+ 
++    // melo patch (upstream ToDo): output to the framebuffer bound by the CALLER
++    // instead of hardcoded 0. Required for hosts whose "default" framebuffer is an
++    // FBO (e.g. Qt's QQuickFramebufferObject). Captured here, used for the final
++    // copy below.
++    GLint callerDrawFbo = 0;
++    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &callerDrawFbo);
++
+     // Update FPS and other timer values.
+     m_timeKeeper->UpdateTimers();
+ 
+@@ -166,8 +173,8 @@ void ProjectM::RenderFrame()
+     // ToDo: Call the to-be-implemented render method in Renderer
+     m_activePreset->RenderFrame(audioData, renderContext);
+ 
+-    // ToDo: Allow external apps to provide a custom target framebuffer.
+-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
++    // melo patch: draw the final output into the caller's framebuffer (was: 0).
++    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, callerDrawFbo);
+     glViewport(0, 0, renderContext.viewportSizeX, renderContext.viewportSizeY);
+ 
+ #ifdef USE_GLES

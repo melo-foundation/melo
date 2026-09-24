@@ -1,0 +1,5 @@
+// positive control: an ALLOWED import must resolve, otherwise the blocked-
+// import results above prove nothing about curation.
+import QtQuick
+import QtQuick.Shapes
+Item { Shape { } }

@@ -1,0 +1,19 @@
+name: Feature request
+description: Something melo should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What melo should do
+    validations:
+      required: true
+  - type: textarea
+    id: use
+    attributes:
+      label: How you would use it
+  - type: textarea
+    id: example
+    attributes:
+      label: Another app that does it
+      placeholder: Name, and a link or screenshot

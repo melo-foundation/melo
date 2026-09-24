@@ -1,0 +1,150 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSES/**'
+      - 'resources/*.svg'
+      - 'resources/*.png'
+      - '.github/screenshots/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSES/**'
+      - 'resources/*.svg'
+      - 'resources/*.png'
+      - '.github/screenshots/**'
+  workflow_dispatch:
+  workflow_call:   # release.yml runs this before building an alpha
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: 10.30.3
+  QT_VERSION: 6.11.2
+
+jobs:
+  sidecar:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: sidecar
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: sidecar/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      # Ubuntu's own Qt is 6.4, below melo's 6.5 floor, so Qt comes from aqt.
+      # The X libraries are what an aqt Qt needs to open a window under xvfb.
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build cmake g++ \
+            libgl1-mesa-dev libglew-dev libgles2-mesa-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            libwayland-dev wayland-protocols libfontconfig-dev zlib1g-dev \
+            libxkbcommon-dev xvfb mesa-utils libgl1-mesa-dri \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-sync1 \
+            libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 libxcb-util1 \
+            libxcb-glx0 libxkbcommon-x11-0
+
+      # the same Qt version the release links statically, unpatched
+      - name: Cache Qt
+        id: qt-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/Qt
+          key: qt-${{ env.QT_VERSION }}-gcc64-v1
+      - name: Install Qt
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          python3 -m pip install --break-system-packages 'aqtinstall==3.2.*'
+          aqt install-qt linux desktop "$QT_VERSION" linux_gcc_64 \
+            -m qtshadertools qt5compat qtimageformats -O "$GITHUB_WORKSPACE/Qt"
+      - name: Put Qt on the path
+        run: |
+          QTDIR="$GITHUB_WORKSPACE/Qt/$QT_VERSION/gcc_64"
+          test -x "$QTDIR/bin/qmake"
+          echo "$QTDIR/bin" >> "$GITHUB_PATH"
+          {
+            echo "CMAKE_PREFIX_PATH=$QTDIR"
+            echo "LD_LIBRARY_PATH=$QTDIR/lib"
+            echo "QT_PLUGIN_PATH=$QTDIR/plugins"
+            echo "QML2_IMPORT_PATH=$QTDIR/qml"
+          } >> "$GITHUB_ENV"
+
+      # CMake builds the sidecar, so pnpm has to be on the path
+      - uses: pnpm/action-setup@v6
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: sidecar/pnpm-lock.yaml
+
+      # projectM, ffmpeg and the presets are built or fetched by the first
+      # configure; the cache keeps them between runs
+      - name: Cache vendor
+        uses: actions/cache@v6
+        with:
+          path: |
+            vendor/projectm4
+            vendor/ffmpeg
+            vendor/presets
+          key: vendor-shared-${{ hashFiles('scripts/setup-vendor.sh', 'scripts/build-ffmpeg.sh', 'scripts/fetch-presets.sh', 'patches/projectm-caller-fbo.patch') }}
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      # a real GL context: offscreen has none, and projectM loads no presets
+      # without one. The QML suites set offscreen for themselves.
+      - name: Tests
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 1
+        run: |
+          xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+            ctest --test-dir build --output-on-failure -j"$(nproc)"
+
+      # --smoke exits 3 on any QML diagnostic during startup
+      - name: Starts with no QML errors
+        run: |
+          export QT_QPA_PLATFORM=offscreen MELO_CONFIG_DIR="$RUNNER_TEMP/melo-ci"
+          mkdir -p "$MELO_CONFIG_DIR"
+          timeout 60 ./build/melo --smoke 2>&1 | tee "$RUNNER_TEMP/smoke.log"
+          rc=${PIPESTATUS[0]}
+          grep -q "\[melo\] ui ready" "$RUNNER_TEMP/smoke.log" \
+            || { echo "::error::the window never finished loading"; exit 1; }
+          [ "$rc" -eq 0 ] || { echo "::error::QML errors on startup (exit $rc)"; exit 1; }
+
+      - name: qmllint
+        run: scripts/qmllint-plugins.sh

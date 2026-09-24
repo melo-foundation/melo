@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.melo_foundation.melo</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <!-- © 2026 melo-foundation -->
+
+  <name>melo</name>
+  <summary>YouTube integrated native desktop music player</summary>
+
+  <description>
+    <p>
+      melo plays music from YouTube. Search, queue, and start a radio from any
+      track; build a library and download tracks for offline play; import audio
+      files from disk and tag them automatically.
+    </p>
+    <p>
+      It crossfades, skips silent intros and outros, and plays gapless when the
+      crossfade is off. There is a ten-band equaliser, a projectM visualiser,
+      timed lyrics where they exist, a mini player, and themes you can split
+      into colours, style, size and background and share separately.
+    </p>
+    <p>
+      Plugins run out of process and declare what they need; every permission is
+      granted by you, per plugin.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">melo.desktop</launchable>
+
+  <!-- The GitHub handle only. Deliberately no address: the maintainer's
+       inbox is not part of the public record. -->
+  <developer id="io.github.melo_foundation">
+    <name>melo-foundation</name>
+  </developer>
+
+  <url type="homepage">https://github.com/melo-foundation/melo</url>
+  <url type="bugtracker">https://github.com/melo-foundation/melo/issues</url>
+  <url type="vcs-browser">https://github.com/melo-foundation/melo</url>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+  </categories>
+
+  <keywords>
+    <keyword>music</keyword>
+    <keyword>audio</keyword>
+    <keyword>player</keyword>
+    <keyword>youtube</keyword>
+    <keyword>playlist</keyword>
+  </keywords>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-audio">intense</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="0.1.0" type="development" date="2026-09-02">
+      <description>
+        <p>First alpha.</p>
+      </description>
+    </release>
+  </releases>
+</component>

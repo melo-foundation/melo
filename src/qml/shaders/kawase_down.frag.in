@@ -1,0 +1,26 @@
+#version 440
+// Dual Kawase, downsample half (as KWin's blur): a large radius without a
+// large kernel. Each pass halves the image and takes five bilinear taps, doubling
+// reach on a quarter of the pixels, so the chain costs at most 4/3 of the first
+// pass. A Gaussian's taps grow with radius, which is where MultiEffect stops.
+layout(location = 0) in vec2 qt_TexCoord0;
+layout(location = 0) out vec4 fragColor;
+layout(std140, binding = 0) uniform buf {
+    mat4 qt_Matrix;
+    float qt_Opacity;
+    float offset;      // in half-texels of the SOURCE
+    float texW;
+    float texH;
+};
+layout(binding = 1) uniform sampler2D src;
+
+void main() {
+    vec2 hp = vec2(0.5 / texW, 0.5 / texH);
+    vec2 uv = qt_TexCoord0;
+    vec4 sum = texture(src, uv) * 4.0;
+    sum += texture(src, uv - hp * offset);
+    sum += texture(src, uv + hp * offset);
+    sum += texture(src, uv + vec2(hp.x, -hp.y) * offset);
+    sum += texture(src, uv - vec2(hp.x, -hp.y) * offset);
+    fragColor = (sum / 8.0) * qt_Opacity;
+}

@@ -1,0 +1,6 @@
+singleton FollowBus 1.0 components/FollowBus.qml
+singleton Theme 1.0 style/Theme.qml
+singleton Tip 1.0 style/Tip.qml
+singleton BgClock 1.0 style/BgClock.qml
+singleton GridUi 1.0 style/GridUi.qml
+singleton AccountStore 1.0 components/AccountStore.qml

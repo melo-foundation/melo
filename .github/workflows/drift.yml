@@ -1,0 +1,27 @@
+name: drift
+
+# Live tests against YouTube. A red run means YouTube changed something melo
+# parses; read the failing assertion before changing code.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.30.3 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: sidecar/pnpm-lock.yaml
+      - run: pnpm -C sidecar install --frozen-lockfile
+      - run: pnpm -C sidecar run test:drift

@@ -1,0 +1,32 @@
+{
+    "//": "ICU data allowlist for the AppImage builds (31MB full -> ~2.2MB).",
+    "//2": "Additive: everything not listed is dropped. Qt6 does ALL line/word",
+    "//3": "breaking with its own compiled-in tables (qunicodetools.cpp, zero",
+    "//4": "ICU calls) - brkitr/uemoji were shipped unread and are now dropped;",
+    "//5": "CI proves it: melo must have no undefined ubrk_* dynamic symbols.",
+    "//6": "Kept: en+ja locales, collation (QCollator: case-insensitive+numeric",
+    "//7": "library sort), timezones (QTimeZone), normalization, cnvalias.",
+    "//8": "NB: Thai/Khmer/Lao/Burmese dictionary word-segmentation is NOT done",
+    "//9": "by Qt at all (libthai optional, Thai-only) - a Qt limitation that",
+    "//10": "exists with or without ICU data.",
+    "strategy": "additive",
+    "localeFilter": {
+        "filterType": "locale",
+        "includelist": [
+            "en",
+            "ja"
+        ]
+    },
+    "featureFilters": {
+        "coll_ucadata": "include",
+        "locales_tree": "include",
+        "lang_tree": "include",
+        "zone_tree": "include",
+        "zone_supplemental": "include",
+        "normalization": "include",
+        "cnvalias": "include",
+        "misc": "include",
+        "ulayout": "include",
+        "coll_tree": "include"
+    }
+}
