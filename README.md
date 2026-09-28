@@ -8,6 +8,12 @@
 <p align="center">A YouTube integrated native desktop music player.</p>
 
 <p align="center">
+  <a href="https://github.com/melo-foundation/melo/releases/latest"><img src="https://img.shields.io/github/v/release/melo-foundation/melo?display_name=release" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/melo-foundation/melo" alt="Licence"></a>
+  <a href="https://discord.gg/T2jHMX6AcG"><img src="https://img.shields.io/discord/1552558375676678214?label=discord" alt="Discord"></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/melo-foundation/melo/releases/latest">Download</a> ·
   <a href="https://github.com/melo-foundation/melo/issues/new?template=bug_report.yml">Report a bug</a> ·
   <a href="https://github.com/melo-foundation/melo/issues/new?template=feature_request.yml">Request a feature</a> ·
