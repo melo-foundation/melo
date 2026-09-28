@@ -48,10 +48,8 @@ The AppImage runtimes, the executable part at the start of each file:
 
 | AppImage | Runtime | Licence |
 |---|---|---|
-| full | uruntime v0.5.9, `uruntime-appimage-dwarfs-x86_64`, from github.com/VHSgunzo/uruntime | MIT |
-| full | DwarFS 0.15.6 `dwarfs-universal`, embedded in uruntime, from github.com/mhx/dwarfs | MIT (reader) and GPL-3.0-or-later (`mkdwarfs`); its dependencies' licences are in DwarFS's `LICENSES/` |
-| lite | type2-runtime release 20251108 (commit dd6cebe), from github.com/AppImage/type2-runtime | MIT |
-| lite | libfuse 3.15.0 (library), squashfuse 0.5.2, zstd, zlib and mimalloc, linked into that runtime | in that order: LGPL-2.1-only, BSD-2-Clause, BSD-3-Clause OR GPL-2.0-only, Zlib, MIT |
+| both | type2-runtime release 20251108 (commit dd6cebe), from github.com/AppImage/type2-runtime | MIT |
+| both | libfuse 3.15.0 (library), squashfuse 0.5.2, zstd, zlib and mimalloc, linked into that runtime | in that order: LGPL-2.1-only, BSD-2-Clause, BSD-3-Clause OR GPL-2.0-only, Zlib, MIT |
 
 The lite AppImage and the rpm, deb and Arch packages use the system's
 GStreamer and fontconfig. The rpm and deb packages ship Node.js 22.23.2

@@ -337,22 +337,14 @@ jobs:
         run: |
           curl -fsSLo linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           curl -fsSLo appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
-          # the lite AppImage's runtime; release-sources.sh ships its source
+          # both AppImages' runtime; release-sources.sh ships its source
           curl -fsSLo runtime-x86_64 https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
           sha256sum -c <<'SUMS'
           ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool
           2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64
           SUMS
-          DW=https://github.com/mhx/dwarfs/releases/download/v0.15.6/dwarfs-universal-0.15.6-Linux-x86_64
-          if curl -fsSLo dwarfs.tar.zst "$DW.tar.zst"; then
-            tar --zstd -xf dwarfs.tar.zst && mv dwarfs-universal-* dwarfs-universal
-          else
-            curl -fsSLo dwarfs-universal "$DW"
-          fi
-          ln -sf dwarfs-universal mkdwarfs
-          curl -fsSLo uruntime https://github.com/VHSgunzo/uruntime/releases/download/v0.5.9/uruntime-appimage-dwarfs-x86_64
           curl -fsSL https://github.com/goreleaser/nfpm/releases/download/v2.43.0/nfpm_2.43.0_Linux_x86_64.tar.gz | tar xz nfpm
-          chmod +x linuxdeploy appimagetool dwarfs-universal uruntime nfpm
+          chmod +x linuxdeploy appimagetool nfpm
 
       # official build, full ICU included; the same file melo's downloader pins
       - name: Node
@@ -415,9 +407,11 @@ jobs:
           exec "$HERE/usr/bin/melo" "$@"
           EOF
           chmod +x AppDir/AppRun
-          ./mkdwarfs -i AppDir -o melo.dwarfs -l7 -S26 -B8 --order=nilsimsa -C zstd:level=22
-          cat uruntime melo.dwarfs > melo-x86_64.AppImage
-          chmod +x melo-x86_64.AppImage
+          # squashfs, which AppImageHub and libappimage can mount
+          ARCH=x86_64 ./appimagetool --runtime-file runtime-x86_64 --comp zstd \
+            --mksquashfs-opt -Xcompression-level --mksquashfs-opt 22 \
+            --mksquashfs-opt -b --mksquashfs-opt 1M \
+            AppDir melo-x86_64.AppImage
 
       # Lite: the system's GStreamer and glib, and Node from the system or
       # melo's first-run download
