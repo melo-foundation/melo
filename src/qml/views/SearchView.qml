@@ -25,7 +25,8 @@ Item {
     // placeholders needed to fill THIS view's viewport in the current layout
     // (shared math: grid counts always complete their rows)
     function placeholderCount() {
-        return SkeletonModel.fillCount(layout, width, height, GridUi.growth)
+        return SkeletonModel.fillCount(layout, width, height, GridUi.growth,
+                                     grid.gcols, grid.cellHeight)
     }
 
     // If a page of results doesn't overflow the viewport there's nothing to

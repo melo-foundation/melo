@@ -1,4 +1,5 @@
 #include "WindowShapeItem.h"
+#include "WindowMask.h"
 
 #include <QBitmap>
 #include <QBuffer>
@@ -399,7 +400,7 @@ void WindowShapeItem::setInput(bool on) {
     if (!on) {
         if (QQuickWindow* w = window()) {
             w->setProperty("meloShape", QVariant());
-            if (!w->property("meloInputOff").toBool()) w->setMask(QRegion());
+            if (!w->property("meloInputOff").toBool()) w->setMask(meloWindowMask(QRegion()));
         }
     } else {
         applyMask();
@@ -863,7 +864,7 @@ void WindowShapeItem::applyMask() {
     const QRegion r = active_ && kind_ != Kind::None ? regionAt(int(width()), int(height())) : QRegion();
     w->setProperty("meloShape", QVariant::fromValue(r));
     // a window made click-through keeps that until it is given input back
-    if (!w->property("meloInputOff").toBool()) w->setMask(r);
+    if (!w->property("meloInputOff").toBool()) w->setMask(meloWindowMask(r));
     ++generation_;
     emit generationChanged();
     emit shapeApplied();

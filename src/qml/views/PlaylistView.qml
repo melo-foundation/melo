@@ -53,7 +53,8 @@ Item {
     // source can actually produce — seeding 40 rows for a 20-row mix means the
     // surplus fades out on arrival, which reads as the list collapsing.
     function placeholderCount() {
-        const fill = SkeletonModel.fillCount(layout, width, height, GridUi.growth)
+        const fill = SkeletonModel.fillCount(layout, width, height, GridUi.growth,
+                                             grid.gcols, grid.cellHeight)
         const max = expectedMax(playlistId)
         return max > 0 ? Math.min(fill, max) : fill
     }

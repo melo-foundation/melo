@@ -695,7 +695,7 @@ if(Qt6Test_FOUND)
         # stretch and the input region a shape writes. What it draws is
         # checked by eye; what it clicks is checked here.
         add_executable(tst_windowmask tests/cpp/tst_windowmask.cpp src/ui/WindowShapeItem.cpp)
-        target_include_directories(tst_windowmask PRIVATE src/ui)
+        target_include_directories(tst_windowmask PRIVATE src/ui src/core)
         target_link_libraries(tst_windowmask PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)
         add_test(NAME windowmask COMMAND tst_windowmask)
         set_tests_properties(windowmask PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

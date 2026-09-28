@@ -27,6 +27,10 @@
 #include <QVariantMap>
 #include <QWindow>
 #include <memory>
+#include "WindowMask.h"
+
+// no shape: never masked, or given melo's whole-window mask (WindowMask.h)
+static bool unshaped(const QRegion& m) { return m.isEmpty() || m == meloWindowMask(QRegion()); }
 
 #include "MeloUi.h"
 #include "PluginUiHost.h"
@@ -174,7 +178,7 @@ private slots:
         foreign->setTitle(QStringLiteral("not-a-melo-plugin-window"));
         foreign->resize(275, 116);
         foreign->setVisible(true);
-        QVERIFY(foreign->mask().isEmpty());
+        QVERIFY(unshaped(foreign->mask()));
         // Every test below assumes the group is ACTIVE, because that is the
         // only state in which a shape is the thing on the mask at all.
         fx.host->setActive(true, false);
@@ -225,7 +229,7 @@ private slots:
         auto* main = fx.window(QStringLiteral("main"));
         auto* eq = fx.window(QStringLiteral("eq"));
         fx.facade(QStringLiteral("main"))->setShape(normalShape());
-        QVERIFY(eq->mask().isEmpty());            // untouched by main's call
+        QVERIFY(unshaped(eq->mask()));            // untouched by main's call
 
         fx.facade(QStringLiteral("eq"))->setShape(equalizerShape());
         QCOMPARE(main->mask(), expectedNormal()); // still main's own
@@ -241,9 +245,9 @@ private slots:
     void anEmptyListClearsTheMask() {
         auto* w = fx.window(QStringLiteral("main"));
         fx.facade(QStringLiteral("main"))->setShape(normalShape());
-        QVERIFY(!w->mask().isEmpty());
+        QVERIFY(!unshaped(w->mask()));
         fx.facade(QStringLiteral("main"))->setShape(QVariantList());
-        QVERIFY(w->mask().isEmpty());
+        QVERIFY(unshaped(w->mask()));
     }
 
     // 4. Hostile and broken input: every row leaves the window rectangular
@@ -303,14 +307,14 @@ private slots:
         // Start from a real shape, so "the mask is empty afterwards" can only
         // mean the bad input CLEARED it, never that nothing ever set it.
         f->setShape(normalShape());
-        QVERIFY(!w->mask().isEmpty());
+        QVERIFY(!unshaped(w->mask()));
 
         QElapsedTimer t;
         t.start();
         f->setShape(polygons);
         const qint64 ms = t.elapsed();
 
-        QVERIFY(w->mask().isEmpty());
+        QVERIFY(unshaped(w->mask()));
         QVERIFY2(ms < 2000, qPrintable(QStringLiteral("setShape took %1ms").arg(ms)));
 
         int reported = -1;
@@ -412,7 +416,7 @@ private slots:
         QCOMPARE(fx.window(QStringLiteral("eq"))->mask(), offSurface());
         fx.facade(QStringLiteral("eq"))->show();
         QCOMPARE(w->mask(), expectedNormal());
-        QVERIFY(fx.window(QStringLiteral("eq"))->mask().isEmpty());
+        QVERIFY(unshaped(fx.window(QStringLiteral("eq"))->mask()));
     }
 
     // 10. An id this host did not create changes nothing. The facade never
@@ -429,14 +433,14 @@ private slots:
             backend->setPluginWindowShape(id, equalizerShape());
 
         QCOMPARE(main->mask(), expectedNormal());
-        QVERIFY(eq->mask().isEmpty());
+        QVERIFY(unshaped(eq->mask()));
         // ...and no window outside this host was touched either. `foreign` is
         // what makes this loop able to fail.
         int outsiders = 0;
         for (QWindow* w : QGuiApplication::topLevelWindows())
-            if (w != main && w != eq) { ++outsiders; QVERIFY(w->mask().isEmpty()); }
+            if (w != main && w != eq) { ++outsiders; QVERIFY(unshaped(w->mask())); }
         QVERIFY2(outsiders > 0, "the loop above must actually iterate something");
-        QVERIFY(foreign->mask().isEmpty());
+        QVERIFY(unshaped(foreign->mask()));
     }
 
     // 11. The whole path, from plugin QML in the restricted engine. Everything
@@ -483,7 +487,7 @@ QtObject {
         // The containment is that the ignored argument was the only place an id
         // could have gone: the call still landed on this facade's own window,
         // and "eq" was read as a polygon list, which it is not.
-        QVERIFY(fx.window(QStringLiteral("eq"))->mask().isEmpty());
+        QVERIFY(unshaped(fx.window(QStringLiteral("eq"))->mask()));
     }
 
     // 12. The entire plugin-reachable surface of MeloUiWindow, read back from
@@ -536,12 +540,12 @@ QtObject {
         auto* w = fx.window(QStringLiteral("main"));
         auto* f = fx.facade(QStringLiteral("main"));
         f->setShape(normalShape());
-        QVERIFY(!w->mask().isEmpty());
+        QVERIFY(!unshaped(w->mask()));
         // Three collinear corners: a real polygon with three real points and no
         // area whatsoever.
         f->setShape(QVariantList{ QVariant(quad(0, 0, 10, 0, 20, 0, 30, 0)) });
-        QVERIFY(w->mask().isEmpty());
-        QCOMPARE(w->mask(), QRegion());
+        QVERIFY(unshaped(w->mask()));
+        QCOMPARE(w->mask(), meloWindowMask(QRegion()));
     }
 
     // 14. The POLYGON CAP, on its own. Four thousand ordinary quads — the shape
@@ -562,7 +566,7 @@ QtObject {
         // Bounded, not refused: the 512 that got in still shaped the window. A
         // test that only watched the clock would pass against a setShape that
         // ignored its argument entirely.
-        QVERIFY(!w->mask().isEmpty());
+        QVERIFY(!unshaped(w->mask()));
         int dropped = -1;
         PluginWindowHost::shapeRegion(polys, &dropped);
         QCOMPARE(dropped, 4000 - 512);
@@ -582,7 +586,7 @@ QtObject {
             polys << QVariant(flat);
         }
         f->setShape(polys);
-        QVERIFY(w->mask().isEmpty());
+        QVERIFY(unshaped(w->mask()));
         int dropped = -1;
         PluginWindowHost::shapeRegion(polys, &dropped);
         QCOMPARE(dropped, 16);
@@ -663,7 +667,7 @@ QtObject {
         PluginWindowHost::shapeRegion(polys, &dropped);
 
         QCOMPARE(dropped, 0);              // it really was admitted
-        QVERIFY(!w->mask().isEmpty());     // ...and really was converted
+        QVERIFY(!unshaped(w->mask()));     // ...and really was converted
         // A generous multiple of the ~150ms measured, not a tight budget: a
         // threshold that fires on a loaded runner is a flake, not a guard.
         QVERIFY2(ms < 1500, qPrintable(QStringLiteral(

@@ -552,8 +552,10 @@ Window {
         // Once at startup, or it never runs at all: the window opens at the
         // size it was saved with, so nothing resizes it, and dprGeneration
         // cannot fire either -- its event filter arms on the first dprOf call,
-        // which only happens in here.
+        // which only happens in here. pushDpr makes it: snapSize returns before
+        // it when snap is off.
         root.readGridSnap()
+        root.pushDpr()
         root.snapSize()
         root.refreshShortcuts()
         kwinSwap = WindowCtl.kwinAvailable()

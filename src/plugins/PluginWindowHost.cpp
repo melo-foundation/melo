@@ -1,4 +1,5 @@
 #include "PluginWindowHost.h"
+#include "WindowMask.h"
 #include "PluginUiHost.h"
 #include "SpectrumSource.h"
 #include "WindowController.h"
@@ -1501,7 +1502,7 @@ void PluginWindowHost::applyMask(Win& w) {
     // Silenced: the off-surface region setInputEnabled(false) uses; keep them in
     // step. QRegion has no empty-but-set state, so a zero-area shape means
     // rectangular rather than unclickable.
-    const QRegion want = eff ? w.shape : QRegion(-100, -100, 1, 1);
+    const QRegion want = eff ? meloWindowMask(w.shape) : QRegion(-100, -100, 1, 1);
     // applyState() runs for the whole set on every show/hide and every
     // setActive, so most calls here change nothing. QWindow::mask() IS the
     // applied value, so comparing against it needs no bookkeeping of our own.

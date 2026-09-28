@@ -1,5 +1,9 @@
 #include <QtTest>
 #include <QQuickWindow>
+#include "WindowMask.h"
+
+// no shape: never masked, or given melo's whole-window mask (WindowMask.h)
+static bool unshaped(const QRegion& m) { return m.isEmpty() || m == meloWindowMask(QRegion()); }
 
 #include "WindowShapeItem.h"
 
@@ -188,7 +192,7 @@ private slots:
     void noShapeIsTheWholeWindow() {
         Rig r(200, 100, corners("square", 0));
         QVERIFY(!r.item->hasShape());
-        QVERIFY(r.win.mask().isEmpty());
+        QVERIFY(unshaped(r.win.mask()));
     }
 };
 

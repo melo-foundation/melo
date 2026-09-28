@@ -1,4 +1,5 @@
 #include "WindowController.h"
+#include "WindowMask.h"
 
 #include <QCoreApplication>
 #include <QDBusConnection>
@@ -80,7 +81,6 @@ WindowController::WindowController(QObject* parent) : QObject(parent) {
         auto* bus = QDBusConnection::sessionBus().interface();
         kwinAvailable_ = bus && bus->isServiceRegistered(QStringLiteral("org.kde.KWin"));
     }
-    if (kwinAvailable_) {
 #ifdef MELO_NATIVE_BLUR
     if (auto* wb = WaylandBlur::instance()) {
         lastBlur_ = wb->available();
@@ -92,6 +92,7 @@ WindowController::WindowController(QObject* parent) : QObject(parent) {
         });
     }
 #endif
+    if (kwinAvailable_) {
         // Fallback only: KWin folded contrast into the blur effect, so this says
         // no where contrast works; contrastAvailable() asks the protocol first.
         // Never loadEffect("contrast"): it would change every window's drawing
@@ -162,7 +163,8 @@ void WindowController::setInputEnabled(QQuickWindow* win, bool enabled) {
     // window), not the whole rectangle, which a null QRegion is; a region
     // fully off the surface makes every pixel click-through.
     win->setProperty("meloInputOff", !enabled);
-    win->setMask(enabled ? win->property("meloShape").value<QRegion>() : QRegion(-100, -100, 1, 1));
+    win->setMask(enabled ? meloWindowMask(win->property("meloShape").value<QRegion>())
+                         : QRegion(-100, -100, 1, 1));
 }
 
 void WindowController::setInputRegion(QQuickWindow* win, int x, int y, int w, int h) {

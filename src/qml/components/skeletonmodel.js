@@ -102,15 +102,16 @@ function gridCols(width, growth) {
     return Math.max(1, Math.floor(availW / (168 + availW * g / 100)))
 }
 
-// placeholders needed to fill a viewport in the given layout
-function fillCount(layout, width, height, growth) {
+// placeholders needed to fill a viewport in the given layout. Grids pass the
+// `cols` and `cellH` they lay out with; gridCols is only an estimate of them.
+function fillCount(layout, width, height, growth, cols, cellH) {
     if (height <= 0) return 12   // not laid out yet
     if (layout === "grid") {
-        const cols = gridCols(width, growth)
-        const cellW = Math.floor((width - 32) / cols)
-        const cellH = Math.floor((cellW - 8) * 9 / 16) + 70
-        const rows = Math.max(1, Math.ceil(height / cellH))
-        return cols * Math.min(rows, Math.max(1, Math.floor(60 / cols)))
+        const c = cols > 0 ? cols : gridCols(width, growth)
+        const cellW = Math.floor((width - 32) / c)
+        const ch = cellH > 0 ? cellH : Math.floor((cellW - 8) * 9 / 16) + 70
+        const rows = Math.max(1, Math.ceil(height / ch))
+        return c * Math.min(rows, Math.max(1, Math.floor(60 / c)))
     }
     return Math.min(60, Math.max(1, Math.ceil(height / (layout === "compact" ? 28 : 54))))
 }

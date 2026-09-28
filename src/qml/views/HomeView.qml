@@ -142,7 +142,8 @@ Item {
     // placeholders needed to fill THIS view's viewport in the current layout
     // (shared math: grid counts always complete their rows)
     function placeholderCount() {
-        return SkeletonModel.fillCount(layout, width, height, GridUi.growth)
+        return SkeletonModel.fillCount(layout, width, height, GridUi.growth,
+                                     recGrid.cols, recGrid.cellHeight)
     }
 
     // enough placeholder shelves to fill the page, each a full row of cards
@@ -188,8 +189,7 @@ Item {
     function topUpSkeletons() {
         if (!flow) return
         if (!loadingMain && !loadingChip) return   // a pagination tail fills its own row
-        let want = placeholderCount()
-        if (layout === "grid" && recGrid.cols > 0) want = Math.ceil(want / recGrid.cols) * recGrid.cols
+        const want = placeholderCount()
         if (want > recModel.count) SkeletonModel.addBlanks(recModel, want - recModel.count)
     }
 
