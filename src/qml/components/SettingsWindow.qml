@@ -595,7 +595,10 @@ Window {
     }
     // melo's OWN commands. A plugin's belong to the plugin, on its own page,
     // and a plugin that is switched off has none to bind.
-    readonly property var shortcutRows: CMD.commandRows(SC.ORDER, SC.LABELS, null)
+    readonly property var shortcutRows: CMD.commandRows(
+        SC.ORDER.filter((id) => id !== "togglePin" || WindowCtl.pinMode === "kwin"
+                                                    || WindowCtl.pinMode === "flag"),
+        SC.LABELS, null)
     readonly property var pluginShortcutRows:
         CMD.commandRows([], {}, win.pluginSettingsPlugin ? [win.pluginSettingsPlugin] : [])
     function applyGlass() {

@@ -127,6 +127,8 @@ Rectangle {
     signal visToggle()
     signal dragStarted()
     property bool visActive: false
+    // false: the vis button is not drawn (WindowCtl.canPlaceWindows)
+    property bool visAllowed: true
     property var barMenu: null   // shared Main.openBarMenu(sx, sy, host)
     // the mini bar is its own toplevel, so the main window's outside-click
     // layer never sees a press here — the bar closes the menu itself

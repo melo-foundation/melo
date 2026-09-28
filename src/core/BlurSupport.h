@@ -1,6 +1,8 @@
 #pragma once
+#include <QList>
 #include <QRegion>
 #include <climits>
+#include <cmath>
 
 // Which blur protocol WaylandBlur speaks, decided from the registry and the
 // ext manager's capabilities event. Pure state, so a test can drive it
@@ -51,4 +53,21 @@ struct BlurSupport {
 inline QRegion extBlurRegion(const QRegion& region) {
     if (!region.isEmpty()) return region;
     return QRegion(INT_MIN / 2, INT_MIN / 2, INT_MAX, INT_MAX);
+}
+
+// _KDE_NET_WM_BLUR_BEHIND_REGION's value: x, y, w, h per rect, in the X
+// window's device pixels. Empty means the whole window, which the property
+// spells as a zero-length value. Edges round outward so scaled rects still meet.
+inline QList<quint32> x11BlurCardinals(const QRegion& region, qreal dpr) {
+    QList<quint32> out;
+    if (dpr <= 0) dpr = 1;
+    out.reserve(region.rectCount() * 4);
+    for (const QRect& r : region) {
+        const int x0 = int(std::floor(r.x() * dpr));
+        const int y0 = int(std::floor(r.y() * dpr));
+        const int x1 = int(std::ceil((r.x() + r.width()) * dpr));
+        const int y1 = int(std::ceil((r.y() + r.height()) * dpr));
+        out << quint32(x0) << quint32(y0) << quint32(x1 - x0) << quint32(y1 - y0);
+    }
+    return out;
 }

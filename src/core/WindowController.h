@@ -78,10 +78,17 @@ class WindowController : public QObject {
     //                                  WindowCtl.dprOf(Window.window))
     Q_PROPERTY(int dprGeneration READ dprGeneration NOTIFY dprGenerationChanged)
     // Whether the compositor will blur behind a window right now. Live on
-    // Wayland: KWin changes it when its Blur effect is switched on or off.
+    // Wayland and on KWin X11: KWin changes it when its Blur effect is switched
+    // on or off.
     Q_PROPERTY(bool blurAvailable READ blurAvailable NOTIFY blurAvailableChanged)
     // Contrast and saturation of the blurred backdrop: KWin 6.6 and older only.
     Q_PROPERTY(bool contrastAvailable READ contrastAvailable NOTIFY contrastAvailableChanged)
+    // "kwin", "flag", "menu" or "none": see PinMode.h. Fixed for the session.
+    Q_PROPERTY(QString pinMode READ pinMode NOTIFY pinModeChanged)
+    // melo can put its windows where it wants: the mini player's popup needs it.
+    // KWin scripting only (Plasma 6, Wayland or X11); MELO_NO_PLACEMENT=1 forces
+    // it off. Fixed for the session.
+    Q_PROPERTY(bool canPlaceWindows READ canPlaceWindows CONSTANT)
 public:
     explicit WindowController(QObject* parent = nullptr);
     bool appActive() const { return appActive_; }
@@ -99,8 +106,11 @@ public:
     // Writes the whole mask, so plugin windows must not use it: a skin's
     // region.txt shape is the same QWindow::setMask write, composed by
     // PluginWindowHost::applyMask, and this would erase it.
+    // X11 under KWin: the X input shape instead, since setMask there is the
+    // bounding shape and would clip the window KWin is about to reveal.
     Q_INVOKABLE void setInputEnabled(QQuickWindow* win, bool enabled);
-    // KWin blur-behind (glass): no-op without MELO_NATIVE_BLUR or KF6 WindowSystem.
+    // KWin blur-behind (glass): no-op without MELO_NATIVE_BLUR, MELO_X11 or KF6
+    // WindowSystem.
     // NB: blur is a SURFACE property independent of content opacity — a
     // transparent-but-mapped window still blurs, so callers must turn it
     // off on hidden counterpart windows (mini/full ghosting).
@@ -130,6 +140,7 @@ public:
     bool contrastAvailable() const;
     // true when KWin scripting is available (atomic pair-opacity swap works)
     Q_INVOKABLE bool kwinAvailable() const { return kwinAvailable_; }
+    bool canPlaceWindows() const { return canPlaceWindows_; }
     // clicks land only inside the given rect; everything else passes through
     Q_INVOKABLE void setInputRegion(QQuickWindow* win, int x, int y, int w, int h);
     // NB: child windows (wl_subsurface) were tested for the mini popup and
@@ -157,9 +168,16 @@ public:
     // Wayland clients cannot position themselves, so this is the only way to
     // place or snap a plugin window; batching keeps a group move to one round trip.
     Q_INVOKABLE bool moveWindows(const QVariantList& windows);
-    // pin: WindowStaysOnTopHint is a no-op on Wayland — KWin's keepAbove
-    // applies to both melo windows (whichever of main/mini is visible)
+    // Pins "melo" and "melo-mini" together, whichever is showing. kwin: a
+    // script sets keepAbove. flag: WindowStaysOnTopHint, which Qt sends to the
+    // window system on a mapped window. false in the other modes: nothing was pinned.
     Q_INVOKABLE bool setKeepAbove(bool on);
+    QString pinMode() const { return pinMode_; }
+    // "menu" mode: the compositor's window menu at (x, y) in `win`'s
+    // coordinates. Call it from the pointer press itself: Mutter accepts only
+    // the serial of the latest click, and Qt's serial is the latest input
+    // event's. false where there is no xdg_toplevel to ask.
+    Q_INVOKABLE bool showWindowMenu(QQuickWindow* win, int x, int y);
 
     // Plugin windows that stay up when melo is minimized: a skin carrying the
     // transport is the player. Compositor-side, because they are transient
@@ -213,12 +231,15 @@ public:
     // instance out of another's identically-captioned windows, and exist only
     // in this text. Static, so it is not a metaobject member reachable from
     // the plugin side (as with PluginWindowHost::shapeRegion).
+    // `scale` is the JS for KWin units per Qt unit (kwinScaleJs in the .cpp).
     static QString windowGeometryScript(const QStringList& captions,
-                                        qint64 pid, const QString& service);
+                                        qint64 pid, const QString& service,
+                                        const QString& scale = QStringLiteral("1"));
     // Generated separately so tests can assert the pid guard, asynchronous
     // windowAdded handling and one-way leader/follower movement without a live
     // KWin session. `links` has setPluginWindowGlue's validated shape.
-    static QString pluginWindowGlueScript(const QVariantList& links, qint64 pid);
+    static QString pluginWindowGlueScript(const QVariantList& links, qint64 pid,
+                                          const QString& scale = QStringLiteral("1"));
 #endif
 
 signals:
@@ -226,6 +247,7 @@ signals:
     void dprGenerationChanged();
     void blurAvailableChanged();
     void contrastAvailableChanged();
+    void pinModeChanged();
     void mainGeometry(int x, int y, int w, int h, bool cursorInside);
     // interactive move/resize started on a melo window (KWin watcher);
     // mainGeometry marks the end
@@ -238,8 +260,11 @@ signals:
     void windowGeometry(const QString& caption, int x, int y, int w, int h);
 
 private:
+    QString pinMode_ = QStringLiteral("none");
     bool isWayland_ = false;
+    bool isX11_ = false;
     bool kwinAvailable_ = false;
+    bool canPlaceWindows_ = false;
 protected:
     // both platform ctors call this once qGuiApp exists
     void initFocusTracking();

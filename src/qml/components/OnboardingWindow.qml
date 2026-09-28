@@ -13,6 +13,9 @@ import "locales.js" as Locales
 MeloWindow {
     id: obw
     heading: "Set up melo"
+    // without one, X11 captions it "melo" and the KWin scripts take it for the
+    // main window
+    title: "melo setup"
     // As tall as the tallest page, and no page changes height: accounts are a
     // dropdown, and a row that depends on another setting is disabled in
     // place rather than hidden. So the window never resizes and no page
@@ -217,6 +220,8 @@ MeloWindow {
                     }
 
                     Item {
+                        // only where melo can set it: a window menu is the user's to open
+                        visible: !!(obw.transientParent && obw.transientParent.pinToggles)
                         width: parent.width
                         height: obw.rowH
                         InkText {

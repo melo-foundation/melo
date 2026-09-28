@@ -15,7 +15,9 @@ Row {
     spacing: Theme.gap(6)
     // the buttons, named outright by a document's cell; none otherwise
     property var explicitIds: null
-    readonly property var ids: explicitIds !== null ? explicitIds : []
+    // vis is left out where its popup cannot be placed (WindowCtl.canPlaceWindows)
+    readonly property var ids: (explicitIds !== null ? explicitIds : [])
+        .filter((id) => id !== "vis" || !bar || bar.visAllowed !== false)
     // the settings editor draws over the real buttons: every one shown,
     // and each says where it is
     readonly property bool customising: bar ? bar.customising === true : false
@@ -58,7 +60,9 @@ Row {
         case "library": return inLibrary
         case "radio": return PlayerState.radioActive
         case "eq":    return bar ? bar.eqActive === true : false
+        // on the mini bar the queue is the popup, so it is never on where there is none
         case "queue": return PlayerState.showPanel && PlayerState.hasTrack
+                             && !(bar && bar.miniActive === true && bar.visAllowed === false)
         case "vis":   return bar ? bar.visActive === true : false
         }
         return false

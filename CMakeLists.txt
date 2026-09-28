@@ -112,9 +112,29 @@ if(UNIX AND NOT APPLE)
                 DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/protocols/${proto}.xml)
             list(APPEND MELO_WL_SOURCES ${MELO_WL_GEN}/${proto}-protocol.c)
         endforeach()
+        # xdg-shell: the header alone. show_window_menu creates no object, so
+        # its inline stub never touches xdg_toplevel_interface, and QtWayland
+        # already defines that symbol (a second definition breaks a static link).
+        add_custom_command(
+            OUTPUT ${MELO_WL_GEN}/xdg-shell-client-protocol.h
+            COMMAND ${WAYLAND_SCANNER} client-header
+                    ${CMAKE_CURRENT_SOURCE_DIR}/protocols/xdg-shell.xml
+                    ${MELO_WL_GEN}/xdg-shell-client-protocol.h
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/protocols/xdg-shell.xml)
+        list(APPEND MELO_WL_SOURCES ${MELO_WL_GEN}/xdg-shell-client-protocol.h)
         message(STATUS "melo: glass blur NATIVE (ext-background-effect, KWin blur/contrast)")
     else()
         message(STATUS "melo: QtGui private headers missing — trying KF6 blur fallback")
+    endif()
+
+    # X11 clients of KWin (src/core/X11Effects.h): the blur-behind window
+    # property and input-only shapes. Qt's xcb plugin loads the same libraries.
+    pkg_check_modules(XCB IMPORTED_TARGET xcb xcb-shape)
+    if(XCB_FOUND)
+        set(MELO_X11 ON)
+        message(STATUS "melo: X11 blur and input shapes via xcb")
+    else()
+        message(STATUS "melo: no xcb/xcb-shape headers — no glass blur on X11 without KF6")
     endif()
 
     if(MELO_PM_STATIC)
@@ -174,6 +194,7 @@ qt_add_executable(melo
     src/core/PortalDialog.cpp
     ${MELO_WINDOWCTL}
     src/core/WindowController.h
+    src/core/PinMode.h
     src/core/Track.h
     src/core/PlayerState.h
     src/core/QueueModel.h
@@ -325,6 +346,11 @@ target_link_libraries(melo PRIVATE
     ZLIB::ZLIB
     ${MELO_MEDIA_LIBS}
 )
+if(MELO_X11)
+    target_sources(melo PRIVATE src/core/X11Effects.cpp)
+    target_compile_definitions(melo PRIVATE MELO_X11)
+    target_link_libraries(melo PRIVATE PkgConfig::XCB)
+endif()
 if(MELO_NATIVE_BLUR)
     target_sources(melo PRIVATE src/core/WaylandBlur.cpp ${MELO_WL_SOURCES})
     target_include_directories(melo PRIVATE ${MELO_WL_GEN})
@@ -653,6 +679,11 @@ if(Qt6Test_FOUND)
         endif()
     endforeach()
     include(tests/local.cmake OPTIONAL)
+
+    add_executable(tst_pinmode tests/cpp/tst_pinmode.cpp src/core/PinMode.h)
+    target_include_directories(tst_pinmode PRIVATE src/core)
+    target_link_libraries(tst_pinmode PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME pinmode COMMAND tst_pinmode)
 
     add_executable(tst_jsonrowmodel tests/cpp/tst_jsonrowmodel.cpp src/core/JsonRowModel.h)
     target_include_directories(tst_jsonrowmodel PRIVATE src/core)

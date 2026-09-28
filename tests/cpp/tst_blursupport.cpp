@@ -87,6 +87,35 @@ private slots:
         shape -= QRegion(0, 0, 10, 10);
         QCOMPARE(extBlurRegion(shape), shape);
     }
+
+    // X11: the whole window is a zero-length value
+    void x11WholeWindowIsEmpty() {
+        QVERIFY(x11BlurCardinals(QRegion(), 1.75).isEmpty());
+    }
+
+    void x11RectsAreScaledToDevicePixels() {
+        const QList<quint32> c = x11BlurCardinals(QRegion(10, 20, 100, 50), 2.0);
+        QCOMPARE(c, (QList<quint32>{20, 40, 200, 100}));
+    }
+
+    // 1.75: 3 * 1.75 = 5.25 and 7 * 1.75 = 12.25, so the edges round out to
+    // 5 and 13 and two adjacent rects still share a column
+    void x11FractionalEdgesRoundOutward() {
+        QRegion r(3, 0, 4, 1);
+        const QList<quint32> c = x11BlurCardinals(r, 1.75);
+        QCOMPARE(c, (QList<quint32>{5, 0, 8, 2}));
+        QRegion two(0, 0, 3, 10);
+        two += QRegion(3, 10, 3, 10);
+        const QList<quint32> d = x11BlurCardinals(two, 1.75);
+        QCOMPARE(d.size(), 8);
+        QVERIFY(d[0] + d[2] >= d[4]);
+    }
+
+    void x11OneQuadPerRect() {
+        QRegion shape(0, 0, 200, 100);
+        shape -= QRegion(0, 0, 10, 10);
+        QCOMPARE(x11BlurCardinals(shape, 1.0).size(), shape.rectCount() * 4);
+    }
 };
 
 QTEST_APPLESS_MAIN(TstBlurSupport)

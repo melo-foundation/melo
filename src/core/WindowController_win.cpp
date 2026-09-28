@@ -34,6 +34,8 @@ bool WindowController::setWindowOpacities(const QVariantList&) { return false; }
 // this platform (only Wayland needs the compositor to do it).
 bool WindowController::moveWindows(const QVariantList&) { return false; }
 bool WindowController::setKeepAbove(bool) { return false; }
+// pinMode stays "none": the pin controls are hidden here.
+bool WindowController::showWindowMenu(QQuickWindow*, int, int) { return false; }
 bool WindowController::setMiniQueueGlue(bool) { return false; }
 bool WindowController::setPluginWindowGlue(const QVariantList&) { return false; }
 void WindowController::watchMainGeometry() {}

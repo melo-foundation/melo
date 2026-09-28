@@ -43,11 +43,19 @@ Rectangle {
     signal searchToggle()
     signal settingsToggle()
     signal pinToggle()
+    // where the window menu opens: the pin's bottom-left, in window coordinates
+    function pinPoint() {
+        const p = pinBtn.mapToItem(null, 0, pinBtn.height)
+        return Qt.point(Math.round(p.x), Math.round(p.y))
+    }
     signal dragStarted()
     signal dragReleased()   // release seen = no compositor grab = no real move
 
     property Window win: Window.window
     property bool pinned: false
+    // WindowCtl.pinMode: "kwin" and "flag" toggle, "menu" opens the
+    // compositor's window menu on the press, "none" hides the pin
+    property string pinMode: "kwin"
     // Only the main window carries the account control; the settings, eq and
     // mini title bars use the same component and must not grow one.
     property bool showAccount: false
@@ -117,6 +125,8 @@ Rectangle {
             id: tb
             property string glyph
             property bool active: false
+            // fire on the press: the window menu needs that press's serial
+            property bool onPress: false
             signal clicked()
             // As wide as its face when it has one, so the gap between two is
             // the theme's buttonGap and nothing else; bare, the 26 hit box
@@ -136,7 +146,7 @@ Rectangle {
             activeFocusOnTab: true
             Accessible.role: Accessible.Button
             Accessible.name: tb.a11yName
-            Accessible.checkable: tb.glyph === "pin"
+            Accessible.checkable: tb.glyph === "pin" && !tb.onPress
             Accessible.checked: tb.active
             Accessible.onPressAction: tb.clicked()
             Keys.onPressed: (e) => {
@@ -169,7 +179,13 @@ Rectangle {
                 // square face would not fit in it
                 frameWidth: Theme.titleBtn; frameHeight: Theme.titleBtnH
             }
-            MouseArea { id: ma; anchors.fill: parent; hoverEnabled: true; onClicked: parent.clicked() }
+            MouseArea {
+                id: ma
+                anchors.fill: parent
+                hoverEnabled: true
+                onPressed: if (tb.onPress) tb.clicked()
+                onClicked: if (!tb.onPress) tb.clicked()
+            }
         }
 
         // Plugin buttons come FIRST in the row, so melo's own search / settings
@@ -210,9 +226,12 @@ Rectangle {
         TbBtn { glyph: "search"; active: titleBar.searchActive; onClicked: titleBar.searchToggle() }
         TbBtn { glyph: "settings"; active: titleBar.settingsActive; onClicked: titleBar.settingsToggle() }
         TbBtn {
+            id: pinBtn
             glyph: "pin"
-            active: titleBar.pinned
-            onClicked: titleBar.pinToggle()   // Wayland: flags are a no-op; KWin keepAbove
+            visible: titleBar.pinMode !== "none"
+            onPress: titleBar.pinMode === "menu"
+            active: titleBar.pinned && !onPress
+            onClicked: titleBar.pinToggle()
         }
         TbBtn { glyph: "minimize"; onClicked: titleBar.win.showMinimized() }
         TbBtn {

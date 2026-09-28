@@ -197,6 +197,8 @@ Window {
     // the glass is rounded to
     onVisibilityChanged: if (ready) applyBlur()
     property bool alwaysOnTop: false
+    // the modes where melo sets the state itself and so can show it
+    readonly property bool pinToggles: WindowCtl.pinMode === "kwin" || WindowCtl.pinMode === "flag"
 
     // transparentHover: the window rests at hoverOpacity while the mouse is away.
     // The fade value animates, not element opacity, so the mini/full flip stays
@@ -302,7 +304,7 @@ Window {
             Player.setVolume(savedVol >= 0 ? Number(savedVol)
                                            : Math.cbrt(Number(Settings.uiGet("volume", 1))))
             // restore pin (KWin keepAbove doesn't survive the window going away)
-            if (Settings.uiGet("alwaysOnTop", false) === true) {
+            if (root.pinToggles && Settings.uiGet("alwaysOnTop", false) === true) {
                 root.alwaysOnTop = true
                 WindowCtl.setKeepAbove(true)
             }
@@ -602,7 +604,8 @@ Window {
         if (miniPlayer && width < miniWin.width) width = miniWin.width
     }
     function syncMiniQueue() {
-        const want = miniPlayer && PlayerState.hasTrack
+        // no popup where melo cannot place windows: toggleQueue expands instead
+        const want = WindowCtl.canPlaceWindows && miniPlayer && PlayerState.hasTrack
                      && (PlayerState.showPanel || miniVisWanted)
         if (want) ensureMainWideEnough()
         if (want && !miniQueueShown) {
@@ -1069,6 +1072,7 @@ Window {
             miniActive: root.miniPlayer
             eqActive: eqLoader.item ? eqLoader.item.visible : false
             visActive: root.miniVisWanted
+            visAllowed: WindowCtl.canPlaceWindows
             onQueueToggle: CommandMap.invoke("toggleQueue")
             onVisToggle: CommandMap.invoke("toggleVisualizer")
             onEqToggle: CommandMap.invoke("toggleEq")
@@ -1127,6 +1131,7 @@ Window {
         holdAnims: root.sysDragging
         miniActive: root.miniPlayer
         eqActive: eqLoader.item ? eqLoader.item.visible : false
+        visAllowed: WindowCtl.canPlaceWindows
         onQueueToggle: CommandMap.invoke("toggleQueue")
         onEqToggle: CommandMap.invoke("toggleEq")
         onDragStarted: root.holdFadeForDrag()
@@ -1244,6 +1249,7 @@ Window {
             x: fills ? 0 : root.frL
             width: parent.width - (fills ? 0 : root.frL + root.frR)
             pinned: root.alwaysOnTop
+            pinMode: WindowCtl.pinMode
             searchActive: root.showSearch
             settingsActive: settingsLoader.item ? settingsLoader.item.visible : false
             onDragStarted: root.holdFadeForDrag()
@@ -2242,8 +2248,9 @@ Window {
         const acts = PlayerState.hasTrack && PlayerState.currentTrack
                    ? trackActs(PlayerState.currentTrack) : []
         const slot = root.miniPlayer ? "barMini" : root.barView === 5 ? "barNp" : "barMain"
-        acts.push({ label: "Keep melo above", check: root.alwaysOnTop, rule: acts.length > 0,
-                    act: () => CommandMap.invoke("togglePin") })
+        if (root.pinToggles)
+            acts.push({ label: "Keep melo above", check: root.alwaysOnTop, rule: acts.length > 0,
+                        act: () => CommandMap.invoke("togglePin") })
         acts.push({ label: root.miniPlayer ? "Switch to full player" : "Switch to mini player",
                     act: () => CommandMap.invoke("toggleCompact") })
         // the arranger stands on the full window's bar, the mini slot included
@@ -2631,10 +2638,15 @@ Window {
                 break
             // Chrome button bodies live in this switch so InterceptMap.offer() can hand
             // them to a plugin. toggleQueue branches: the compact bar clears miniVisWanted
-            // and re-syncs the shared popup; the full bar toggles the panel.
+            // and re-syncs the shared popup; the full bar toggles the panel. Without
+            // window placement there is no popup: the full player opens on the panel.
             case "toggleQueue":
                 if (InterceptMap.offer("toggleQueue")) break
-                if (root.miniPlayer) {
+                if (root.miniPlayer && !WindowCtl.canPlaceWindows) {
+                    root.miniVisWanted = false
+                    PlayerState.showPanel = true
+                    root.toggleMini()
+                } else if (root.miniPlayer) {
                     root.miniVisWanted = false
                     PlayerState.showPanel = !PlayerState.showPanel
                     root.syncMiniQueue()
@@ -2644,6 +2656,7 @@ Window {
                 break
             case "toggleVisualizer":
                 if (InterceptMap.offer("toggleVisualizer")) break
+                if (!WindowCtl.canPlaceWindows) break   // its only home is the popup
                 PlayerState.showPanel = false
                 root.miniVisWanted = !root.miniVisWanted
                 root.syncMiniQueue()
@@ -2661,6 +2674,19 @@ Window {
                 break
             case "togglePin":
                 if (InterceptMap.offer("togglePin")) break
+                if (WindowCtl.pinMode === "menu") {
+                    // runs inside the pin's press handler, so Qt's latest
+                    // serial is that press. The mini bar has no pin, so the
+                    // menu opens at its corner.
+                    if (root.miniPlayer) {
+                        WindowCtl.showWindowMenu(miniWin, 0, 0)
+                    } else {
+                        const p = mainTitle.pinPoint()
+                        WindowCtl.showWindowMenu(root, p.x, p.y)
+                    }
+                    break
+                }
+                if (!root.pinToggles) break
                 root.alwaysOnTop = !root.alwaysOnTop
                 WindowCtl.setKeepAbove(root.alwaysOnTop)
                 Settings.uiSet("alwaysOnTop", root.alwaysOnTop)

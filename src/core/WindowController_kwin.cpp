@@ -1,4 +1,5 @@
 #include "WindowController.h"
+#include "PinMode.h"
 #include "WindowMask.h"
 
 #include <QCoreApplication>
@@ -15,6 +16,7 @@
 #include <QJsonObject>
 #include <QQuickWindow>
 #include <QRegion>
+#include <QScreen>
 #include <QStandardPaths>
 #include <cstdio>
 
@@ -40,10 +42,8 @@ public:
     }
 
 private:
-    // A string LITERAL would otherwise become a QVariant holding a const char*,
-    // which has no D-Bus type and fails at marshalling rather than at compile
-    // time. Every caller passes QString today; this is so that stops being
-    // something the next caller has to know.
+    // A string literal would otherwise become a QVariant holding a const char*,
+    // which has no D-Bus type and fails at marshalling, not at compile time.
     static QVariant arg(const char* v) { return QVariant(QString::fromUtf8(v)); }
     template <typename T>
     static QVariant arg(T&& v) { return QVariant::fromValue(std::forward<T>(v)); }
@@ -56,8 +56,19 @@ private:
 
 #ifdef MELO_NATIVE_BLUR
 #include "WaylandBlur.h"
+#include <qpa/qplatformnativeinterface.h>
+#include <wayland-client.h>
+#include "xdg-shell-client-protocol.h"
 #elif defined(HAVE_KWINDOWSYSTEM)
 #include <KWindowEffects>
+#endif
+#ifdef MELO_X11
+#include "X11Effects.h"
+#endif
+// melo's own blur: Wayland protocols and/or the X11 property. KF6 covers both
+// where it is the fallback, so the X11 path alone does not replace it.
+#if defined(MELO_NATIVE_BLUR) || (defined(MELO_X11) && !defined(HAVE_KWINDOWSYSTEM))
+#define MELO_OWN_BLUR 1
 #endif
 
 void WindowController::initFocusTracking() {
@@ -74,13 +85,27 @@ void WindowController::initFocusTracking() {
 WindowController::WindowController(QObject* parent) : QObject(parent) {
     initFocusTracking();
     isWayland_ = QGuiApplication::platformName().contains("wayland");
-    if (isWayland_) {
+    isX11_ = QGuiApplication::platformName() == QLatin1String("xcb");
+    if (isWayland_ || isX11_) {
         // Ask the bus, not KWin: whether a name is on the bus is a question
         // for the bus daemon, which always answers, so "is KWin here?" cannot
         // hang at startup.
         auto* bus = QDBusConnection::sessionBus().interface();
-        kwinAvailable_ = bus && bus->isServiceRegistered(QStringLiteral("org.kde.KWin"));
+        const bool onBus = bus && bus->isServiceRegistered(QStringLiteral("org.kde.KWin"));
+        kwinAvailable_ = kwinScriptingFor(QGuiApplication::platformName(), onBus,
+                                          qEnvironmentVariable("KDE_SESSION_VERSION"));
     }
+    canPlaceWindows_ = kwinAvailable_ && qEnvironmentVariable("MELO_NO_PLACEMENT") != QLatin1String("1");
+    pinMode_ = pinModeFor(QGuiApplication::platformName(),
+                          qEnvironmentVariable("XDG_CURRENT_DESKTOP"), kwinAvailable_,
+                          qEnvironmentVariable("MELO_PIN_MODE"));
+#ifndef MELO_NATIVE_BLUR
+    // built without the QtGui private headers: no xdg_toplevel to send it on
+    if (pinMode_ == QLatin1String("menu")) pinMode_ = QStringLiteral("none");
+#endif
+    std::fprintf(stderr, "[melo] platform: %s, pin: %s, placement: %s\n",
+                 qPrintable(QGuiApplication::platformName()), qPrintable(pinMode_),
+                 canPlaceWindows_ ? "yes" : "no");
 #ifdef MELO_NATIVE_BLUR
     if (auto* wb = WaylandBlur::instance()) {
         lastBlur_ = wb->available();
@@ -89,6 +114,15 @@ WindowController::WindowController(QObject* parent) : QObject(parent) {
             const bool b = blurAvailable(), c = contrastAvailable();
             if (b != lastBlur_) { lastBlur_ = b; emit blurAvailableChanged(); }
             if (c != lastContrast_) { lastContrast_ = c; emit contrastAvailableChanged(); }
+        });
+    }
+#endif
+#if defined(MELO_X11) && defined(MELO_OWN_BLUR)
+    if (auto* xb = X11Blur::instance()) {
+        lastBlur_ = xb->available();
+        connect(xb, &X11Blur::availabilityChanged, this, [this] {
+            const bool b = blurAvailable();
+            if (b != lastBlur_) { lastBlur_ = b; emit blurAvailableChanged(); }
         });
     }
 #endif
@@ -159,7 +193,19 @@ WindowController::~WindowController() {
 
 void WindowController::setInputEnabled(QQuickWindow* win, bool enabled) {
     if (!win) return;
-    // Input back is the window's SHAPE (WindowShapeItem keeps it on the
+#ifdef MELO_X11
+    // setMask is the X bounding shape, which clips drawing too. KWin reveals a
+    // window by opacity in one script, and a window still shaped off-surface
+    // would show nothing until its mask call reached the X server.
+    if (isX11_ && kwinAvailable_) {
+        win->setProperty("meloInputOff", false);
+        win->setMask(meloWindowMask(win->property("meloShape").value<QRegion>()));
+        const QRegion none;
+        x11SetInputShape(win, enabled ? nullptr : &none);
+        return;
+    }
+#endif
+    // Input back is the window's shape (WindowShapeItem keeps it on the
     // window), not the whole rectangle, which a null QRegion is; a region
     // fully off the surface makes every pixel click-through.
     win->setProperty("meloInputOff", !enabled);
@@ -169,6 +215,15 @@ void WindowController::setInputEnabled(QQuickWindow* win, bool enabled) {
 
 void WindowController::setInputRegion(QQuickWindow* win, int x, int y, int w, int h) {
     if (!win) return;
+#ifdef MELO_X11
+    if (isX11_ && kwinAvailable_) {   // see setInputEnabled
+        win->setProperty("meloInputOff", false);
+        win->setMask(meloWindowMask(win->property("meloShape").value<QRegion>()));
+        const QRegion r(x, y, w, h);
+        x11SetInputShape(win, &r);
+        return;
+    }
+#endif
     // a region of the caller's own, which a shape change must not replace
     win->setProperty("meloInputOff", true);
     win->setMask(QRegion(x, y, w, h));
@@ -178,7 +233,7 @@ void WindowController::setInputRegion(QQuickWindow* win, int x, int y, int w, in
 // instead of frosting the square area behind them. r<=0 -> plain rect.
 // Only setBlurRegion calls this, and only on the two paths that have a
 // compositor to call — the stub build below has neither.
-#if defined(MELO_NATIVE_BLUR) || defined(HAVE_KWINDOWSYSTEM)
+#if defined(MELO_OWN_BLUR) || defined(HAVE_KWINDOWSYSTEM)
 static QRegion roundedRegion(int x, int y, int w, int h, int r) {
     if (r <= 0) return QRegion(x, y, w, h);
     r = qMin(r, qMin(w, h) / 2);
@@ -192,25 +247,39 @@ static QRegion roundedRegion(int x, int y, int w, int h, int r) {
     return reg;
 }
 #endif
-#ifdef MELO_NATIVE_BLUR
+#ifdef MELO_OWN_BLUR
+// Wayland first (a MELO_NATIVE_BLUR build), then the X11 property (MELO_X11);
+// each instance() is null off its platform.
 void WindowController::setBlurBehind(QQuickWindow* win, bool on) {
-    auto* wb = WaylandBlur::instance();
-    if (!wb || !win) return;
+    if (!win) return;
     // An empty region means the whole surface and follows every resize by itself.
     // A rounded region would need re-cutting on every resize, committed on a
     // frame, to keep blur off 3.4 px² per corner at a 4px radius, which the
     // window paints its own rounded background over anyway. A shaped window is the
     // exception: WindowShapeItem re-cuts "meloShape" on every resize and
-    // WaylandBlur re-sends it.
+    // the backend re-sends it.
     const QRegion shape = win->property("meloShape").value<QRegion>();
-    wb->setBlur(win, on, shape, true);
+#ifdef MELO_NATIVE_BLUR
+    if (auto* wb = WaylandBlur::instance()) { wb->setBlur(win, on, shape, true); return; }
+#endif
+#ifdef MELO_X11
+    if (auto* xb = X11Blur::instance()) xb->setBlur(win, on, shape, true);
+#endif
 }
 void WindowController::setBlurRegion(QQuickWindow* win, int x, int y, int w, int h) {
-    auto* wb = WaylandBlur::instance();
-    if (wb && win) wb->setBlur(win, true, roundedRegion(x, y, w, h, blurRadius_));
+    if (!win) return;
+    const QRegion r = roundedRegion(x, y, w, h, blurRadius_);
+#ifdef MELO_NATIVE_BLUR
+    if (auto* wb = WaylandBlur::instance()) { wb->setBlur(win, true, r); return; }
+#endif
+#ifdef MELO_X11
+    if (auto* xb = X11Blur::instance()) xb->setBlur(win, true, r);
+#endif
 }
+// Contrast is Wayland-only here: KWin 6.6 and older, through its own protocol.
 void WindowController::setBackgroundContrast(QQuickWindow* win, bool on,
                                              double contrast, double saturation) {
+#ifdef MELO_NATIVE_BLUR
     auto* wb = WaylandBlur::instance();
     if (!wb || !win) return;
     // Neutral values send no contrast object: KWin treats its mere existence as
@@ -218,17 +287,27 @@ void WindowController::setBackgroundContrast(QQuickWindow* win, bool on,
     // saturation for melo's window alone.
     const bool neutral = qFuzzyCompare(contrast, 1.0) && qFuzzyCompare(saturation, 1.0);
     wb->setContrast(win, on && !neutral, contrast, saturation, QRegion());
+#else
+    Q_UNUSED(win) Q_UNUSED(on) Q_UNUSED(contrast) Q_UNUSED(saturation)
+#endif
 }
 bool WindowController::blurAvailable() const {
-    auto* wb = WaylandBlur::instance();
-    return wb && wb->available();
+#ifdef MELO_NATIVE_BLUR
+    if (auto* wb = WaylandBlur::instance()) return wb->available();
+#endif
+#ifdef MELO_X11
+    if (auto* xb = X11Blur::instance()) return xb->available();
+#endif
+    return false;
 }
-// The compositor advertised the global and we bound it: there is no better
-// evidence than that, and no D-Bus name to go looking for. The D-Bus answer
-// counts only where there is no Wayland connection to ask.
+// On Wayland the bound contrast global is the answer. The D-Bus effect list
+// counts only without a Wayland connection, and never on X11, where melo
+// sends no contrast.
 bool WindowController::contrastAvailable() const {
-    auto* wb = WaylandBlur::instance();
-    return wb ? wb->contrastAvailable() : contrastAvailable_;
+#ifdef MELO_NATIVE_BLUR
+    if (auto* wb = WaylandBlur::instance()) return wb->contrastAvailable();
+#endif
+    return isX11_ ? false : contrastAvailable_;
 }
 #elif defined(HAVE_KWINDOWSYSTEM)
 void WindowController::setBlurBehind(QQuickWindow* win, bool on) {
@@ -268,8 +347,8 @@ void WindowController::copyToClipboard(const QString& text) {
     if (auto* cb = QGuiApplication::clipboard()) cb->setText(text);
 }
 
-// Run a KWin script. Unique path AND unique name per call: KWin keys its
-// registry on the NAME (see kwinScriptName), so reusing one is a silent -1.
+// Run a KWin script. Unique path and unique name per call: KWin keys its
+// registry on the name (see kwinScriptName), so reusing one is a silent -1.
 static bool runKwinScript(const QString& body) {
     static int seq = 0;
     const QString path = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
@@ -295,15 +374,33 @@ static bool runKwinScript(const QString& body) {
     return ok;
 }
 
+// KWin units per Qt unit, as a JS expression. Wayland: both are logical
+// pixels. X11: KWin counts X pixels over its Xwayland scale (1 on Plasma X11),
+// Qt counts X pixels over its DPR from Xft.dpi, and they need not match (1.9
+// against 1.75 on a 1.9 output with Xft.dpi 168). Both span the same desktop,
+// so its width in each is the ratio. Every coordinate into or out of a script
+// goes through it, so melo sees Qt units only.
+static QString kwinScaleJs() {
+    if (QGuiApplication::platformName() != QLatin1String("xcb")) return QStringLiteral("1");
+    const QScreen* screen = QGuiApplication::primaryScreen();
+    const int qtW = screen ? screen->virtualSize().width() : 0;
+    if (qtW <= 0) return QStringLiteral("1");
+    return QStringLiteral("(workspace.virtualScreenSize.width / %1)").arg(qtW);
+}
+
+// Captions are the identity, so every melo window needs a title: X11 captions
+// an untitled one "melo" (Qt falls back to the application name), and KWin
+// then matches it as the main window.
 static QString findWindowsPrelude() {
     return QStringLiteral(
+        "const k = %2;\n"
         "let main = null, mini = null, mq = null;\n"
         "for (const w of workspace.windowList()) {\n"
         "  if (w.pid !== %1) continue;\n"
         "  if (w.caption === \"melo\") main = w;\n"
         "  else if (w.caption === \"melo-mini\") mini = w;\n"
         "  else if (w.caption === \"melo-mini-queue\") mq = w;\n"
-        "}\n").arg(QCoreApplication::applicationPid());
+        "}\n").arg(QString::number(QCoreApplication::applicationPid()), kwinScaleJs());
 }
 
 bool WindowController::alignForCollapse(int barHeight) {
@@ -311,7 +408,7 @@ bool WindowController::alignForCollapse(int barHeight) {
     return runKwinScript(findWindowsPrelude() + QStringLiteral(
         "if (main && mini) {\n"
         "  const g = main.frameGeometry;\n"
-        "  mini.frameGeometry = { x: g.x, y: g.y + g.height - %1, width: g.width, height: %1 };\n"
+        "  mini.frameGeometry = { x: g.x, y: g.y + g.height - %1 * k, width: g.width, height: %1 * k };\n"
         "}\n").arg(barHeight));
 }
 
@@ -320,12 +417,13 @@ bool WindowController::alignForExpand(int barHeight, int width) {
     // Whose width wins: the caller's, since QML may have just set a width
     // the compositor has not seen, and g.width would write the mini bar's
     // width back over it.
-    const QString w = width > 0 ? QString::number(width) : QStringLiteral("g.width");
+    const QString w = width > 0 ? QString::number(width) + QStringLiteral(" * k")
+                                : QStringLiteral("g.width");
     return runKwinScript(findWindowsPrelude() + QStringLiteral(
         "if (main && mini) {\n"
         "  const m = mini.frameGeometry;\n"
         "  const g = main.frameGeometry;\n"
-        "  main.frameGeometry = { x: m.x, y: m.y + %1 - g.height, width: %2, height: g.height };\n"
+        "  main.frameGeometry = { x: m.x, y: m.y + %1 * k - g.height, width: %2, height: g.height };\n"
         "}\n").arg(QString::number(barHeight), w));
 }
 
@@ -336,7 +434,7 @@ bool WindowController::setWindowOpacities(const QVariantList& windows) {
     if (!kwinAvailable_) return false;
     // caption -> opacity as a JSON object literal (valid JS, and it quotes
     // arbitrary plugin-supplied titles) — see the U+2028 note below for the
-    // one thing JSON does NOT do for us.
+    // one thing JSON does not do for us.
     QJsonObject want;
     for (const QVariant& v : windows) {
         const QVariantMap m = v.toMap();
@@ -344,9 +442,8 @@ bool WindowController::setWindowOpacities(const QVariantList& windows) {
         const QVariant op = m.value(QStringLiteral("opacity"));
         bool numeric = false;
         const double opacity = op.toDouble(&numeric);
-        // A malformed entry must NOT fall back to 0: that silently HIDES a
-        // window mid-swap, which is the artifact class this whole file exists
-        // to prevent. Drop the entry and leave the window's opacity alone.
+        // A malformed entry is dropped, not read as 0: 0 would hide the window
+        // mid-swap.
         if (title.isEmpty() || !numeric) continue;
         want.insert(title, qBound(0.0, opacity, 1.0));
     }
@@ -364,7 +461,7 @@ bool WindowController::setWindowOpacities(const QVariantList& windows) {
         "  if (w.pid !== %2) continue;\n"
         // hasOwnProperty, not `want[caption] !== undefined`: plain member
         // lookup walks the prototype chain, so a window captioned "toString"
-        // or "constructor" would be assigned a FUNCTION as its opacity.
+        // or "constructor" would be assigned a function as its opacity.
         "  if (!Object.prototype.hasOwnProperty.call(want, w.caption)) continue;\n"
         "  w.opacity = want[w.caption];\n"
         "}\n")
@@ -399,22 +496,54 @@ bool WindowController::moveWindows(const QVariantList& windows) {
 
     return runKwinScript(QStringLiteral(
         "const want = %1;\n"
+        "const k = %3;\n"
         "for (const w of workspace.windowList()) {\n"
         "  if (w.pid !== %2) continue;\n"
         "  if (!Object.prototype.hasOwnProperty.call(want, w.caption)) continue;\n"
         "  const p = want[w.caption];\n"
         "  const g = w.frameGeometry;\n"
-        "  w.frameGeometry = { x: p.x, y: p.y, width: g.width, height: g.height };\n"
+        "  w.frameGeometry = { x: p.x * k, y: p.y * k, width: g.width, height: g.height };\n"
         "}\n")
-        .arg(json, QString::number(QCoreApplication::applicationPid())));
+        .arg(json, QString::number(QCoreApplication::applicationPid()), kwinScaleJs()));
 }
 
 bool WindowController::setKeepAbove(bool on) {
-    if (!kwinAvailable_) return false;
+    if (pinMode_ == QLatin1String("flag")) {
+        // setFlag keeps FramelessWindowHint and the rest. Qt sends the
+        // _NET_WM_STATE change to a mapped window at once, and builds the new
+        // X window after a hide/show with the flag already set.
+        bool any = false;
+        for (QWindow* w : QGuiApplication::topLevelWindows()) {
+            const QString t = w->title();
+            if (t != QLatin1String("melo") && t != QLatin1String("melo-mini")) continue;
+            w->setFlag(Qt::WindowStaysOnTopHint, on);
+            any = true;
+        }
+        return any;
+    }
+    if (pinMode_ != QLatin1String("kwin") || !kwinAvailable_) return false;
     return runKwinScript(findWindowsPrelude() + QStringLiteral(
         "if (main) main.keepAbove = %1;\n"
         "if (mini) mini.keepAbove = %1;\n").arg(on ? "true" : "false"));
 }
+
+#ifdef MELO_NATIVE_BLUR
+bool WindowController::showWindowMenu(QQuickWindow* win, int x, int y) {
+    if (pinMode_ != QLatin1String("menu") || !win || !isWayland_) return false;
+    auto* ni = QGuiApplication::platformNativeInterface();
+    if (!ni) return false;
+    auto* top = static_cast<xdg_toplevel*>(ni->nativeResourceForWindow("xdg_toplevel", win));
+    auto* seat = static_cast<wl_seat*>(ni->nativeResourceForIntegration("wl_seat"));
+    auto* display = static_cast<wl_display*>(ni->nativeResourceForIntegration("wl_display"));
+    if (!top || !seat) return false;
+    const auto serial = uint32_t(quintptr(ni->nativeResourceForIntegration("serial")));
+    xdg_toplevel_show_window_menu(top, seat, serial, x, y);
+    if (display) wl_display_flush(display);
+    return true;
+}
+#else
+bool WindowController::showWindowMenu(QQuickWindow*, int, int) { return false; }
+#endif
 
 bool WindowController::setMiniQueueGlue(bool on) {
     if (!kwinAvailable_) return false;
@@ -443,7 +572,7 @@ bool WindowController::setMiniQueueGlue(bool on) {
     f.write((findWindowsPrelude() + QStringLiteral(
         "function glue() {\n"
         "  if (!mini || !main) return;\n"
-        "  if (mini.resize) return;   // never reposition per RESIZE frame\n"
+        "  if (mini.resize) return;   // never reposition per resize frame\n"
         "  const m = mini.frameGeometry;\n"
         "  const g = main.frameGeometry;\n"
         "  const nx = m.x, ny = m.y + m.height - g.height;\n"
@@ -469,7 +598,8 @@ bool WindowController::setMiniQueueGlue(bool on) {
     return true;
 }
 
-QString WindowController::pluginWindowGlueScript(const QVariantList& input, qint64 pid) {
+QString WindowController::pluginWindowGlueScript(const QVariantList& input, qint64 pid,
+                                                 const QString& scale) {
     QJsonArray links;
     for (const QVariant& v : input) {
         const QVariantMap m = v.toMap();
@@ -496,6 +626,7 @@ QString WindowController::pluginWindowGlueScript(const QVariantList& input, qint
     // after its ordinary snap pass observes that it is no longer adjacent.
     return QStringLiteral(
         "const links = %1;\n"
+        "const k = %3;\n"
         "const dockWins = Object.create(null);\n"
         "const armed = Object.create(null);\n"
         "const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);\n"
@@ -516,7 +647,7 @@ QString WindowController::pluginWindowGlueScript(const QVariantList& input, qint
         "    if (link.leader !== caption || !own(dockWins, link.follower)) continue;\n"
         "    const follower = dockWins[link.follower];\n"
         "    const f = follower.frameGeometry;\n"
-        "    const nx = g.x + link.dx, ny = g.y + link.dy;\n"
+        "    const nx = g.x + link.dx * k, ny = g.y + link.dy * k;\n"
         "    if (f.x === nx && f.y === ny) continue;\n"
         "    follower.frameGeometry = { x: nx, y: ny, width: f.width, height: f.height };\n"
         "  }\n"
@@ -543,7 +674,7 @@ QString WindowController::pluginWindowGlueScript(const QVariantList& input, qint
         "};\n"
         "for (const w of workspace.windowList()) arm(w);\n"
         "workspace.windowAdded.connect(arm);\n")
-        .arg(json, QString::number(pid));
+        .arg(json, QString::number(pid), scale);
 }
 
 void WindowController::unloadPluginWindowGlue() {
@@ -561,7 +692,8 @@ void WindowController::unloadPluginWindowGlue() {
 
 bool WindowController::setPluginWindowGlue(const QVariantList& links) {
     if (!kwinAvailable_) return false;
-    const QString body = pluginWindowGlueScript(links, QCoreApplication::applicationPid());
+    const QString body = pluginWindowGlueScript(links, QCoreApplication::applicationPid(),
+                                                kwinScaleJs());
     if (pluginGlueScriptId_ >= 0 && body == pluginGlueBody_) return true;
     unloadPluginWindowGlue();
     if (body.isEmpty()) return true;
@@ -617,21 +749,23 @@ void WindowController::watchMainGeometry() {
     // never rescans the prelude's pid. Armed by windowAdded as well as the walk:
     // on Wayland melo's window often is not in windowList() yet at startup.
     f.write((QStringLiteral(
+        "const k = %3;\n"
         "let main = null, mini = null;\n"
         "const report = () => {\n"
         "  if (!main) return;\n"
         "  const g = main.frameGeometry;\n"
+        "  const q = (v) => Math.round(v / k);\n"
         "  const c = workspace.cursorPos;\n"
         "  const inR = (r) => c.x >= r.x && c.x <= r.x + r.width\n"
         "                  && c.y >= r.y && c.y <= r.y + r.height;\n"
         "  const inside = inR(g) || (mini && inR(mini.frameGeometry)) ? 1 : 0;\n"
         "  callDBus(\"%2\", \"/melo/geometry\",\n"
         "           \"com.melo.Geometry\", \"Report\",\n"
-        "           g.x + \",\" + g.y + \",\" + g.width + \",\" + g.height + \",\" + inside);\n"
+        "           q(g.x) + \",\" + q(g.y) + \",\" + q(g.width) + \",\" + q(g.height) + \",\" + inside);\n"
         "};\n"
         "const started = (w) => {\n"
         // Which one it is: KWin sets `resize` on the window for the length
-        // of an interactive RESIZE and leaves it false for a move, which
+        // of an interactive resize and leaves it false for a move, which
         // setMiniQueueGlue's script relies on too.
         "  callDBus(\"%2\", \"/melo/geometry\",\n"
         "           \"com.melo.Geometry\", \"Report\",\n"
@@ -645,13 +779,14 @@ void WindowController::watchMainGeometry() {
         "  else return;\n"
         "  w.interactiveMoveResizeFinished.connect(report);\n"
         // The handler is shared by melo and the compact bar, so it is told
-        // WHICH window raised it rather than assuming main.
+        // which window raised it rather than assuming main.
         "  w.interactiveMoveResizeStarted.connect(() => started(w));\n"
         "  report();\n"
         "};\n"
         "for (const w of workspace.windowList()) arm(w);\n"
         "workspace.windowAdded.connect(arm);\n")
-        .arg(QString::number(QCoreApplication::applicationPid()), geoService_)).toUtf8());
+        .arg(QString::number(QCoreApplication::applicationPid()), geoService_,
+             kwinScaleJs())).toUtf8());
     f.close();
 
     const KWinObject scripting("/Scripting", "org.kde.kwin.Scripting");
@@ -674,13 +809,14 @@ bool WindowController::reportMainGeometry() {
     return runKwinScript(findWindowsPrelude() + QStringLiteral(
         "if (main) {\n"
         "  const g = main.frameGeometry;\n"
+        "  const q = (v) => Math.round(v / k);\n"
         "  const c = workspace.cursorPos;\n"
         "  const inR = (r) => c.x >= r.x && c.x <= r.x + r.width\n"
         "                  && c.y >= r.y && c.y <= r.y + r.height;\n"
         "  const inside = inR(g) || (mini && inR(mini.frameGeometry)) ? 1 : 0;\n"
         "  callDBus(\"%1\", \"/melo/geometry\",\n"
         "           \"com.melo.Geometry\", \"Report\",\n"
-        "           g.x + \",\" + g.y + \",\" + g.width + \",\" + g.height + \",\" + inside);\n"
+        "           q(g.x) + \",\" + q(g.y) + \",\" + q(g.width) + \",\" + q(g.height) + \",\" + inside);\n"
         "}\n").arg(geoService_));
 }
 
@@ -689,7 +825,8 @@ bool WindowController::reportMainGeometry() {
 // arg(). Also armed by windowAdded: on Wayland a just-mapped window may not be
 // in windowList() yet.
 QString WindowController::windowGeometryScript(const QStringList& captions,
-                                               qint64 pid, const QString& service) {
+                                               qint64 pid, const QString& service,
+                                               const QString& scale) {
     QJsonObject want;
     for (const QString& c : captions) if (!c.isEmpty()) want.insert(c, 1);
     QString json = QString::fromUtf8(QJsonDocument(want).toJson(QJsonDocument::Compact));
@@ -698,16 +835,19 @@ QString WindowController::windowGeometryScript(const QStringList& captions,
 
     return QStringLiteral(
         "const want = %1;\n"
-        // ONE STRING, never five arguments: callDBus marshals a JS number as a
-        // DBus double, which silently fails to match an int slot (the note
-        // above GeometryReceiver in WindowController.h). The caption goes FIRST and ReportWindow takes
-        // the last four fields as the numbers, so a comma in it survives.
+        "const k = %4;\n"
+        // One string, never five arguments: callDBus marshals a JS number as a
+        // D-Bus double, which silently fails to match an int slot (see
+        // GeometryReceiver in WindowController.h). The caption goes first and
+        // ReportWindow takes the last four fields as the numbers, so a comma
+        // in it survives.
         "const report = (w) => {\n"
         "  const g = w.frameGeometry;\n"
+        "  const q = (v) => Math.round(v / k);\n"
         "  callDBus(\"%3\", \"/melo/geometry\",\n"
         "           \"com.melo.Geometry\", \"ReportWindow\",\n"
-        "           w.caption + \",\" + g.x + \",\" + g.y + \",\"\n"
-        "                     + g.width + \",\" + g.height);\n"
+        "           w.caption + \",\" + q(g.x) + \",\" + q(g.y) + \",\"\n"
+        "                     + q(g.width) + \",\" + q(g.height));\n"
         "};\n"
         "const arm = (w) => {\n"
         "  if (w.pid !== %2) return;\n"
@@ -715,12 +855,12 @@ QString WindowController::windowGeometryScript(const QStringList& captions,
         "  w.interactiveMoveResizeFinished.connect(() => report(w));\n"
         // Once now, so the host learns where the compositor actually put a
         // window rather than only where melo asked for it to go. The host
-        // treats a window's FIRST report as adoption, not as a drag.
+        // treats a window's first report as adoption, not as a drag.
         "  report(w);\n"
         "};\n"
         "for (const w of workspace.windowList()) arm(w);\n"
         "workspace.windowAdded.connect(arm);\n")
-        .arg(json, QString::number(pid), service);
+        .arg(json, QString::number(pid), service, scale);
 }
 
 void WindowController::unloadWindowWatcher() {
@@ -728,7 +868,7 @@ void WindowController::unloadWindowWatcher() {
     const KWinObject scripting("/Scripting", "org.kde.kwin.Scripting");
     const KWinObject runner(QStringLiteral("/Scripting/Script%1").arg(winWatchScriptId_), "org.kde.kwin.Script");
     runner.call("stop");
-    // BY NAME, never by path — see kwinScriptName(): unloadScript(path) matches
+    // By name, never by path (see kwinScriptName()): unloadScript(path) matches
     // nothing, the script stays loaded forever, and every later loadScript in
     // this session returns -1.
     scripting.call("unloadScript", winWatchScriptName_);
@@ -773,7 +913,7 @@ bool WindowController::setPluginWindowsAlwaysUp(const QStringList& captions, boo
         const KWinObject scripting("/Scripting", "org.kde.kwin.Scripting");
         const KWinObject runner(QStringLiteral("/Scripting/Script%1").arg(alwaysUpScriptId_), "org.kde.kwin.Script");
         runner.call("stop");
-        scripting.call("unloadScript", alwaysUpScriptName_);   // by NAME; see kwinScriptName()
+        scripting.call("unloadScript", alwaysUpScriptName_);   // by name; see kwinScriptName()
         QFile::remove(alwaysUpScriptPath_);
         alwaysUpScriptId_ = -1;
         alwaysUpScriptName_.clear();
@@ -827,7 +967,7 @@ bool WindowController::setPluginWindowsAlwaysUp(const QStringList& captions, boo
 bool WindowController::watchWindowGeometry(const QStringList& captions) {
     if (!kwinAvailable_) return false;
     const QString body = windowGeometryScript(captions, QCoreApplication::applicationPid(),
-                                              geoService_);
+                                              geoService_, kwinScaleJs());
     if (winWatchScriptId_ >= 0 && body == winWatchBody_) return true;   // same set already watched
     unloadWindowWatcher();
     QStringList wanted = captions;
@@ -878,7 +1018,7 @@ bool WindowController::applyMainPosition(int x, int y) {
         "  let a = null;\n"
         "  try { a = workspace.clientArea(KWin.MaximizeArea, main); } catch (e) { a = null; }\n"
         "  if (!a && main.output) a = main.output.geometry;\n"
-        "  let nx = %1, ny = %2;\n"
+        "  let nx = %1 * k, ny = %2 * k;\n"
         "  if (a && a.width > 0 && a.height > 0) {\n"
         "    nx = Math.max(a.x, Math.min(nx, a.x + a.width - g.width));\n"
         "    ny = Math.max(a.y, Math.min(ny, a.y + a.height - g.height));\n"
@@ -890,6 +1030,6 @@ bool WindowController::applyMainPosition(int x, int y) {
 bool WindowController::applyMainGeometry(int x, int y, int w, int h) {
     if (!kwinAvailable_) return false;
     return runKwinScript(findWindowsPrelude() + QStringLiteral(
-        "if (main) main.frameGeometry = { x: %1, y: %2, width: %3, height: %4 };\n")
+        "if (main) main.frameGeometry = { x: %1 * k, y: %2 * k, width: %3 * k, height: %4 * k };\n")
         .arg(x).arg(y).arg(w).arg(h));
 }
