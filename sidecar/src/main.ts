@@ -17,7 +17,7 @@ import { ensureYtdlp, maybeUpdateYtdlp, downloadYtdlp } from "./ytdlp";
 import { warmStreamSession } from "./streams";
 import { warmPoTokenSession } from "./potoken";
 
-const SIDECAR_VERSION = "0.1.0";
+const SIDECAR_VERSION = "0.2.0";
 
 let initialized = false;
 
