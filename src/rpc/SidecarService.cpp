@@ -21,6 +21,8 @@ SidecarService::SidecarService(QObject* parent)
     // The sidecar died. It is not ready again until initialize() has answered,
     // which is what sets ready_ back to true.
     connect(proc_, &SidecarProcess::exited, this, [this] {
+        // a download dies with its process; a restart that needs one reports it again
+        if (ytdlpState_ == QLatin1String("downloading")) setYtdlpStatus({}, 0, 0);
         if (!ready_) return;
         ready_ = false;
         emit readyChanged();
@@ -40,7 +42,24 @@ SidecarService::SidecarService(QObject* parent)
             emit pluginsChanged(params.value("plugins").toArray());
         else if (method == "ytdlp/stale")
             emit ytdlpStale(params.value("message").toString());
+        else if (method == "ytdlp/status")
+            setYtdlpStatus(params.value("state").toString(),
+                           params.value("received").toInteger(), params.value("total").toInteger());
     });
+}
+
+void SidecarService::setYtdlpStatus(const QString& state, qint64 received, qint64 total) {
+    if (received != ytdlpReceived_ || total != ytdlpTotal_) {
+        ytdlpReceived_ = received;
+        ytdlpTotal_ = total;
+        emit ytdlpProgressChanged();
+    }
+    if (state != ytdlpState_) { ytdlpState_ = state; emit ytdlpStateChanged(); }
+}
+
+int SidecarService::ytdlpTimeoutMs(int normalMs) const {
+    // the sidecar gives the binary 300 s and each SHA2-256SUMS file 30 s
+    return ytdlpState_ == QLatin1String("downloading") ? normalMs + 330000 : normalMs;
 }
 
 void SidecarService::start() {
@@ -55,14 +74,15 @@ void SidecarService::initialize() {
     const QString dataDir = meloConfigDir();
     const QString musicDir = QStandardPaths::writableLocation(QStandardPaths::MusicLocation);
 #ifdef Q_OS_WIN
-    // user-writable self-updating copy under the config dir; seed from the
-    // yt-dlp.exe bundled beside melo.exe (CI deploy), else PATH
+    // user-writable self-updating copy under the config dir, seeded from the
+    // yt-dlp.exe bundled beside melo.exe (CI deploy)
     const QString ytdlp = meloConfigDir() + "/bin/yt-dlp.exe";
-    QString ytdlpSeed = QCoreApplication::applicationDirPath() + "/yt-dlp.exe";
-    if (!QFileInfo::exists(ytdlpSeed)) ytdlpSeed = QStandardPaths::findExecutable("yt-dlp");
+    const QString ytdlpSeed = QCoreApplication::applicationDirPath() + "/yt-dlp.exe";
 #else
+    // Never seeded from PATH: a distro's yt-dlp can be months old and would
+    // count as fresh for a day. The sidecar downloads the signed release.
     const QString ytdlp = QDir::homePath() + "/.local/share/melo/bin/yt-dlp";
-    const QString ytdlpSeed = QStandardPaths::findExecutable("yt-dlp");   // seed from PATH if present
+    const QString ytdlpSeed;
 #endif
 
     // The silence scan's ffmpeg: beside the binary in an install or AppImage,

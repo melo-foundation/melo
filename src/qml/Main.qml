@@ -1146,6 +1146,37 @@ Window {
     Binding { target: playerBar; property: "docOverride"
               value: barArrange.item ? barArrange.item.previewDoc : null
               when: Theme.arranging && barArrange.item !== null }
+    // The first-run yt-dlp download, over every page: any play that needs
+    // yt-dlp waits on it. Sits clear of the bar's volume toast.
+    Surface {
+        id: ytdlpToast
+        readonly property real mb: 1048576
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: playerBar.settledHeight + root.barInB + root.barRingTop + root.upperFoot
+                              + Theme.gap(44)
+        width: ytdlpToastText.implicitWidth + Theme.inset("toast", "left") + Theme.inset("toast", "right")
+        // 16 is the row the words sit in
+        height: Theme.inset("toast", "top") + 16 + Theme.inset("toast", "bottom")
+        radius: Theme.radiusMd
+        role: "toast"
+        visible: sidecar.ytdlpState === "downloading" && root.fullBarVisible
+        opacity: root.fullContentOpacity
+        z: 12
+        InkText {
+            id: ytdlpToastText
+            x: Theme.inset("toast", "left")
+            y: Theme.inset("toast", "top") + (16 - implicitHeight) / 2
+            ink: "text"
+            font { pixelSize: Theme.fs(12); family: Theme.fontFamily; features: { "tnum": 1 } }
+            text: {
+                const got = sidecar.ytdlpReceived, total = sidecar.ytdlpTotal
+                if (got <= 0) return "Downloading yt-dlp"
+                const size = (got / ytdlpToast.mb).toFixed(1)
+                return "Downloading yt-dlp  " + (total > 0 ? size + " / " + (total / ytdlpToast.mb).toFixed(1) : size) + " MB"
+            }
+        }
+    }
     function startArrange(slot) { Theme.arrangeSlot = slot || "barMain"; Theme.arranging = true }
     // the view the bar draws for: the now-playing view once its page has
     // been drawn — Qt's frameSwapped after it turned visible — any other at once

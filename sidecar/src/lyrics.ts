@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { dataDir } from "./env";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { ytdlpPath } from "./env";
+import { ytdlpReady } from "./ytdlp";
 import { localePref } from "./settings";
 import { cookieArgs } from "./streams";
 import { searchableTitle } from "./metadata";
@@ -85,7 +85,7 @@ async function fromCaptions(videoId: string, allowAuto: boolean): Promise<Lyrics
     for (const auto of allowAuto ? [false, true] : [false]) {
       try {
         await execFileAsync(
-          ytdlpPath(),
+          await ytdlpReady(),
           [...(await cookieArgs()), "--no-warnings", "--skip-download", "--no-playlist",
            auto ? "--write-auto-subs" : "--write-subs",
            "--sub-langs", langs, "--sub-format", "json3",

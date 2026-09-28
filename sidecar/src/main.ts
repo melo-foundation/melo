@@ -30,9 +30,7 @@ method("initialize", (params: SidecarEnv & { ytdlpSeedPath?: string }) => {
 
   const haveYtdlp = ensureYtdlp(params.ytdlpSeedPath);
   if (haveYtdlp) void maybeUpdateYtdlp();
-  // packaged installs ship without a yt-dlp seed (keeps the download small) —
-  // fetch it in the background; early stream requests fail gracefully until
-  // it lands
+  // the packages ship without yt-dlp; requests that need it wait for this
   else void downloadYtdlp();
   warmStreamSession();   // player fetch + decipher prep before the first click
   warmPoTokenSession();  // ~1.5s of BotGuard setup, off the first play's path

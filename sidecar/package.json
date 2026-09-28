@@ -13,6 +13,7 @@
   "dependencies": {
     "bgutils-js": "^4.0.3",
     "jsdom": "^30.0.1",
+    "openpgp": "^6.3.2",
     "youtubei.js": "^17.2.0"
   },
   "devDependencies": {

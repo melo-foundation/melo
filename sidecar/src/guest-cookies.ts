@@ -4,7 +4,8 @@ import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, renameS
 import { execFile, spawn, type ChildProcess } from "child_process";
 import { promisify } from "util";
 import { tmpdir } from "os";
-import { YTDLP, USER_AGENT } from "./platform";
+import { USER_AGENT } from "./platform";
+import { ytdlpReady } from "./ytdlp";
 
 const execFileAsync = promisify(execFile);
 
@@ -400,7 +401,7 @@ export async function dumpBrowserCookies(browser: string): Promise<GuestCookie[]
     let exitError: any = null;
     try {
       await execFileAsync(
-        YTDLP(),
+        await ytdlpReady(),
         [
           "--cookies-from-browser", browser,
           "--cookies", file,

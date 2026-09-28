@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { spawn } from "child_process";
-import { mkdtempSync } from "fs";
+import { mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -24,7 +24,9 @@ function talk(lines: object[], timeoutMs = 8000): Promise<any[]> {
       while ((nl = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, nl);
         buf = buf.slice(nl + 1);
-        if (line.trim()) out.push(JSON.parse(line));
+        if (!line.trim()) continue;
+        const msg = JSON.parse(line);
+        if ("id" in msg) out.push(msg);   // replies only; notifications can arrive first
       }
       if (out.length >= lines.filter((l: any) => l.id !== undefined).length) {
         clearTimeout(timer);
@@ -37,12 +39,19 @@ function talk(lines: object[], timeoutMs = 8000): Promise<any[]> {
   });
 }
 
-const initMsg = () => ({
+// present, so initialize starts no download
+function fakeYtdlp(): string {
+  const p = join(mkdtempSync(join(tmpdir(), "melo-test-")), "yt-dlp");
+  writeFileSync(p, "#!/bin/sh\n");
+  return p;
+}
+
+const initMsg = (ytdlpPath = fakeYtdlp()) => ({
   jsonrpc: "2.0", id: 1, method: "initialize",
   params: {
     dataDir: mkdtempSync(join(tmpdir(), "melo-test-")),
     musicDir: tmpdir(),
-    ytdlpPath: "/nonexistent/yt-dlp",
+    ytdlpPath,
     osPrefersDark: true,
     appVersion: "test",
   },
@@ -50,7 +59,7 @@ const initMsg = () => ({
 
 describe("sidecar rpc", () => {
   it("responds to initialize with version and capabilities", async () => {
-    const out = await talk([initMsg()]);
+    const out = await talk([initMsg("/nonexistent/yt-dlp")]);
     expect(out[0].id).toBe(1);
     expect(out[0].result.sidecarVersion).toBeTruthy();
     expect(out[0].result.ytdlpAvailable).toBe(false);   // nonexistent path, no seed

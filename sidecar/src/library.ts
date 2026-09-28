@@ -7,7 +7,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
-import { YTDLP } from "./platform";
+import { ytdlpReady } from "./ytdlp";
 import { type TrackMetadata } from "./metadata";
 
 const execFileAsync = promisify(execFile);
@@ -205,7 +205,7 @@ async function doDownload(videoId: string, cookieArgsFn: () => Promise<string[]>
     const cArgs = await cookieArgsFn();
     const outputTemplate = join(downloadPath, `${videoId}.%(ext)s`);
     await execFileAsync(
-      YTDLP(),
+      await ytdlpReady(),
       [
         ...cArgs,
         "-f", "bestaudio/best",

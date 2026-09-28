@@ -198,7 +198,7 @@ void PlaybackCoordinator::playTrack(const Track& t, int forceCrossfade, PlayInte
     const bool pluginSource = !t.source.isEmpty() && t.source != "youtube";
     auto* c = pluginSource
         ? sidecar_->call("plugin/resolveStream", {{"sourceId", t.source}, {"trackId", t.id}}, 30000)
-        : sidecar_->call("yt/getStream", {{"videoId", t.id}}, 60000);
+        : sidecar_->call("yt/getStream", {{"videoId", t.id}}, sidecar_->ytdlpTimeoutMs(60000));
     connect(c, &RpcCall::finished, this, [this, t, gen, wantCrossfade, intent](const QJsonValue& r) {
         onStreamResolved(t, gen, r.toObject(), wantCrossfade, intent);
     });
@@ -897,7 +897,7 @@ void PlaybackCoordinator::requestPrefetch() {
     const bool pluginSource = !next.source.isEmpty() && next.source != "youtube";
     auto* c = pluginSource
         ? sidecar_->call("plugin/resolveStream", {{"sourceId", next.source}, {"trackId", next.id}}, 30000)
-        : sidecar_->call("yt/getStream", {{"videoId", next.id}}, 60000);
+        : sidecar_->call("yt/getStream", {{"videoId", next.id}}, sidecar_->ytdlpTimeoutMs(60000));
     connect(c, &RpcCall::finished, this, [this, next](const QJsonValue& r) {
         const QJsonObject o = r.toObject();
         // NB: prefetching_ stays set until prefetched_ is assigned. Clearing

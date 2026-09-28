@@ -78,6 +78,7 @@ Bundled into `melo-sidecar.mjs`:
 | fflate | MIT |
 | meriyah | ISC |
 | bgutils-js | MIT |
+| openpgp 6.3.2 | LGPL-3.0-or-later |
 
 Shipped as `share/melo/node_modules/`, each package with its own licence file:
 jsdom and its dependencies.

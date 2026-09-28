@@ -1,5 +1,5 @@
 // Stream/video/playlist/radio functions. Settings come from loadSettings(),
-// the yt-dlp path from YTDLP(), and yt-dlp runs with `--js-runtimes node`
+// the yt-dlp path from ytdlpReady(), and yt-dlp runs with `--js-runtimes node`
 // (YouTube's SABR/PO-token era requires a JS runtime; we ship Node anyway).
 
 import { execFile } from "child_process";
@@ -9,7 +9,6 @@ import { randomUUID } from "node:crypto";
 import { join } from "path";
 import vm from "node:vm";
 import type { Innertube } from "youtubei.js";
-import { YTDLP } from "./platform";
 import { loadSettings, localePref } from "./settings";
 import { dataDir } from "./env";
 import {
@@ -21,7 +20,7 @@ import {
 import { getDownloadedUrl, getTrackMetadata } from "./library";
 import { resolveCookies } from "./innertube";
 import { relayUrl } from "./stream-relay";
-import { looksStale, ytdlpChannel } from "./ytdlp";
+import { looksStale, ytdlpChannel, ytdlpReady } from "./ytdlp";
 import { notify } from "./rpc";
 import { mintPoToken, poTokenSession, type PoToken } from "./potoken";
 
@@ -691,7 +690,7 @@ async function resolveWithClient(
   pot: PoToken | null,
 ): Promise<CachedStream> {
   const { stdout } = await execFileAsync(
-    YTDLP(),
+    await ytdlpReady(),
     [...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
      ...YTDLP_COMMON, "-f", "bestaudio/best", "-j",
      `https://www.youtube.com/watch?v=${videoId}`],
@@ -761,11 +760,19 @@ export async function runYtdlpStream(videoId: string): Promise<StreamResult> {
       return toStreamResult(resolved);
     } catch (err) {
       lastErr = err;
-      const msg = String((err as { stderr?: string })?.stderr || err).split("\n")[0];
+      const msg = ytdlpReason(String((err as { stderr?: string })?.stderr || err));
       console.error(`[streams] ${client ?? "default"} failed for ${videoId}: ${msg}`);
     }
   }
   throw lastErr;
+}
+
+// yt-dlp's reason, without its "ERROR: [youtube] id: " prefix. stderr can open
+// with a blank line or WARNINGs, so the first line is often not it.
+export function ytdlpReason(text: string): string {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const err = lines.find((l) => l.startsWith("ERROR:")) ?? lines[0] ?? "";
+  return err.replace(/^ERROR:\s*(\[[^\]]+\]\s*[\w-]+:\s*)?/, "");
 }
 
 // Report a stale-looking failure to the UI at most once per session: the fix
@@ -825,11 +832,11 @@ export async function fetchStreamUrl(videoId: string): Promise<StreamResult | St
         return await runYtdlpStream(videoId);   // one retry on transient network errors
       } catch (retryErr: any) {
         const retryMsg = retryErr?.stderr || String(retryErr);
-        const clean = retryMsg.replace(/^ERROR:\s*\[youtube\]\s*\S+:\s*/i, "").split("\n")[0];
+        const clean = ytdlpReason(retryMsg);
         return { ok: false, error: clean || "Network error" };
       }
     }
-    const clean = msg.replace(/^ERROR:\s*\[youtube\]\s*\S+:\s*/i, "").split("\n")[0];
+    const clean = ytdlpReason(msg);
     maybeReportStale(msg);
     return { ok: false, error: clean || "Failed to get stream" };
   }
@@ -838,7 +845,7 @@ export async function fetchStreamUrl(videoId: string): Promise<StreamResult | St
 /** Homepage recommended feed via yt-dlp flat-playlist. */
 export async function fetchRecommendedTracks(count: number = 30): Promise<FlatTrack[]> {
   const { stdout } = await execFileAsync(
-    YTDLP(),
+    await ytdlpReady(),
     [...(await cookieArgs()), "--flat-playlist", "-j", "--no-warnings", "--no-cache-dir",
      "--playlist-items", `1:${count}`, "https://www.youtube.com/feed/recommended"],
     { timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
@@ -916,7 +923,7 @@ export async function fetchPlaylistTracks(playlistId: string) {
       url = `https://music.youtube.com/playlist?list=${playlistId}`;
     }
     const { stdout } = await execFileAsync(
-      YTDLP(),
+      await ytdlpReady(),
       [...(await cookieArgs()), ...YTDLP_COMMON, "--flat-playlist", "-j",
        ...(isMix ? ["--playlist-items", "1:50"] : []), url],
       { timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
@@ -974,7 +981,7 @@ async function fetchRadioTracks(
       : `https://www.youtube.com/playlist?list=${playlistId}`;
   }
   const { stdout } = await execFileAsync(
-    YTDLP(),
+    await ytdlpReady(),
     [...(await cookieArgs()), ...YTDLP_COMMON, "--flat-playlist", "-j",
      "--no-cache-dir", "--playlist-items", "1:50", url],
     { timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
