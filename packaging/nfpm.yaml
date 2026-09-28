@@ -21,6 +21,8 @@ contents:
     dst: /usr/share/applications/melo.desktop
   - src: ./resources/melo.png
     dst: /usr/share/icons/hicolor/512x512/apps/melo.png
+  - src: ./resources/io.github.melo_foundation.melo.metainfo.xml
+    dst: /usr/share/metainfo/io.github.melo_foundation.melo.metainfo.xml
   # GPL-3.0 s4/s5: the licence is conveyed with the work. Debian expects it at
   # this path and rpmlint looks for a %license file; one path satisfies both
   # since the packages share this definition.
@@ -28,6 +30,21 @@ contents:
     dst: /usr/share/doc/melo/copyright
   - src: ./pkgroot/share/melo/THIRD-PARTY.md
     dst: /usr/share/doc/melo/THIRD-PARTY.md
+  # Node 22 (official build): Debian and Ubuntu ship an older Node than the
+  # sidecar needs, and this keeps deb and rpm on the one tested build. Arch
+  # depends on its own, which is always newer.
+  - src: ./pkgnode/node
+    dst: /usr/lib/melo/bin/node
+    packager: deb
+  - src: ./pkgnode/node
+    dst: /usr/lib/melo/bin/node
+    packager: rpm
+  - src: ./pkgnode/share/
+    dst: /usr/lib/melo/share/melo/
+    packager: deb
+  - src: ./pkgnode/share/
+    dst: /usr/lib/melo/share/melo/
+    packager: rpm
 # shared libraries the binary needs, per distro
 overrides:
   deb:
@@ -35,6 +52,8 @@ overrides:
       - libgstreamer1.0-0
       - gstreamer1.0-plugins-base
       - gstreamer1.0-plugins-good
+      # an AAC decoder: faad (bad) or avdec_aac (libav)
+      - gstreamer1.0-plugins-bad | gstreamer1.0-libav
       - libxkbcommon0
       - libxkbcommon-x11-0
       - fontconfig
@@ -59,13 +78,12 @@ overrides:
       - libxcb-xkb1
       - libsm6
       - libice6
-    recommends:
-      - nodejs
   rpm:
     depends:
       - gstreamer1
       - gstreamer1-plugins-base
       - gstreamer1-plugins-good
+      - gstreamer1-plugins-bad-free   # fdkaacdec, the AAC decoder
       - libxkbcommon
       - libxkbcommon-x11
       - fontconfig
@@ -78,13 +96,13 @@ overrides:
       - xcb-util-renderutil
       - libSM
       - libICE
-    recommends:
-      - nodejs
   archlinux:
     depends:
       - gstreamer
       - gst-plugins-base
       - gst-plugins-good
+      - gst-plugins-bad   # faad, the AAC decoder
+      - nodejs>=22.22.2   # the sidecar; jsdom 30's floor
       - libxkbcommon
       - libxkbcommon-x11
       - fontconfig
@@ -95,3 +113,9 @@ overrides:
       - xcb-util-renderutil
       - libsm
       - libice
+
+# xz: the bundled Node is ~100 MB; gzip would leave the deb/rpm ~15 MB bigger
+deb:
+  compression: xz
+rpm:
+  compression: xz

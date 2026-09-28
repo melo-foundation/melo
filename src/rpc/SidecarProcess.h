@@ -20,11 +20,12 @@ signals:
     void lineReceived(const QByteArray& line);   // one complete JSON message
     void started();                              // process (re)started — needs initialize
     void permanentlyFailed(const QString& reason);
-    void nodeMissing();                          // no usable node (>=22.15) anywhere — bootstrap needed
+    void nodeMissing();                          // no usable node (>=22.22.2) anywhere — bootstrap needed
     void exited();                               // the process is gone; a restart may follow
 
 private:
-    static bool nodeVersionOk(const QString& node);
+    static bool nodeVersionSupported(const QString& version);   // "v22.22.2"
+    static QString nodeVersion(const QString& node);
 
 private:
     void onReadyRead();

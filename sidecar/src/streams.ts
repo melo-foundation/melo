@@ -545,7 +545,9 @@ function collectRadioPage(entry: RadioList): number {
   return added;
 }
 
-const YTDLP_COMMON = ["--js-runtimes", "node", "--no-warnings"];
+// the Node running this sidecar: `node` alone is a PATH lookup, which finds a
+// system Node below yt-dlp's minimum (20) or none at all
+const YTDLP_COMMON = ["--js-runtimes", `node:${process.execPath}`, "--no-warnings"];
 
 // ---- stream client gating (PO-token era) --------------------------------
 // On ANDROID_VR YouTube serves only the first ~27% of a file (~60s) and 403s

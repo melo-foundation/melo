@@ -52,7 +52,9 @@ The AppImage runtimes, the executable part at the start of each file:
 | lite | libfuse 3.15.0 (library), squashfuse 0.5.2, zstd, zlib and mimalloc, linked into that runtime | in that order: LGPL-2.1-only, BSD-2-Clause, BSD-3-Clause OR GPL-2.0-only, Zlib, MIT |
 
 The lite AppImage and the rpm, deb and Arch packages use the system's
-GStreamer, fontconfig and Node.js.
+GStreamer and fontconfig. The rpm and deb packages ship Node.js 22.23.2
+(MIT, licence at `/usr/lib/melo/share/melo/node-LICENSE`); the lite
+AppImage and the Arch package use the system's Node.js.
 
 ## In the Windows build
 
@@ -91,7 +93,7 @@ public domain and removes any preset on its author's request.
 
 | Component | Source | Licence |
 |---|---|---|
-| Node.js 22.23.2, SHA-256 pinned (lite AppImage and rpm, deb, Arch packages) | nodejs.org | MIT |
+| Node.js 22.23.2, SHA-256 pinned (lite AppImage and the Arch package, when the system Node is missing or older than 22.22.2) | nodejs.org | MIT |
 | yt-dlp | github.com/yt-dlp/yt-dlp | Unlicense |
 
 No Winamp skin archives are included.

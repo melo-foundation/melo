@@ -3,6 +3,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QStandardPaths>
 #include <cstdio>
@@ -49,29 +50,46 @@ QString SidecarProcess::resolveNode() {
     if (QFileInfo::exists(bundled)) return bundled;
     return QStandardPaths::findExecutable("node");
 #else
-    // lite AppImage: system node when it's new enough, else the runtime
-    // NodeBootstrap downloaded on a previous run
+    // deb/rpm: node shipped beside melo
+    const QString dir = QCoreApplication::applicationDirPath();
+    if (QFileInfo::exists(dir + "/node")) return dir + "/node";
+    // lite AppImage and Arch: system node when it's new enough, else the
+    // runtime NodeBootstrap downloaded, if it is still the pinned version.
+    // A stale download is removed so the next start fetches the pinned one.
     const QString sys = QStandardPaths::findExecutable("node");
-    if (!sys.isEmpty() && nodeVersionOk(sys)) return sys;
+    if (!sys.isEmpty()) {
+        const QString v = nodeVersion(sys);
+        if (nodeVersionSupported(v)) return sys;
+        std::fprintf(stderr, "[melo] system node %s: %s, not used\n", qPrintable(sys),
+                     v.isEmpty() ? "did not run" : qPrintable(v + " is below 22.22.2"));
+    }
     const QString cached = NodeBootstrap::installedPath();
-    if (QFileInfo::exists(cached)) return cached;
+    if (QFileInfo::exists(cached)) {
+        if (nodeVersion(cached) == "v" + NodeBootstrap::pinnedVersion()) return cached;
+        QFile::remove(cached);
+    }
     return {};
 #endif
 }
 
-bool SidecarProcess::nodeVersionOk(const QString& node) {
+QString SidecarProcess::nodeVersion(const QString& node) {
     QProcess p;
     p.start(node, {"--version"});
-    if (!p.waitForFinished(3000)) { p.kill(); return false; }
-    const QString v = QString::fromLatin1(p.readAllStandardOutput()).trimmed();   // "v22.19.0"
+    if (!p.waitForFinished(3000)) { p.kill(); return {}; }
+    return QString::fromLatin1(p.readAllStandardOutput()).trimmed();   // "v22.19.0"
+}
+
+bool SidecarProcess::nodeVersionSupported(const QString& v) {
     if (!v.startsWith(u'v')) return false;
     const int major = v.mid(1).section(u'.', 0, 0).toInt();
     const int minor = v.mid(1).section(u'.', 1, 1).toInt();
-    // 22.15, NOT 22. module.registerHooks landed in 22.15, and it is what
-    // withholds net/tls/dgram/http from a plugin without rawNetwork. On
-    // 22.0-22.14 that block silently does not install, and a plugin
-    // declaring two domains would get raw sockets.
-    return major > 22 || (major == 22 && minor >= 15);
+    const int patch = v.mid(1).section(u'.', 2, 2).toInt();
+    // 22.22.2 is jsdom 30's floor (its engines field: ^22.22.2 || ^24.15.0 ||
+    // >=26). It also covers module.registerHooks (22.15), which withholds
+    // net/tls/dgram/http from a plugin without rawNetwork.
+    if (major == 22) return minor > 22 || (minor == 22 && patch >= 2);
+    if (major == 24) return minor >= 15;
+    return major >= 26;
 }
 
 QString SidecarProcess::resolveBundle() {
@@ -91,12 +109,14 @@ void SidecarProcess::start() {
     const QString bundle = resolveBundle();
     if (node.isEmpty()) {
 #ifdef Q_OS_WIN
-        emit permanentlyFailed("Node.js not found (need >= 22.15; set MELO_NODE)");
+        emit permanentlyFailed("Node.js not found (need >= 22.22.2; set MELO_NODE)");
 #else
         emit nodeMissing();   // main.cpp starts a NodeBootstrap download, then retries start()
 #endif
         return;
     }
+    std::fprintf(stderr, "[melo] node: %s (%s)\n", node.toUtf8().constData(),
+                 nodeVersion(node).toUtf8().constData());
     if (bundle.isEmpty() || !QFileInfo::exists(bundle)) {
         emit permanentlyFailed("sidecar bundle not found: " + bundle +
                                " (run: pnpm -C sidecar build)");

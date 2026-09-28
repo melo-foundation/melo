@@ -19,8 +19,8 @@ the 7-character commit hash.
 ## Releasing an alpha
 
 1. Change the version in every file listed below, and add a `<release>` for it
-   to `resources/melo.metainfo.xml`. Without it, software centres show the
-   previous release.
+   to `resources/io.github.melo_foundation.melo.metainfo.xml`. Without it,
+   software centres show the previous release.
 2. Commit and push, then tag:
 
    ```

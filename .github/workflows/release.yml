@@ -22,6 +22,8 @@ env:
   QT_VERSION: 6.11.2
   ICU_VERSION: 73.2
   NODE_VERSION: 22.23.2
+  # node-v$NODE_VERSION-linux-x64.tar.xz, as in src/rpc/NodeBootstrap.cpp
+  NODE_SHA256: d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307
   PNPM_VERSION: 10.30.3
   # 22.04 is the oldest supported LTS, so the builds run on its glibc
   APT_PACKAGES: >-
@@ -212,54 +214,11 @@ jobs:
           path: qt-static
           key: ${{ steps.qt.outputs.cache-primary-key }}
 
-  # Node for the full AppImage, with English-only ICU built in (about 25 MB
-  # smaller); the full ICU data ships beside it. Built only when the cache is
-  # empty, which takes hours on a two-core runner.
-  node:
-    needs: plan
-    if: needs.plan.outputs.build == 'true'
-    runs-on: ubuntu-22.04
-    timeout-minutes: 330
-    steps:
-      - name: Look up Node
-        id: node
-        uses: actions/cache/restore@v6
-        with:
-          path: node-small
-          key: node-small-icu-${{ env.NODE_VERSION }}-v1
-          lookup-only: true
-
-      - name: Build Node
-        if: steps.node.outputs.cache-hit != 'true'
-        run: |
-          curl -fsSLo node.tar.xz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION.tar.xz"
-          tar xJf node.tar.xz
-          cd "node-v$NODE_VERSION"
-          ./configure --with-intl=small-icu --without-amaro \
-            --without-inspector --without-sqlite --enable-lto > /dev/null
-          make -j"$(nproc)" > build.log 2>&1 &
-          pid=$!
-          while kill -0 "$pid" 2>/dev/null; do
-            sleep 120
-            printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$(tail -n1 build.log 2>/dev/null)"
-          done
-          wait "$pid" || { tail -60 build.log; exit 1; }
-          mkdir -p ../node-small
-          cp out/Release/node LICENSE ../node-small/
-          strip ../node-small/node
-
-      - name: Save Node
-        if: steps.node.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: node-small
-          key: ${{ steps.node.outputs.cache-primary-key }}
-
   package:
-    needs: [plan, tests, qt, node]
+    needs: [plan, tests, qt]
     if: >-
       !cancelled() && needs.plan.outputs.build == 'true'
-      && needs.qt.result == 'success' && needs.node.result == 'success'
+      && needs.qt.result == 'success'
       && (needs.tests.result == 'success' || needs.tests.result == 'skipped')
     runs-on: ubuntu-22.04
     timeout-minutes: 120
@@ -288,11 +247,6 @@ jobs:
         with:
           path: qt-static
           key: qt-static-${{ env.QT_VERSION }}-${{ hashFiles(format('patches/qtdeclarative-{0}-stacking-walk.patch', env.QT_VERSION)) }}
-          fail-on-cache-miss: true
-      - uses: actions/cache/restore@v6
-        with:
-          path: node-small
-          key: node-small-icu-${{ env.NODE_VERSION }}-v1
           fail-on-cache-miss: true
 
       - uses: pnpm/action-setup@v6
@@ -361,6 +315,10 @@ jobs:
           cp vendor/ffmpeg/COPYING.LGPLv2.1 $D/share/melo/ffmpeg-COPYING.LGPLv2.1
           cp LICENSE THIRD-PARTY.md $D/share/melo/
           cp -r LICENSES $D/share/melo/
+          # AppStream metadata; .appdata.xml is the only suffix AppImageHub reads
+          mkdir -p $D/share/metainfo
+          cp resources/io.github.melo_foundation.melo.metainfo.xml \
+             $D/share/metainfo/io.github.melo_foundation.melo.appdata.xml
           cp sidecar/dist/melo-sidecar.mjs sidecar/dist/melo-plugin-host.mjs $D/share/melo/
           # jsdom reads data files beside its package, so it ships unbundled
           JSDOM_VER=$(node -p "require('./sidecar/node_modules/jsdom/package.json').version")
@@ -396,22 +354,15 @@ jobs:
           curl -fsSL https://github.com/goreleaser/nfpm/releases/download/v2.43.0/nfpm_2.43.0_Linux_x86_64.tar.gz | tar xz nfpm
           chmod +x linuxdeploy appimagetool dwarfs-universal uruntime nfpm
 
-      # small-icu Node segfaults on non-English Intl (nodejs/node#51752), so the
-      # full ICU data ships beside it, minus what JS Intl cannot reach
-      - name: Node ICU data
+      # official build, full ICU included; the same file melo's downloader pins
+      - name: Node
         run: |
-          IV=$(node-small/node -p "process.versions.icu")
-          MAJ=${IV%%.*}; MIN=${IV#*.}; MIN=${MIN%%.*}
-          curl -fsSLo icu-bin.zip "https://github.com/unicode-org/icu/releases/download/release-$IV/icu4c-$IV-data-bin-l.zip" \
-            || curl -fsSLo icu-bin.zip "https://github.com/unicode-org/icu/releases/download/release-$MAJ-$MIN/icu4c-${MAJ}_$MIN-data-bin-l.zip"
-          unzip -o -q icu-bin.zip -d icu-node
-          DAT=$(find icu-node -name 'icudt*.dat' | head -1)
-          printf '%s\n' '*.cnv' 'translit/*' 'rbnf/*' '*.spp' 'confusables.cfu' 'confusablesWholeScript.cfu' > icu-remove.lst
-          # ICU installs its packaging tool under sbin, not bin
-          ICUPKG=$(ls icu-out/sbin/icupkg icu-out/bin/icupkg 2>/dev/null | head -1)
-          [ -n "$ICUPKG" ] || { echo "::error::icupkg not found in icu-out"; ls -R icu-out | head -40; exit 1; }
-          "$ICUPKG" -r icu-remove.lst "$DAT"
-          mkdir -p icu-node-out && cp "$DAT" icu-node-out/
+          curl -fsSLo node.tar.xz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz"
+          echo "$NODE_SHA256  node.tar.xz" | sha256sum -c --quiet
+          tar xJf node.tar.xz
+          mkdir -p node-official
+          cp "node-v$NODE_VERSION-linux-x64/bin/node" "node-v$NODE_VERSION-linux-x64/LICENSE" node-official/
+          strip node-official/node
 
       # Full: Node, an audio-only set of GStreamer plugins, and TLS for them
       - name: Full AppImage
@@ -426,10 +377,9 @@ jobs:
             cp "$GST/libgst$p.so" AppDir/usr/lib/gstreamer-1.0/
           done
           cp /usr/lib/x86_64-linux-gnu/gio/modules/libgiognutls.so AppDir/usr/lib/gio/modules/
-          cp node-small/node AppDir/usr/bin/node
-          cp node-small/LICENSE AppDir/usr/share/melo/node-LICENSE
-          cp icu-node-out/icudt*.dat AppDir/usr/share/melo/
-          NODE_ICU_DATA=AppDir/usr/share/melo AppDir/usr/bin/node -e '
+          cp node-official/node AppDir/usr/bin/node
+          cp node-official/LICENSE AppDir/usr/share/melo/node-LICENSE
+          AppDir/usr/bin/node -e '
             const segs=[...new Intl.Segmenter("th",{granularity:"word"}).segment("สวัสดีครับ")];
             if (segs.length < 2) throw new Error("Thai segmentation broken");
             if (/Thursday/.test(new Intl.DateTimeFormat("km",{dateStyle:"full"}).format(0)))
@@ -454,7 +404,6 @@ jobs:
           export GST_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/melo-appimage-gst-registry.bin"
           export GIO_EXTRA_MODULES="$APPDIR/usr/lib/gio/modules"
           export MELO_NODE="$APPDIR/usr/bin/node"
-          export NODE_ICU_DATA="$APPDIR/usr/share/melo"
           EOF
           # linuxdeploy's AppRun is a symlink to the binary; replace, never write through
           rm -f AppDir/AppRun
@@ -499,6 +448,10 @@ jobs:
           mkdir -p pkgroot/bin pkgroot/share/melo
           cp -r AppDir-lite/usr/bin/{melo,melo-qml,presets,fonts,ffmpeg} pkgroot/bin/
           cp -r AppDir-lite/usr/share/melo/. pkgroot/share/melo/
+          # deb and rpm carry the full AppImage's Node and its licence
+          mkdir -p pkgnode/share
+          cp AppDir/usr/bin/node pkgnode/node
+          cp AppDir/usr/share/melo/node-LICENSE pkgnode/share/
           v=$(sed -n 's/^project(melo VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           if [ "$KIND" = alpha ]; then export MELO_PKG_VERSION="$v"
           else export MELO_PKG_VERSION="$v+git$(date -u +%Y%m%d).${GITHUB_SHA::7}"; fi

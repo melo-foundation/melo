@@ -237,8 +237,8 @@ int main(int argc, char** argv) {
                              "wavparse"}) {
         if (!haveGstElement(name)) missingGst << QString::fromLatin1(name);
     }
-    // AAC: uridecodebin takes whichever decoder exists — distros ship
-    // different ones (ubuntu: faad; fedora: fdkaacdec / rpmfusion avdec_aac)
+    // AAC: uridecodebin takes whichever decoder exists. faad and fdkaacdec are
+    // in each distro's "bad" plugins package, avdec_aac in its libav one
     if (!haveGstElement("faad") && !haveGstElement("avdec_aac") && !haveGstElement("fdkaacdec"))
         missingGst << QStringLiteral("aac decoder");
     if (!missingGst.isEmpty())
@@ -524,13 +524,13 @@ int main(int argc, char** argv) {
                 return os.contains(QLatin1String(k), Qt::CaseInsensitive);
             };
             if (idHas("arch") || idHas("manjaro") || idHas("endeavour"))
-                hint = QStringLiteral("run: sudo pacman -S gst-plugins-base gst-plugins-good");
+                hint = QStringLiteral("run: sudo pacman -S gst-plugins-base gst-plugins-good gst-plugins-bad");
             else if (idHas("debian") || idHas("ubuntu") || idHas("mint") || idHas("pop"))
-                hint = QStringLiteral("run: sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good");
+                hint = QStringLiteral("run: sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad");
             else if (idHas("fedora") || idHas("nobara"))
-                hint = QStringLiteral("run: sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good");
+                hint = QStringLiteral("run: sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free");
             else if (idHas("opensuse") || idHas("suse"))
-                hint = QStringLiteral("run: sudo zypper install gstreamer-plugins-base gstreamer-plugins-good");
+                hint = QStringLiteral("run: sudo zypper install gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad");
         }
 #endif
         qml.rootContext()->setContextProperty("MELO_GST_HINT", hint);

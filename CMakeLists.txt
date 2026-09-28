@@ -424,7 +424,7 @@ install(DIRECTORY sidecar/dist/ DESTINATION share/melo/sidecar)
 install(FILES resources/melo.desktop DESTINATION share/applications)
 install(FILES resources/melo.png DESTINATION share/icons/hicolor/512x512/apps)
 install(FILES resources/melo.svg DESTINATION share/icons/hicolor/scalable/apps)
-install(FILES resources/melo.metainfo.xml DESTINATION share/metainfo OPTIONAL)
+install(FILES resources/io.github.melo_foundation.melo.metainfo.xml DESTINATION share/metainfo)
 install(FILES LICENSE THIRD-PARTY.md DESTINATION share/doc/melo)
 install(DIRECTORY LICENSES/ DESTINATION share/doc/melo/LICENSES)
 # melo lives at libexec/melo/melo beside its tree; this wrapper is what the user

@@ -13,6 +13,8 @@
 static const char* kNodeVersion = "22.23.2";
 static const char* kNodeSha256  = "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307";
 
+QString NodeBootstrap::pinnedVersion() { return QString::fromLatin1(kNodeVersion); }
+
 QString NodeBootstrap::installedPath() {
     // same user-writable bin dir the sidecar keeps yt-dlp in
     return QDir::homePath() + "/.local/share/melo/bin/node";
