@@ -9,6 +9,7 @@ below carry their own terms. The LGPL texts are in `LICENSES/`.
 |---|---|---|
 | Red Hat Display | OFL-1.1 | `assets/fonts/`, licence text alongside |
 | KWin `blur` and `contrast` Wayland protocols | LGPL-2.1-or-later | `protocols/blur.xml`, `protocols/contrast.xml` |
+| `ext-background-effect-v1` Wayland protocol, from wayland-protocols 1.49 | MIT, notice in the file | `protocols/ext-background-effect-v1.xml` |
 | Feather icons `search`, `x`, `shuffle` and `sliders` (path data) | MIT, notice below | `src/qml/style/Theme.qml`: glyphs `search`, `close`, `shuffle`, `eq` |
 
 ## In the Linux packages (AppImage, rpm, deb, Arch)

@@ -77,6 +77,11 @@ class WindowController : public QObject {
     //     readonly property real dpr: (WindowCtl.dprGeneration,
     //                                  WindowCtl.dprOf(Window.window))
     Q_PROPERTY(int dprGeneration READ dprGeneration NOTIFY dprGenerationChanged)
+    // Whether the compositor will blur behind a window right now. Live on
+    // Wayland: KWin changes it when its Blur effect is switched on or off.
+    Q_PROPERTY(bool blurAvailable READ blurAvailable NOTIFY blurAvailableChanged)
+    // Contrast and saturation of the blurred backdrop: KWin 6.6 and older only.
+    Q_PROPERTY(bool contrastAvailable READ contrastAvailable NOTIFY contrastAvailableChanged)
 public:
     explicit WindowController(QObject* parent = nullptr);
     bool appActive() const { return appActive_; }
@@ -103,11 +108,10 @@ public:
     // blur only a sub-rect (mini-mode queue overlay inside the main window)
     Q_INVOKABLE void setBlurRegion(QQuickWindow* win, int x, int y, int w, int h);
     // KWin background-contrast: per-window modulation of the blurred backdrop
-    // (blur strength is compositor-global). Contrast and saturation only: KWin
-    // 6.5+ ignores intensity and never reads frost (see WaylandBlur.cpp).
+    // (blur strength is compositor-global).
     Q_INVOKABLE void setBackgroundContrast(QQuickWindow* win, bool on,
                                            double contrast, double saturation);
-    Q_INVOKABLE bool blurAvailable() const;
+    bool blurAvailable() const;
     // window corner radius for the blur region (so glass follows rounded
     // corners instead of frosting the square area behind them)
     Q_INVOKABLE void setBlurRadius(int r) { blurRadius_ = r; }
@@ -120,11 +124,10 @@ public:
     // compiled out — which is every Qt app on some distributions, and is why
     // a QML failure can leave no trace at all. This always prints.
     Q_INVOKABLE void logLine(const QString& text);
-    // recent KWin dropped the contrast effect — the sliders hide without it
     // Defined per backend: asking KWin over D-Bus whether an effect NAMED
     // "contrast" is loaded answers no on compositors that plainly support it,
     // so where we speak the protocol ourselves we ask the protocol.
-    Q_INVOKABLE bool contrastAvailable() const;
+    bool contrastAvailable() const;
     // true when KWin scripting is available (atomic pair-opacity swap works)
     Q_INVOKABLE bool kwinAvailable() const { return kwinAvailable_; }
     // clicks land only inside the given rect; everything else passes through
@@ -221,6 +224,8 @@ public:
 signals:
     void appActiveChanged();
     void dprGenerationChanged();
+    void blurAvailableChanged();
+    void contrastAvailableChanged();
     void mainGeometry(int x, int y, int w, int h, bool cursorInside);
     // interactive move/resize started on a melo window (KWin watcher);
     // mainGeometry marks the end
@@ -253,6 +258,8 @@ protected:
     bool dprArmed_ = false;
 private:
     bool contrastAvailable_ = false;
+    // last values announced, so a change to one does not re-announce the other
+    bool lastBlur_ = false, lastContrast_ = false;
     int blurRadius_ = 0;
 #ifndef Q_OS_WIN
     // KWin identifies a loaded script by its PLUGIN NAME, not by the file path

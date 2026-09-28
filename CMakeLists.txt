@@ -69,7 +69,8 @@ if(UNIX AND NOT APPLE)
         gstreamer-1.0 gstreamer-app-1.0 gstreamer-audio-1.0)
     set(MELO_GST_LIB PkgConfig::GST)
 
-    # KWin blur/contrast spoken natively (protocols/, src/core/WaylandBlur.h).
+    # Blur spoken natively (protocols/, src/core/WaylandBlur.h): ext-background-
+    # effect-v1, and KWin's blur/contrast for KWin 6.6 and older.
     # Needs QtGui private headers for the per-window wl_surface; falls back to
     # KF6 WindowSystem without them. The component must be requested: installed
     # headers alone do not create the target.
@@ -98,7 +99,7 @@ if(UNIX AND NOT APPLE)
         find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
         set(MELO_WL_GEN ${CMAKE_CURRENT_BINARY_DIR}/wl-protocols)
         file(MAKE_DIRECTORY ${MELO_WL_GEN})
-        foreach(proto blur contrast)
+        foreach(proto ext-background-effect-v1 blur contrast)
             add_custom_command(
                 OUTPUT ${MELO_WL_GEN}/${proto}-client-protocol.h
                        ${MELO_WL_GEN}/${proto}-protocol.c
@@ -111,7 +112,7 @@ if(UNIX AND NOT APPLE)
                 DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/protocols/${proto}.xml)
             list(APPEND MELO_WL_SOURCES ${MELO_WL_GEN}/${proto}-protocol.c)
         endforeach()
-        message(STATUS "melo: glass blur NATIVE (KWin wayland protocols)")
+        message(STATUS "melo: glass blur NATIVE (ext-background-effect, KWin blur/contrast)")
     else()
         message(STATUS "melo: QtGui private headers missing — trying KF6 blur fallback")
     endif()
@@ -389,9 +390,6 @@ if(WIN32)
     set_property(TARGET melo PROPERTY WIN32_EXECUTABLE ON)
 endif()
 
-# Glass blur: native KWin wayland protocols (WaylandBlur.cpp) — always on
-# for UNIX; no external framework needed.
-
 # --- fonts ---
 # The default family has to BE there. Shipped alongside the binary, and read
 # from the source tree when running from the build directory.
@@ -581,6 +579,13 @@ if(Qt6Test_FOUND)
     target_include_directories(tst_glyphimport PRIVATE src/core)
     target_link_libraries(tst_glyphimport PRIVATE Qt6::Core Qt6::Test)
     add_test(NAME glyphimport COMMAND tst_glyphimport)
+
+    # Which blur protocol is spoken, from registry and capability events, and
+    # the region ext is sent. Header only; no compositor.
+    add_executable(tst_blursupport tests/cpp/tst_blursupport.cpp)
+    target_include_directories(tst_blursupport PRIVATE src/core)
+    target_link_libraries(tst_blursupport PRIVATE Qt6::Gui Qt6::Test)
+    add_test(NAME blursupport COMMAND tst_blursupport)
 
     # The QML->C++ QVariant boundary, where a JS object becomes null unless it
     # is unwrapped. Needs Qml for QJSEngine.

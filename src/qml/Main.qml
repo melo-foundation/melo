@@ -700,9 +700,11 @@ Window {
     }
     readonly property bool wantBlur: blurWanted(effHovered)
     onWantBlurChanged: applyBlur()
-    // a contrast the compositor can only apply through the blur effect has
-    // to re-ask for that effect when it changes
-    Connections { target: Theme; function onWantContrastChanged() { root.applyBlur() } }
+    // A contrast the compositor can only apply through the blur effect has
+    // to re-ask for that effect when it changes. Only KWin 6.6 and older have
+    // contrast; elsewhere a contrast setting must not turn blur on.
+    readonly property bool contrastGlass: Theme.wantContrast && WindowCtl.contrastAvailable
+    onContrastGlassChanged: applyBlur()
     function glassOn(w, on) {
         WindowCtl.setBlurBehind(w, on)
         WindowCtl.setBackgroundContrast(w, on, Theme.glassContrast, Theme.glassSaturation)
@@ -715,11 +717,11 @@ Window {
         // the window moves ("spawns in the wrong space")
         if (!ready) { glassOn(root, false); glassOn(miniWin, false); return }
         WindowCtl.setBlurRadius(root.cornerRadius)   // 0 when maximised
-        glassOn(miniWin, (wantBlur || Theme.wantContrast) && miniPlayer && builtinMini)
+        glassOn(miniWin, (wantBlur || contrastGlass) && miniPlayer && builtinMini)
         // Contrast needs glass: Plasma 6.5 merged background contrast into the blur
         // effect, so a surface that requests no blur gets no contrast. A non-default
         // contrast therefore requests blur too, at KWin's global strength.
-        if (!wantBlur && !Theme.wantContrast) { glassOn(root, false); return }
+        if (!wantBlur && !contrastGlass) { glassOn(root, false); return }
         if (!miniPlayer) glassOn(root, true)
         else if (miniQueueShown) {
             WindowCtl.setBlurRegion(root, 0, miniQueueOverlay.y,
@@ -2040,6 +2042,23 @@ Window {
         }
     }
     PromptDialog { id: promptDialog }
+
+    // The theme's glass with nothing blurred behind it can be hard to read.
+    // Off on offscreen and minimal, which have no compositor to blur.
+    BlurNotice {
+        id: blurNotice
+        active: root.ready && Settings.loaded && !root.miniPlayer
+                && Qt.platform.pluginName !== "offscreen" && Qt.platform.pluginName !== "minimal"
+        wanted: Theme.glassBlur !== "off" && Theme.translucent("window")
+        available: WindowCtl.blurAvailable
+        suppressed: Settings.loaded && Settings.uiGet("blurNoticeOff", false) === true
+        busy: promptDialog.visible
+        onShowRequested: promptDialog.noticeDialog(
+            "Window blur support was not detected. This theme may be less legible.",
+            "OK", "Don't show again",
+            (answer) => blurNotice.dismiss(answer === "alt"))
+        onDontShowAgain: Settings.uiSet("blurNoticeOff", true)
+    }
     OnboardingWindow { id: onboarding; transientParent: root }
 
     // Asked once, on a display where it matters. The fix costs a coarser

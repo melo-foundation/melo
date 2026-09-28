@@ -2923,9 +2923,10 @@ Window {
                     }
                     SRow {
                         name: "Glass blur"
-                        desc: WindowCtl.blurAvailable() ? ""
-                              : "Needs kf6-kwindowsystem-devel at build time"
-                        SSelect { value: String(win.ts("glassBlur", "off"))
+                        SSelect { enabled: WindowCtl.blurAvailable
+                                  ink: enabled ? "text" : "textFaint"
+                                  label: enabled ? labelFor(value) : "Unavailable"
+                                  value: String(win.ts("glassBlur", "off"))
                                   options: [ { value: "off", label: "Off" },
                                              { value: "always", label: "Always" },
                                              { value: "hover", label: "On hover" },
@@ -2939,7 +2940,7 @@ Window {
                         // of these makes melo request glass by itself, because that
                         // is the only thing the contrast can travel on since Plasma
                         // 6.5 merged the two effects. See Main.qml applyBlur.
-                        visible: WindowCtl.contrastAvailable()
+                        visible: WindowCtl.contrastAvailable
                         name: "Glass saturation"
                         desc: "×" + glyphSizeS.shown.toFixed(2)
                         SSlider { id: glyphSizeS; from: 0; to: 2; step: 0.05
@@ -2947,7 +2948,7 @@ Window {
                                   onCommitted: (v) => ThemeBackend.setThemeSetting("glassSaturation", v) }
                     }
                     SRow {
-                        visible: WindowCtl.contrastAvailable()
+                        visible: WindowCtl.contrastAvailable
                         name: "Glass contrast"
                         desc: "×" + gcS.shown.toFixed(2)
                         // Negative inverts what is behind the window. KWin's

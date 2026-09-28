@@ -5,6 +5,8 @@ import ".."
 //   confirmDialog(message, cb)         -> cb(true|false)
 //   promptDialog(message, initial, cb) -> cb(text|null)
 //   askDialog(message, okLabel, cancelLabel, checkLabel, cb) -> cb(ok, checked)
+//   noticeDialog(message, okLabel, altLabel, cb) -> cb("ok" | "alt"); Escape
+//     and an outside click answer "ok", so only the button itself says "alt"
 // One per window. Enter accepts, Escape / outside click cancels.
 Item {
     // NOT "layer" — Item has a built-in layer property that shadows the id
@@ -36,6 +38,12 @@ Item {
         input.forceActiveFocus()
         input.selectAll()
     }
+    function noticeDialog(msg, ok, alt, callback) {
+        mode = "notice"; message = msg; cb = callback
+        okLabel = ok; cancelLabel = alt; checkLabel = ""; checkValue = false
+        visible = true
+        panel.forceActiveFocus()
+    }
     function askDialog(msg, ok, cancel, check, callback) {
         mode = "ask"; message = msg; cb = callback
         okLabel = ok; cancelLabel = cancel; checkLabel = check; checkValue = false
@@ -49,8 +57,9 @@ Item {
         okLabel = "OK"; cancelLabel = "Cancel"; checkLabel = ""
         if (f) f(result, checked)
     }
-    function accept() { finish(mode === "prompt" ? input.text : true) }
-    function reject() { finish(mode === "prompt" ? null : false) }
+    function accept() { finish(mode === "prompt" ? input.text : mode === "notice" ? "ok" : true) }
+    function reject() { finish(mode === "prompt" ? null : mode === "notice" ? "ok" : false) }
+    function cancelButton() { if (mode === "notice") finish("alt"); else reject() }
 
     Rectangle {
         anchors.fill: parent
@@ -132,8 +141,8 @@ Item {
                 anchors.right: parent.right
                 spacing: Theme.gap(8)
                 component DlgBtn: PushButton { pad: 24; fontSize: 12 }
-                DlgBtn { label: prompt.cancelLabel; onClicked: prompt.reject() }
-                DlgBtn { label: prompt.okLabel; accent: true; onClicked: prompt.accept() }
+                DlgBtn { objectName: "promptCancel"; label: prompt.cancelLabel; onClicked: prompt.cancelButton() }
+                DlgBtn { objectName: "promptOk"; label: prompt.okLabel; accent: true; onClicked: prompt.accept() }
             }
         }
     }

@@ -81,6 +81,17 @@ WindowController::WindowController(QObject* parent) : QObject(parent) {
         kwinAvailable_ = bus && bus->isServiceRegistered(QStringLiteral("org.kde.KWin"));
     }
     if (kwinAvailable_) {
+#ifdef MELO_NATIVE_BLUR
+    if (auto* wb = WaylandBlur::instance()) {
+        lastBlur_ = wb->available();
+        lastContrast_ = contrastAvailable();
+        connect(wb, &WaylandBlur::availabilityChanged, this, [this] {
+            const bool b = blurAvailable(), c = contrastAvailable();
+            if (b != lastBlur_) { lastBlur_ = b; emit blurAvailableChanged(); }
+            if (c != lastContrast_) { lastContrast_ = c; emit contrastAvailableChanged(); }
+        });
+    }
+#endif
         // Fallback only: KWin folded contrast into the blur effect, so this says
         // no where contrast works; contrastAvailable() asks the protocol first.
         // Never loadEffect("contrast"): it would change every window's drawing
@@ -183,13 +194,14 @@ static QRegion roundedRegion(int x, int y, int w, int h, int r) {
 void WindowController::setBlurBehind(QQuickWindow* win, bool on) {
     auto* wb = WaylandBlur::instance();
     if (!wb || !win) return;
-    // A null region means the whole surface and follows every resize by itself.
+    // An empty region means the whole surface and follows every resize by itself.
     // A rounded region would need re-cutting on every resize, committed on a
     // frame, to keep blur off 3.4 px² per corner at a 4px radius, which the
     // window paints its own rounded background over anyway. A shaped window is the
-    // exception: WindowShapeItem stores its region and re-applies blur on change.
+    // exception: WindowShapeItem re-cuts "meloShape" on every resize and
+    // WaylandBlur re-sends it.
     const QRegion shape = win->property("meloShape").value<QRegion>();
-    wb->setBlur(win, on, shape);
+    wb->setBlur(win, on, shape, true);
 }
 void WindowController::setBlurRegion(QQuickWindow* win, int x, int y, int w, int h) {
     auto* wb = WaylandBlur::instance();
@@ -203,17 +215,18 @@ void WindowController::setBackgroundContrast(QQuickWindow* win, bool on,
     // an override, so sending 1.0 would replace the user's global blur
     // saturation for melo's window alone.
     const bool neutral = qFuzzyCompare(contrast, 1.0) && qFuzzyCompare(saturation, 1.0);
-    wb->setContrast(win, on && !neutral, contrast, 1.0, saturation, QRegion(), QColor());
+    wb->setContrast(win, on && !neutral, contrast, saturation, QRegion());
 }
 bool WindowController::blurAvailable() const {
     auto* wb = WaylandBlur::instance();
     return wb && wb->available();
 }
-// The compositor advertised the global and we bound it — there is no better
-// evidence than that, and no D-Bus name to go looking for.
+// The compositor advertised the global and we bound it: there is no better
+// evidence than that, and no D-Bus name to go looking for. The D-Bus answer
+// counts only where there is no Wayland connection to ask.
 bool WindowController::contrastAvailable() const {
     auto* wb = WaylandBlur::instance();
-    return (wb && wb->contrastAvailable()) || contrastAvailable_;
+    return wb ? wb->contrastAvailable() : contrastAvailable_;
 }
 #elif defined(HAVE_KWINDOWSYSTEM)
 void WindowController::setBlurBehind(QQuickWindow* win, bool on) {
@@ -229,8 +242,13 @@ void WindowController::setBackgroundContrast(QQuickWindow* win, bool on,
                                              double contrast, double saturation) {
     if (win) KWindowEffects::enableBackgroundContrast(win, on, contrast, 1.0, saturation);
 }
-bool WindowController::blurAvailable() const { return true; }
-bool WindowController::contrastAvailable() const { return contrastAvailable_; }
+// Read when asked, never announced: KWindowEffects has no change signal.
+bool WindowController::blurAvailable() const {
+    return KWindowEffects::isEffectAvailable(KWindowEffects::BlurBehind);
+}
+bool WindowController::contrastAvailable() const {
+    return KWindowEffects::isEffectAvailable(KWindowEffects::BackgroundContrast);
+}
 #else
 void WindowController::setBlurBehind(QQuickWindow*, bool) {}
 void WindowController::setBlurRegion(QQuickWindow*, int, int, int, int) {}
