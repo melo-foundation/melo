@@ -7,7 +7,8 @@ import "../../src/qml/components"
 // assertions distinguish a real shape field from a bounding-box decoration.
 Rectangle {
     id: scene
-    width: 360; height: 160
+    // 160 tall for the fills and probes; the slant probe sits below that
+    width: 360; height: 290
     color: "#101820"
     property bool hole: true
     property real holeX: 80
@@ -44,6 +45,20 @@ Rectangle {
         kind: "bevel"; colourA: "#3873a8"
         params: ({ speed: 0, scale: 1, angle: 0, colours: [] })
     }
+    // A slanted anti-aliased edge drawn four times finer than its field: the true inner
+    // distance is closed form, (x - 171) cos 20 + (y + 300) sin 20 from each pixel centre.
+    Item {
+        width: 0; height: 0; clip: true
+        Item {
+            id: slantMask
+            width: 160; height: 120
+            layer.enabled: true; layer.smooth: true; layer.textureSize: Qt.size(640, 480)
+            Rectangle { antialiasing: true; color: "white"; width: 800; height: 800
+                        x: 171; y: -300; transformOrigin: Item.TopLeft; rotation: 20 }
+        }
+    }
+    EdgeField { id: slantProbe; y: 165; width: 160; height: 120; mask: slantMask }
+
     // A visible copy lets the test read the encoded field without sampling
     // either the material's colour or a clipped-offscreen item's parent.
     EdgeField { id: probe; x: 180; width: 160; height: 120; mask: scene.usedMask }
@@ -94,6 +109,25 @@ Rectangle {
             const moved = field()
             fuzzyCompare(distance(moved, 80, 60), 17.5, 0.1, "moving the hole moves the field")
         }
+        // A mask finer than its field is read as each texel's area.
+        function test_a_finer_mask_gives_its_edge_to_the_sub_pixel() {
+            wait(80)
+            const im = grabImage(slantProbe)
+            const a = 20 * Math.PI / 180
+            let n = 0, sum = 0
+            for (let y = 10; y < 110; ++y) for (let x = 10; x < 150; ++x) {
+                const t = (x + 0.5 - 171) * Math.cos(a) + (y + 0.5 + 300) * Math.sin(a)
+                // only where the slant, not the item's own border, is the nearest edge
+                if (t < 1 || t > 20 || t > Math.min(y + 0.5, 119.5 - y, 159.5 - x) - 1) continue
+                const e = distance(im, x, y) - t
+                n++; sum += e * e
+            }
+            verify(n > 500, "enough of the edge in view: " + n)
+            // a filtered read of the mask scores 0.154
+            const rms = Math.sqrt(sum / n)
+            verify(rms < 0.12, "the field places a slanted edge to a tenth of a pixel: " + rms.toFixed(3))
+        }
+
         function test_rounded_corners_and_glyphs_are_not_rectangles() {
             scene.usedMask = roundedMask
             const rounded = field()

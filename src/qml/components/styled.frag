@@ -703,6 +703,9 @@ void main() {
                                  tl + 2.0 * up + tr - bl - 2.0 * down - br);
             slope = length(gradient);
             outward = gradient / max(slope, 0.0001);
+            // A strip thinner than the Sobel's reach flips direction where the slope
+            // collapses: fade it there, or the light snaps to full on the flip.
+            outward *= smoothstep(0.2, 0.6, slope / (8.0 * normalStep));
         }
         float heading = slope > 0.001 ? atan(outward.y, outward.x) : 0.0;
         float lightAngle = ang - 2.35619 + ph * 1.2;

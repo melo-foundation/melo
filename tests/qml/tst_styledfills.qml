@@ -519,6 +519,23 @@ Rectangle {
             fill.layers = null
         }
 
+        // Chain rungs keep their delegates by position, so a layer that stops or starts
+        // being a filter there changes only its item's texture: a rung that is not told
+        // keeps drawing the old one. Moving a layer down and back must redraw the stack.
+        function test_moving_a_layer_past_a_filter_and_back_redraws_it() {
+            fill.mask = null
+            const grey = "#ff808080", red = ({ colour: "#ffff2020", opacity: 0.6 })
+            const scan = ({ source: "scanlines", params: ({ pitch: 4, darkness: 1 }) })
+            fill.layers = Theme.layersOf({ layers: [grey, scan, red] })
+            const before = shot(0)
+            fill.layers = Theme.layersOf({ layers: [grey, red, scan] })
+            const moved = shot(0)
+            verify(!moved.equals(before), "the scanlines now darken the red as well")
+            fill.layers = Theme.layersOf({ layers: [grey, scan, red] })
+            verify(shot(0).equals(before), "back in place, the same picture")
+            fill.layers = null
+        }
+
         // A phase offset moves a layer even when nothing is moving. Two layers
         // of one kind draw the same picture at speed 0, which is the case the
         // offset exists for; one that only shifted the clock would do nothing

@@ -474,7 +474,7 @@ endif()
 if(MELO_QSB)
     set(MELO_SHADER_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/components/nowplaying/vinyl.frag)
     set(MELO_SHADER_QSB ${MELO_SHADER_SRC}.qsb)
-    foreach(halo haloblur halocut halodilate styled imagefill edgex edgey stackblend bordermask)
+    foreach(halo haloblur halocut halodilate styled imagefill edgex edgey stackblend bordermask coverbox)
         add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/components/${halo}.frag.qsb
             COMMAND ${MELO_QSB} --glsl "300es,120,150" --hlsl 50 --msl 12

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 
 // Bounded inner distance to the actual coverage, in logical pixels: two
 // separable searches find the closest empty pixel (glyph counters included).
@@ -14,7 +15,9 @@ Item {
     // invisible on a bevel and wrong on a glyph stem, so text and icons keep full
     // resolution.
     property bool coarse: false
-    readonly property real ds: coarse ? 0.5 : 1
+    // Field texels per logical px, on top of `coarse`.
+    property real density: 1
+    readonly property real ds: (coarse ? 0.5 : 1) * density
     // Uniforms are in texels of the target, so `distance / reach` (all either shader
     // writes) is the same at either resolution and decodes to logical pixels.
     // `texels` must be the texture's actual size, rounded the same way, or the
@@ -26,6 +29,17 @@ Item {
     // with no size is a render target with nothing in it, grabbed during
     // preprocess inside a pass that is already running.
     readonly property bool sized: width > 0 && height > 0 && mask !== null
+    // Mask pixels per logical px. At 1.5x the field or finer, the scans read the area
+    // prepass (coverbox.frag) instead of the mask.
+    readonly property real maskRes: {
+        if (!mask) return 1
+        const w = Math.max(1, mask.width)
+        if (mask.layer && mask.layer.enabled && mask.layer.textureSize.width > 0) return mask.layer.textureSize.width / w
+        if (mask.sourceSize !== undefined && mask.sourceSize.width > 0) return mask.sourceSize.width / w
+        return Screen.devicePixelRatio
+    }
+    readonly property bool refine: maskRes / ds >= 1.5
+    readonly property Item coverage: refine ? coveragePass : mask
 
     // Not redrawn while the size moves: each drag step would reallocate both passes
     // and re-run the search. Readers sample in uv and stretch the held texture; 100 ms
@@ -63,6 +77,19 @@ Item {
     Item {
         width: 0; height: 0; clip: true
         ShaderEffect {
+            id: coveragePass
+            width: field.settledWidth; height: field.settledHeight
+            layer.enabled: field.sized && field.refine
+            layer.smooth: true
+            layer.live: !field.settling
+            layer.textureSize: Qt.size(field.texels.x, field.texels.y)
+            visible: field.sized && field.refine
+            blending: false
+            fragmentShader: Qt.resolvedUrl("coverbox.frag.qsb")
+            property variant src: field.mask
+            property vector2d size: field.texels
+        }
+        ShaderEffect {
             id: horizontal
             width: field.settledWidth; height: field.settledHeight
             layer.enabled: field.sized
@@ -72,7 +99,7 @@ Item {
             visible: field.sized
             blending: false
             fragmentShader: Qt.resolvedUrl("edgex.frag.qsb")
-            property variant src: field.mask
+            property variant src: field.coverage
             property vector2d size: field.texels
             property real reach: field.texReach
         }
@@ -83,6 +110,7 @@ Item {
         visible: field.sized
         fragmentShader: Qt.resolvedUrl("edgey.frag.qsb")
         property variant src: horizontal
+        property variant mask: field.coverage
         property vector2d size: field.texels
         property real reach: field.texReach
     }

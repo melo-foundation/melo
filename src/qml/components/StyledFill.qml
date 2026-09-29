@@ -221,6 +221,8 @@ Item {
     // EdgeField.coarse. Set by the callers that know their mask is a filled
     // shape rather than lettering.
     property bool coarseField: false
+    // EdgeField.density for this fill's own field; a shared field keeps 1
+    property real fieldDensity: 1
     // A drawn pen is not a soft bevel. Half-resolution geometry moves a
     // one-pixel toon outline off the real edge and breaks it around corners.
     // Keep the optimization for soft materials, including other stacks that
@@ -278,7 +280,7 @@ Item {
                        && root.width > 0 && root.height > 0
                        && root.fieldKey.length === 0
                sourceComponent: EdgeField { mask: root.mask; reach: root.fieldReach
-                                            coarse: root.fieldCoarse }
+                                            coarse: root.fieldCoarse; density: root.fieldDensity }
            }
            // The picture for an image layer, at most 1024 wide; none without one. Bound
            // straight to the sampler, the Image's texture is the scene graph's one copy per
@@ -449,7 +451,11 @@ Item {
                              : index === 1 && root.bottomIsTexture
                                ? (chainFills.count > 0 ? chainFills.itemAt(0) : null)
                                : (chainSteps.count > index ? chainSteps.itemAt(index - 1) : null)
-                        above: chainFills.count > index ? chainFills.itemAt(index) : null
+                        // Null while the layer has no texture: a delegate that becomes a
+                        // filter, or stops being one, only toggles layer.enabled, and a
+                        // ShaderEffect holding the same item keeps sampling its old texture.
+                        above: chainFills.count > index && chainFills.itemAt(index).layer.enabled
+                               ? chainFills.itemAt(index) : null
                         // ...and then rung 0 is nothing at all: no target, no draw
                         readonly property bool spare: index === 0 && root.bottomIsTexture
                         visible: !spare
