@@ -685,6 +685,24 @@ if(Qt6Test_FOUND)
     target_link_libraries(tst_pinmode PRIVATE Qt6::Core Qt6::Test)
     add_test(NAME pinmode COMMAND tst_pinmode)
 
+    # Sort clicks, album cards across a sort, id lookups: a real LibraryStore
+    # fed a library/get reply, the sidecar never started.
+    add_executable(tst_librarystore
+        tests/cpp/tst_librarystore.cpp
+        src/core/LibraryStore.cpp
+        src/core/LibraryStore.h
+        src/core/JsonRowModel.h
+        src/core/SettingsStore.cpp
+        src/rpc/SidecarService.cpp
+        src/rpc/SidecarProcess.cpp
+        src/rpc/RpcClient.cpp
+        src/rpc/NodeBootstrap.cpp)
+    target_include_directories(tst_librarystore PRIVATE src/core src/rpc)
+    target_link_libraries(tst_librarystore PRIVATE Qt6::Gui Qt6::Qml Qt6::Test)
+    add_test(NAME librarystore COMMAND tst_librarystore)
+    set_tests_properties(librarystore PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     add_executable(tst_jsonrowmodel tests/cpp/tst_jsonrowmodel.cpp src/core/JsonRowModel.h)
     target_include_directories(tst_jsonrowmodel PRIVATE src/core)
     target_link_libraries(tst_jsonrowmodel PRIVATE Qt6::Core Qt6::Test)

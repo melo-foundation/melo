@@ -112,160 +112,178 @@ Item {
     }
 
     // ---------- shared scrollable header ----------
+    // One set of cards for both layouts: each view's header is a spacer the
+    // card column is parented into, so switching layout moves it, never
+    // rebuilds it.
     Component {
         id: libHeader
-        Column {
+        Item {
             width: parent ? parent.width : view.width - 20
-            spacing: Theme.gap(4)
+            height: cardHead.height
+        }
+    }
+    readonly property Flickable scroller: layout === "grid" ? grid : list
+    // the top of the scroller's viewport, in the card column's coordinates
+    readonly property real cardTop: scroller.headerItem ? scroller.contentY - scroller.headerItem.y : 0
+    readonly property real cardW: gridCellW - 8
+    // MediaTile's own implicit height at that width
+    readonly property real cardH: GridUi.cellHFor(cardW + 8)
 
-            // the card sections; the heading is the page's own, above the scroller
-            // collapsible card sections (playlists / albums)
-            component SectionTitle: Item {
-                property string label
-                property bool collapsed: false
-                property bool collapsible: true
-                signal toggled()
-                width: parent.width
-                height: 26
-                Row {
-                    spacing: Theme.gap(6)
-                    anchors.verticalCenter: parent.verticalCenter
-                    InkText { text: parent.parent.label; ink: "textFaint"
-                           font { pixelSize: Theme.fs(11); weight: Theme.weightBold
-                                  family: Theme.fontFamily; letterSpacing: 0.5 } }
-                    Icon { visible: parent.parent.collapsible
-                           name: "chevron"; size: Theme.glyph(14); strokeWidth: 2.5
-                           ink: "textFaint"
-                           anchors.verticalCenter: parent.verticalCenter
-                           rotation: parent.parent.collapsed ? 0 : 90
-                           Behavior on rotation { NumberAnimation { duration: 120 } } }
-                }
-                MouseArea { anchors.fill: parent; enabled: parent.collapsible
-                            onClicked: parent.toggled() }
-            }
-            component CardFlow: Flow {
-                width: parent.width
-                spacing: Theme.gap(8)
-            }
-            // the tile itself is MediaTile, shared with Home: undersized or
-            // differently-drawn cards read as a different (wrong) kind of thing
-            component Card: MediaTile {
-                width: view.gridCellW - 8
-            }
+    Column {
+        id: cardHead
+        parent: view.scroller.headerItem
+        width: parent ? parent.width : 0
+        spacing: Theme.gap(4)
 
-            SectionTitle {
-                label: "PLAYLISTS"
-                visible: Library.playlists.count > 0
-                id: playlistsTitle
-                collapsed: view.playlistsCollapsed
-                onToggled: {
-                    if (MELO_LIB_DEBUG) WindowCtl.logLine("[lib] --- toggle playlists -> " + !view.playlistsCollapsed + " cy=" + view.activeView().contentY.toFixed(1) + " ---")
-                    view.beginToggle()
-                    view.playlistsCollapsed = !view.playlistsCollapsed
+        // the collapsible card sections (playlists, albums); the heading is the
+        // page's own, above the scroller
+        component SectionTitle: Item {
+            property string label
+            property bool collapsed: false
+            property bool collapsible: true
+            signal toggled()
+            width: parent.width
+            height: 26
+            Row {
+                spacing: Theme.gap(6)
+                anchors.verticalCenter: parent.verticalCenter
+                InkText { text: parent.parent.label; ink: "textFaint"
+                       font { pixelSize: Theme.fs(11); weight: Theme.weightBold
+                              family: Theme.fontFamily; letterSpacing: 0.5 } }
+                Icon { visible: parent.parent.collapsible
+                       name: "chevron"; size: Theme.glyph(14); strokeWidth: 2.5
+                       ink: "textFaint"
+                       anchors.verticalCenter: parent.verticalCenter
+                       rotation: parent.parent.collapsed ? 0 : 90
+                       Behavior on rotation { NumberAnimation { duration: 120 } } }
+            }
+            MouseArea { anchors.fill: parent; enabled: parent.collapsible
+                        onClicked: parent.toggled() }
+        }
+        component Cards: CardGrid {
+            width: parent.width
+            spacing: Theme.gap(8)
+            cardWidth: view.cardW
+            cardHeight: view.cardH
+            viewTop: view.cardTop - y
+            viewHeight: view.scroller.height
+        }
+        // the tile itself is MediaTile, shared with Home, so a library card
+        // reads as the same kind of thing as a Home card
+        component Card: MediaTile {
+            // a pooled card keeps whatever opacity it was released at
+            GridView.onReused: opacity = 1
+            width: view.cardW
+        }
+
+        SectionTitle {
+            label: "PLAYLISTS"
+            visible: Library.playlists.count > 0
+            id: playlistsTitle
+            collapsed: view.playlistsCollapsed
+            onToggled: {
+                if (MELO_LIB_DEBUG) WindowCtl.logLine("[lib] --- toggle playlists -> " + !view.playlistsCollapsed + " cy=" + view.activeView().contentY.toFixed(1) + " ---")
+                view.beginToggle()
+                view.playlistsCollapsed = !view.playlistsCollapsed
+            }
+        }
+        Cards {
+            id: playlistCards
+            visible: Library.playlists.count > 0 && !view.playlistsCollapsed
+            model: Library.playlists
+            delegate: Card {
+                required property var model
+                title_: model.title
+                meta_: model.trackCount + " tracks"
+                art: model.thumbnail
+                onClicked_: view.openPlaylist(model.playlistId, model.title,
+                                              Library.playlistTracks(model.playlistId))
+                onMenu: (sx, sy) => {
+                    if (!view.contextMenu) return
+                    const pid = model.playlistId
+                    const title = model.title
+                    const pts = Library.playlistTracks(pid)
+                    const nd = pts.filter((x) => !x.downloaded)
+                    const acts = [
+                        { label: "Play", act: () => { if (pts.length) Player.playQueue(pts, 0) } },
+                        { label: "Play (Shuffled)", act: () => {
+                            const s = view.shuffled(pts)
+                            if (s.length) Player.playQueue(s, 0)
+                        } },
+                    ]
+                    if (nd.length > 0)
+                        acts.push({ label: "Download All (" + nd.length + ")",
+                                    act: () => Library.downloadAll(nd.map((x) => x.id)) })
+                    acts.push({ label: "Rename Playlist", act: () => {
+                        view.prompt.promptDialog("New playlist name:", title, (n) => {
+                            if (n && n.trim() && n.trim() !== title)
+                                Library.renamePlaylist(pid, n.trim())
+                        })
+                    } })
+                    acts.push({ label: "Delete Playlist Only",
+                                act: () => Library.removePlaylist(pid) })
+                    view.contextMenu.open(sx, sy, acts)
                 }
             }
-            CardFlow {
-                id: playlistsFlow
-                visible: Library.playlists.count > 0 && !view.playlistsCollapsed
-                Repeater {
-                    model: Library.playlists
-                    Card {
-                        required property var model
-                        title_: model.title
-                        meta_: model.trackCount + " tracks"
-                        art: model.thumbnail
-                        onClicked_: view.openPlaylist(model.playlistId, model.title,
-                                                      Library.playlistTracks(model.playlistId))
-                        onMenu: (sx, sy) => {
-                            if (!view.contextMenu) return
-                            const pid = model.playlistId
-                            const title = model.title
-                            const pts = Library.playlistTracks(pid)
-                            const nd = pts.filter((x) => !x.downloaded)
-                            const acts = [
-                                { label: "Play", act: () => { if (pts.length) Player.playQueue(pts, 0) } },
-                                { label: "Play (Shuffled)", act: () => {
-                                    const s = view.shuffled(pts)
-                                    if (s.length) Player.playQueue(s, 0)
-                                } },
-                            ]
-                            if (nd.length > 0)
-                                acts.push({ label: "Download All (" + nd.length + ")",
-                                            act: () => Library.downloadAll(nd.map((x) => x.id)) })
-                            acts.push({ label: "Rename Playlist", act: () => {
-                                view.prompt.promptDialog("New playlist name:", title, (n) => {
-                                    if (n && n.trim() && n.trim() !== title)
-                                        Library.renamePlaylist(pid, n.trim())
+        }
+
+        SectionTitle {
+            label: "ALBUMS"
+            visible: Library.albums.count > 0
+            id: albumsTitle
+            collapsed: view.albumsCollapsed
+            onToggled: {
+                if (MELO_LIB_DEBUG) WindowCtl.logLine("[lib] --- toggle albums -> " + !view.albumsCollapsed + " cy=" + view.activeView().contentY.toFixed(1) + " ---")
+                view.beginToggle()
+                view.albumsCollapsed = !view.albumsCollapsed
+            }
+        }
+        Cards {
+            id: albumCards
+            visible: Library.albums.count > 0 && !view.albumsCollapsed
+            model: Library.albums
+            delegate: Card {
+                required property var model
+                title_: model.album
+                meta_: model.artist + " · " + model.trackCount + " tracks"
+                art: model.art
+                // an album opens like a playlist; Play is in the menu,
+                // as it is for playlists
+                onClicked_: view.openPlaylist("album:" + model.album, model.album,
+                                              Library.albumTracks(model.album))
+                onMenu: (sx, sy) => {
+                    if (!view.contextMenu) return
+                    const alb = model.album
+                    const ts = Library.albumTracks(alb)
+                    view.contextMenu.open(sx, sy, [
+                        { label: "Play", act: () => { if (ts.length) Player.playQueue(ts, 0) } },
+                        { label: "Play (Shuffled)", act: () => {
+                            const s = view.shuffled(ts)
+                            if (s.length) Player.playQueue(s, 0)
+                        } },
+                        { label: "Remove All Tracks from Library", act: () => {
+                            view.prompt.confirmDialog(
+                                "Remove all " + ts.length + " tracks in \"" + alb + "\" from library?",
+                                (ok) => {
+                                    if (ok !== true) return
+                                    const hasDl = ts.some((x) => x.downloaded)
+                                    const doRemove = (del) =>
+                                        ts.forEach((x) => Library.removeTrack(x.id, del === true))
+                                    if (hasDl)
+                                        view.prompt.confirmDialog("Also delete downloaded audio files?", doRemove)
+                                    else
+                                        doRemove(false)
                                 })
-                            } })
-                            acts.push({ label: "Delete Playlist Only",
-                                        act: () => Library.removePlaylist(pid) })
-                            view.contextMenu.open(sx, sy, acts)
-                        }
-                    }
+                        } },
+                    ])
                 }
             }
+        }
 
-            SectionTitle {
-                label: "ALBUMS"
-                visible: Library.albums.count > 0
-                id: albumsTitle
-                collapsed: view.albumsCollapsed
-                onToggled: {
-                    if (MELO_LIB_DEBUG) WindowCtl.logLine("[lib] --- toggle albums -> " + !view.albumsCollapsed + " cy=" + view.activeView().contentY.toFixed(1) + " ---")
-                    view.beginToggle()
-                    view.albumsCollapsed = !view.albumsCollapsed
-                }
-            }
-            CardFlow {
-                id: albumsFlow
-                visible: Library.albums.count > 0 && !view.albumsCollapsed
-                Repeater {
-                    model: Library.albums
-                    Card {
-                        required property var model
-                        title_: model.album
-                        meta_: model.artist + " · " + model.trackCount + " tracks"
-                        art: model.art
-                        // an album opens like a playlist; Play is in the menu,
-                        // as it is for playlists
-                        onClicked_: view.openPlaylist("album:" + model.album, model.album,
-                                                      Library.albumTracks(model.album))
-                        onMenu: (sx, sy) => {
-                            if (!view.contextMenu) return
-                            const alb = model.album
-                            const ts = Library.albumTracks(alb)
-                            view.contextMenu.open(sx, sy, [
-                                { label: "Play", act: () => { if (ts.length) Player.playQueue(ts, 0) } },
-                                { label: "Play (Shuffled)", act: () => {
-                                    const s = view.shuffled(ts)
-                                    if (s.length) Player.playQueue(s, 0)
-                                } },
-                                { label: "Remove All Tracks from Library", act: () => {
-                                    view.prompt.confirmDialog(
-                                        "Remove all " + ts.length + " tracks in \"" + alb + "\" from library?",
-                                        (ok) => {
-                                            if (ok !== true) return
-                                            const hasDl = ts.some((x) => x.downloaded)
-                                            const doRemove = (del) =>
-                                                ts.forEach((x) => Library.removeTrack(x.id, del === true))
-                                            if (hasDl)
-                                                view.prompt.confirmDialog("Also delete downloaded audio files?", doRemove)
-                                            else
-                                                doRemove(false)
-                                        })
-                                } },
-                            ])
-                        }
-                    }
-                }
-            }
-
-            SectionTitle {
-                label: "TRACKS"
-                collapsible: false
-                visible: Library.playlists.count > 0 || Library.albums.count > 0
-            }
+        SectionTitle {
+            label: "TRACKS"
+            collapsible: false
+            visible: Library.playlists.count > 0 || Library.albums.count > 0
         }
     }
 
@@ -339,8 +357,8 @@ Item {
                         width: implicitWidth; height: 22
                         MouseArea { id: sbMa; anchors.fill: parent; hoverEnabled: true
                                     onClicked: {
-                                        if (Library.sortKey === parent.key) Library.sortAsc = !Library.sortAsc
-                                        else { Library.sortKey = parent.key; Library.sortAsc = parent.key === "title" || parent.key === "channel" }
+                                        if (Library.sortKey === parent.key) Library.setSort(parent.key, !Library.sortAsc)
+                                        else Library.setSort(parent.key, parent.key === "title" || parent.key === "channel")
                                     } }
                     }
                     SortBtn { key: "addedAt"; name: "Date" }
@@ -388,7 +406,9 @@ Item {
         onOriginYChanged: {
             const d = originY - lastOriginY
             lastOriginY = originY
-            if (!visible) return
+            // the shared header resizes with the other layout's width: a hidden
+            // view at the top stays at the top
+            if (!visible) { if (atTop) contentY = originY; return }
             // A section toggle leaves its contentY behind and is applied regardless;
             // other origin moves (art landing mid-fling) wait, since writing contentY ends
             // the fling (GridUi.originHold).
@@ -604,7 +624,9 @@ Item {
         onOriginYChanged: {
             const d = originY - lastOriginY
             lastOriginY = originY
-            if (!visible) return
+            // the shared header resizes with the other layout's width: a hidden
+            // view at the top stays at the top
+            if (!visible) { if (atTop) contentY = originY; return }
             // A section toggle leaves its contentY behind and is applied regardless;
             // other origin moves (art landing mid-fling) wait, since writing contentY ends
             // the fling (GridUi.originHold).

@@ -1,5 +1,6 @@
 #pragma once
 #include <QAbstractListModel>
+#include <QHash>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -13,11 +14,13 @@ public:
         : QAbstractListModel(parent), names_(roleNames) {}
 
     int count() const { return rows_.size(); }
+    void setKeepRowsOnReorder(bool on) { keepRowsOnReorder_ = on; }
 
     // Diff-aware refresh: beginResetModel makes attached views drop their
     // scroll position. Same keys in same order -> per-row dataChanged; one
-    // contiguous run inserted/removed -> granular insert/remove; only a reorder
-    // (sort or filter change, where a jump to top is expected) hard-resets.
+    // contiguous run inserted/removed -> granular insert/remove; anything else
+    // (a sort, a filter) hard-resets, since a jump to top is expected, unless
+    // setKeepRowsOnReorder makes a pure reorder a layout change.
     void reset(const QVariantList& rows) {
         const int oldN = rows_.size(), newN = rows.size();
         if (oldN > 0 && newN > 0) {
@@ -51,6 +54,7 @@ public:
                 return;
             }
         }
+        if (keepRowsOnReorder_ && oldN == newN && oldN > 0 && moveRows(rows)) return;
         beginResetModel();
         rows_ = rows;
         endResetModel();
@@ -79,6 +83,36 @@ signals:
     void countChanged();
 
 private:
+    // The same keys in a new order: a layout change, so attached views keep
+    // their delegates. False (nothing emitted) when the keys differ or repeat.
+    bool moveRows(const QVariantList& rows) {
+        const QString key = names_.first();
+        QHash<QString, int> newAt;
+        newAt.reserve(rows.size());
+        for (int i = 0; i < rows.size(); ++i) {
+            const QString k = rows[i].toMap().value(key).toString();
+            if (newAt.contains(k)) return false;
+            newAt.insert(k, i);
+        }
+        QList<int> to(rows_.size());
+        for (int i = 0; i < rows_.size(); ++i) {
+            const auto it = newAt.constFind(rows_[i].toMap().value(key).toString());
+            if (it == newAt.cend()) return false;
+            to[i] = it.value();
+            newAt.erase(it);   // a repeated old key finds nothing the second time
+        }
+        emit layoutAboutToBeChanged({}, QAbstractItemModel::VerticalSortHint);
+        const QModelIndexList from = persistentIndexList();
+        QModelIndexList moved;
+        moved.reserve(from.size());
+        for (const QModelIndex& ix : from) moved.append(index(to[ix.row()]));
+        rows_ = rows;
+        changePersistentIndexList(from, moved);
+        emit layoutChanged({}, QAbstractItemModel::VerticalSortHint);
+        return true;
+    }
+
     QStringList names_;
     QVariantList rows_;
+    bool keepRowsOnReorder_ = false;
 };

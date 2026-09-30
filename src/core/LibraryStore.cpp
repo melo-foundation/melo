@@ -25,6 +25,8 @@ LibraryStore::LibraryStore(SidecarService* sidecar, SettingsStore* settings, QOb
       tracks_(new JsonRowModel(kTrackRoles, this)),
       playlists_(new JsonRowModel(kPlaylistRoles, this)),
       albums_(new JsonRowModel(kAlbumRoles, this)) {
+    // a sort reorders the album cards; moving them keeps every card built
+    albums_->setKeepRowsOnReorder(true);
     connect(sidecar_, &SidecarService::readyChanged, this, [this] { refresh(); });
     connect(sidecar_, &SidecarService::libraryChanged, this, [this] { refresh(); });
     connect(sidecar_, &SidecarService::jobDone, this,
@@ -64,6 +66,10 @@ void LibraryStore::setSortAsc(bool v) {
     if (v == sortAsc_) return;
     sortAsc_ = v; emit viewChanged(); rebuild();
 }
+void LibraryStore::setSort(const QString& k, bool asc) {
+    if (k == sortKey_ && asc == sortAsc_) return;
+    sortKey_ = k; sortAsc_ = asc; emit viewChanged(); rebuild();
+}
 void LibraryStore::setFilter(const QString& f) {
     if (f == filter_) return;
     // viewChanged NOW (the text field is showing what was typed); the list
@@ -76,12 +82,19 @@ void LibraryStore::setFilter(const QString& f) {
 void LibraryStore::refresh() {
     auto* c = sidecar_->call("library/get");
     connect(c, &RpcCall::finished, this, [this](const QJsonValue& r) {
-        const QJsonObject o = r.toObject();
-        rawTracks_ = o["tracks"].toArray();
-        rawPlaylists_ = o["playlists"].toArray();
-        emit countsChanged();
-        rebuild();
+        applyLibrary(r.toObject());
     });
+}
+
+void LibraryStore::applyLibrary(const QJsonObject& o) {
+    rawTracks_ = o["tracks"].toArray();
+    rawPlaylists_ = o["playlists"].toArray();
+    trackIndex_.clear();
+    trackIndex_.reserve(rawTracks_.size());
+    for (int i = 0; i < rawTracks_.size(); ++i)
+        trackIndex_.tryEmplace(rawTracks_[i].toObject()["id"].toString(), i);   // first wins
+    emit countsChanged();
+    rebuild();
 }
 
 QString LibraryStore::displayTitle(const QJsonObject& t) {
@@ -123,12 +136,13 @@ QVariantMap LibraryStore::toPlayable(const QJsonObject& t) const {
              { "downloaded", t["downloaded"].toBool() } };   // extra key; ignored by playQueue
 }
 
+int LibraryStore::trackAt(const QString& id) const {
+    return trackIndex_.value(id, -1);
+}
+
 QVariantMap LibraryStore::playable(const QString& id) const {
-    for (const auto& v : rawTracks_) {
-        const QJsonObject t = v.toObject();
-        if (t["id"].toString() == id) return toPlayable(t);
-    }
-    return {};
+    const int i = trackAt(id);
+    return i < 0 ? QVariantMap() : toPlayable(rawTracks_[i].toObject());
 }
 
 void LibraryStore::rebuild() {
@@ -259,9 +273,7 @@ void LibraryStore::downloadAll(const QStringList& ids) {
 }
 
 bool LibraryStore::isInLibrary(const QString& id) const {
-    for (const auto& v : rawTracks_)
-        if (v.toObject()["id"].toString() == id) return true;
-    return false;
+    return trackAt(id) >= 0;
 }
 
 bool LibraryStore::hasPlaylist(const QString& playlistId) const {
@@ -281,11 +293,8 @@ QVariantMap LibraryStore::playlistMeta(const QString& playlistId) const {
 }
 
 bool LibraryStore::isDownloaded(const QString& id) const {
-    for (const auto& v : rawTracks_) {
-        const QJsonObject t = v.toObject();
-        if (t["id"].toString() == id) return t["downloaded"].toBool();
-    }
-    return false;
+    const int i = trackAt(id);
+    return i >= 0 && rawTracks_[i].toObject()["downloaded"].toBool();
 }
 
 void LibraryStore::createPlaylist(const QString& title, const QString& trackId) {
@@ -330,12 +339,11 @@ QVariantList LibraryStore::playlistTracks(const QString& playlistId) const {
     for (const auto& pv : rawPlaylists_) {
         const QJsonObject p = pv.toObject();
         if (p["playlistId"].toString() != playlistId) continue;
-        for (const auto& idv : p["trackIds"].toArray()) {
-            const QString id = idv.toString();
-            for (const auto& tv : rawTracks_) {
-                const QJsonObject t = tv.toObject();
-                if (t["id"].toString() == id) { out.append(toPlayable(t)); break; }
-            }
+        const QJsonArray ids = p["trackIds"].toArray();
+        out.reserve(ids.size());
+        for (const auto& idv : ids) {
+            const int i = trackAt(idv.toString());
+            if (i >= 0) out.append(toPlayable(rawTracks_[i].toObject()));
         }
         break;
     }

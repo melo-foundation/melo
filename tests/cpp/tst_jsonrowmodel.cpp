@@ -84,6 +84,35 @@ private slots:
         QCOMPARE(m.get(0)["trackId"].toString(), "c");
     }
 
+    // Opted in (the album cards): a pure reorder is a layout change, so views
+    // keep their delegates and their scroll position.
+    void reorderKeepsRowsWhenAsked() {
+        JsonRowModel m({"trackId", "title"});
+        m.setKeepRowsOnReorder(true);
+        m.reset({row("a", "A"), row("b", "B"), row("c", "C")});
+        const QPersistentModelIndex held = m.index(0);   // "a"
+
+        QSignalSpy resets(&m, &QAbstractItemModel::modelAboutToBeReset);
+        QSignalSpy layouts(&m, &QAbstractItemModel::layoutChanged);
+        m.reset({row("c", "C"), row("b", "B2"), row("a", "A")});
+
+        QCOMPARE(resets.count(), 0);
+        QCOMPARE(layouts.count(), 1);
+        QCOMPARE(m.get(0)["trackId"].toString(), "c");
+        QCOMPARE(m.get(1)["title"].toString(), "B2");
+        QCOMPARE(held.row(), 2);
+    }
+
+    // A different set of keys is not a reorder, opted in or not.
+    void keepRowsStillResetsOnNewKeys() {
+        JsonRowModel m({"trackId", "title"});
+        m.setKeepRowsOnReorder(true);
+        m.reset({row("a", "A"), row("b", "B"), row("c", "C")});
+        QSignalSpy resets(&m, &QAbstractItemModel::modelAboutToBeReset);
+        m.reset({row("c", "C"), row("x", "X"), row("a", "A")});
+        QCOMPARE(resets.count(), 1);
+    }
+
     void initialFillAndClear() {
         JsonRowModel m({"trackId", "title"});
         QSignalSpy counts(&m, &JsonRowModel::countChanged);

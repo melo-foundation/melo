@@ -1,5 +1,6 @@
 #pragma once
 #include <QJsonArray>
+#include <QHash>
 #include <QJsonObject>
 #include <QSet>
 #include <QTimer>
@@ -37,9 +38,13 @@ public:
     QString filter() const { return filter_; }
     void setSortKey(const QString& k);
     void setSortAsc(bool v);
+    // key and direction in one rebuild: the sort bar changes both on a click
+    Q_INVOKABLE void setSort(const QString& key, bool asc);
     void setFilter(const QString& f);
 
     Q_INVOKABLE void refresh();
+    // a library/get reply: {tracks, playlists}
+    void applyLibrary(const QJsonObject& o);
     Q_INVOKABLE void addTrack(const QVariantMap& track, bool download);
     Q_INVOKABLE void removeTrack(const QString& id, bool deleteFile);
     Q_INVOKABLE void download(const QString& id);
@@ -75,11 +80,13 @@ private:
     static QString displayTitle(const QJsonObject& t);
     static QString displayArtist(const QJsonObject& t);
     QVariantMap toPlayable(const QJsonObject& t) const;
+    int trackAt(const QString& id) const;   // index into rawTracks_, or -1
 
     SidecarService* sidecar_;
     SettingsStore* settings_;
     QJsonArray rawTracks_;
     QJsonArray rawPlaylists_;
+    QHash<QString, int> trackIndex_;   // id -> rawTracks_ index, rebuilt per reply
     QString sortKey_ = QStringLiteral("addedAt");
     bool sortAsc_ = false;
     QString filter_;
