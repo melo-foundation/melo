@@ -2737,6 +2737,10 @@ Window {
         Spectrum.setFrozen(resizeFreeze)
         if (PluginWindows) PluginWindows.setFrozen(resizeFreeze)
         resizeFreeze ? resizeFreezeSafety.restart() : resizeFreezeSafety.stop()
+        // Main, at opacity 0, draws nothing through a bar resize: closing the
+        // popup at the start makes it render, and on the shared GUI thread its
+        // frames stall the bar's resize.
+        WindowCtl.holdFrames(root, resizeFreeze && miniPlayer)
     }
     // Last resort only. The real releases are KWin's ended report and,
     // without KWin, the hover fallback above; this is a floor so a missed

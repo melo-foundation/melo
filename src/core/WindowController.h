@@ -1,5 +1,6 @@
 #pragma once
 #include <QColor>
+#include "FrameHold.h"
 #include <QEvent>
 #include <QGuiApplication>
 #include <QObject>
@@ -101,6 +102,9 @@ public:
         return win ? win->effectiveDevicePixelRatio() : 0.0;
     }
     ~WindowController() override;   // unloads persistent KWin scripts
+
+    // on: the window renders nothing until released (FrameHold)
+    Q_INVOKABLE void holdFrames(QQuickWindow* win, bool on) { frameHold_.hold(win, on); }
 
     // enabled=false: input region moved off-surface -> window is click-through.
     // Writes the whole mask, so plugin windows must not use it: a skin's
@@ -282,6 +286,7 @@ protected:
     int dprGen_ = 0;
     bool dprArmed_ = false;
 private:
+    FrameHold frameHold_;
     bool contrastAvailable_ = false;
     // last values announced, so a change to one does not re-announce the other
     bool lastBlur_ = false, lastContrast_ = false;

@@ -737,6 +737,14 @@ if(Qt6Test_FOUND)
         set_tests_properties(windowmask-scaled PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2")
 
+        # A held window renders nothing until released: the main window
+        # through a mini bar resize.
+        add_executable(tst_framehold tests/cpp/tst_framehold.cpp src/core/FrameHold.h)
+        target_include_directories(tst_framehold PRIVATE src/core)
+        target_link_libraries(tst_framehold PRIVATE Qt6::Gui Qt6::Quick Qt6::Test)
+        add_test(NAME framehold COMMAND tst_framehold)
+        set_tests_properties(framehold PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
         add_executable(tst_visualizer
             tests/cpp/tst_visualizer.cpp
             src/vis/VisualizerItem.cpp
