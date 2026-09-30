@@ -70,6 +70,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.2.2" type="development" date="2026-10-01">
+      <description>
+        <p>Hotfix for Alpha 2: fixed playback on Arch-based distributions. The AppImages update in place with AppImageUpdate and Gear Lever.</p>
+      </description>
+    </release>
     <release version="0.2.1" type="development" date="2026-09-29">
       <description>
         <p>Hotfix for Alpha 2: fixed the full AppImage not opening in AppImage tools.</p>
