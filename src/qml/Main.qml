@@ -1786,6 +1786,7 @@ Window {
                 }
 
                 HomeView {
+                    id: homeView
                     anchors.fill: visible ? parent : undefined
                     visible: PlayerState.view === 0
                     contextMenu: contextMenu
@@ -2135,6 +2136,7 @@ Window {
         sourceComponent: SettingsWindow {
             objectName: "settingsWin"
             onImportPaths: (paths) => root.importAndEdit(paths)
+            onGuestReset: homeView.refresh()
             mainAreaRatio: (root.lastFullWidth * root.lastFullHeight) / 2073600
         }
     }

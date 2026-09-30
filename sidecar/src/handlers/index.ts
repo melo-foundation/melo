@@ -252,7 +252,12 @@ export function registerHandlers(): void {
   method("cookies/browsers", () => ({ browsers: installedBrowsers() }));
   method("cookies/profiles", () => ({ profiles: gc.listProfiles() }));
   method("cookies/import", ({ browser, profile }) => gc.importBrowserCookies(browser, profile).then((count) => ({ count })));
-  method("cookies/resetGuest", ({ profile }) => gc.resetGuestSession(profile));
+  // the feed and stream sessions carry the old visitor id; drop them with the cookies
+  method("cookies/resetGuest", async ({ profile }) => {
+    await gc.resetGuestSession(profile);
+    it.clearCookieCache();
+    st.resetSession();
+  });
   method("cookies/create", ({ name }) => gc.createProfile(name));
   method("cookies/delete", ({ name }) => gc.deleteProfile(name));
   method("cookies/rename", ({ oldName, newName }) => gc.renameProfile(oldName, newName));

@@ -67,6 +67,7 @@ export function clearCookieCache(): void {
   browserCookies.clear();
   accountCache.clear();
   cachedVisitorData = null;
+  musicVisitorData = "";
   clearGuestCache();
 }
 

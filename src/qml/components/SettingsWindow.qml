@@ -13,6 +13,7 @@ import "accounts.js" as Accounts
 Window {
     id: win
     signal importPaths(var paths)   // Main imports them and opens the metadata editor
+    signal guestReset()             // Main reloads Home
     // A rounded corner is at most half its rectangle's height, so the title bar
     // draws less than the window radius when it is short; the ground and the
     // border above it follow what it draws, or the bar pokes past their curve
@@ -1938,7 +1939,7 @@ Window {
                            onClicked: winPrompt.confirmDialog(
                                "Reset the guest session? Recommendations will start over.",
                                (ok) => { if (ok === true) sidecar.rpc("cookies/resetGuest",
-                                   { profile: Settings.cookieProfile }, () => {}) }) }
+                                   { profile: Settings.cookieProfile }, () => win.guestReset()) }) }
                 }
                 SRow {
                     // there is nothing to report to without a session

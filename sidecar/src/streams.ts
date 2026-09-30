@@ -90,6 +90,12 @@ export function warmStreamSession(): void {
 // would have used.
 let sessionKey = "";
 
+/** Drop the session so the next request builds one from the current cookies. */
+export function resetSession(): void {
+  itSession = null;
+  sessionKey = "";
+}
+
 function getSession(): Promise<Innertube> {
   const s = loadSettings();
   const { hl, gl } = localePref();
