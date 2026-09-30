@@ -3291,6 +3291,19 @@ Window {
                                                   font { pixelSize: Theme.fs(9); family: Theme.fontFamily } }
                                         TextInput {
                                             id: insIn
+                                            // WheelScroll hands a focused box its wheel: 1 per notch;
+                                            // a touchpad's small deltas add up to 120 per step
+                                            property real wheelAcc: 0
+                                            onActiveFocusChanged: wheelAcc = 0
+                                            function takeWheel(dy) {
+                                                wheelAcc += dy
+                                                const steps = Math.trunc(wheelAcc / 120)
+                                                if (!steps) return
+                                                wheelAcc -= steps * 120
+                                                const v = Math.max(-64, Math.min(64, (parseInt(text) || 0) + steps))
+                                                text = String(v)
+                                                win.setInset(insRow.modelData, parent.modelData, v)
+                                            }
                                             anchors.fill: parent
                                             anchors.leftMargin: Theme.gap(14); anchors.rightMargin: Theme.gap(4)
                                             verticalAlignment: TextInput.AlignVCenter

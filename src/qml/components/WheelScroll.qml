@@ -10,6 +10,7 @@ import QtQuick
 //       WheelScroll { parent: list; target: list }
 //   }
 MouseArea {
+    id: wheelScroll
     property Flickable target: null
     // Optional: called with the wheel's angleDelta.y when the target is
     // already at the end the notch is pushing towards, so a page can carry on
@@ -23,6 +24,16 @@ MouseArea {
 
     onWheel: (w) => {
         if (!target) { w.accepted = false; return }
+        // A focused control with takeWheel(dy) (a number box) gets the notch
+        // while the pointer is over it. Handed over here, because a wheel this
+        // area lets go reaches the Flickable, not the control.
+        const f = Window.activeFocusItem
+        if (f && typeof f.takeWheel === "function"
+                && f.contains(f.mapFromItem(wheelScroll, w.x, w.y))) {
+            f.takeWheel(w.angleDelta.y)
+            w.accepted = true
+            return
+        }
         const rows = Number(Settings.uiGet("scrollSpeed", 3))
         const step = (w.angleDelta.y / 120) * rows * 52
         const minY = target.originY
