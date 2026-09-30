@@ -138,7 +138,7 @@ Rectangle {
 
         ListView {
             id: list
-            QQC.ScrollBar.vertical: MScrollBar {}
+            QQC.ScrollBar.vertical: listBar
             width: parent.width
             height: parent.height - y
             clip: true
@@ -495,6 +495,8 @@ Rectangle {
             }
         }
     }
+    // the Column sits at the panel's origin, so the list's y is the panel's
+    MScrollBar { id: listBar; scroller: list }
     InkText {
         anchors.top: parent.top
         anchors.topMargin: panel.emptyTop

@@ -590,7 +590,7 @@ Item {
     // ---------- YouTube: recommended list / compact ----------
     ListView {
         id: recList
-        QQC.ScrollBar.vertical: MScrollBar {}
+        QQC.ScrollBar.vertical: recListBar
         anchors.top: toolbar.bottom
         anchors.bottom: parent.bottom
         anchors.topMargin: Theme.inset("pageHeader", "bottom")
@@ -745,12 +745,13 @@ Item {
             }
         }
     }
+    MScrollBar { id: recListBar; scroller: recList }
 
     // ---------- YouTube: recommended grid ----------
     GridView {
         id: recGrid
 
-        QQC.ScrollBar.vertical: MScrollBar {}
+        QQC.ScrollBar.vertical: recGridBar
         // When originY moves, hold the top only if the view is AT the top;
         // anywhere else contentY is left alone, so what is on screen does not
         // move. `atTop` comes from contentY because the wheel sets contentY
@@ -845,11 +846,12 @@ Item {
             }
         }
     }
+    MScrollBar { id: recGridBar; scroller: recGrid }
 
     // ---------- YouTube Music: mix sections ----------
     Flickable {
         id: ytmFlick
-        QQC.ScrollBar.vertical: MScrollBar {}
+        QQC.ScrollBar.vertical: ytmFlickBar
         anchors.top: toolbar.bottom
         anchors.topMargin: Theme.inset("pageHeader", "bottom")
         anchors.left: parent.left
@@ -1070,6 +1072,7 @@ Item {
 
         }
     }
+    MScrollBar { id: ytmFlickBar; scroller: ytmFlick }
 
     Column {
         anchors.centerIn: parent

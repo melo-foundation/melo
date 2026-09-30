@@ -134,7 +134,8 @@ Window {
             Rectangle { width: parent.width; height: 1; color: Theme.border }
 
             ListView {
-                QQC.ScrollBar.vertical: MScrollBar {}
+                id: rowList
+                QQC.ScrollBar.vertical: rowBar
                 width: parent.width
                 height: Math.min(contentHeight, 240)
                 clip: true
@@ -172,5 +173,6 @@ Window {
                 font { pixelSize: Theme.fs(11); family: Theme.fontFamily }
             }
         }
+        MScrollBar { id: rowBar; scroller: rowList; y: col.y + rowList.y }
     }
 }

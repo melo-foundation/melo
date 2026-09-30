@@ -1014,7 +1014,7 @@ Window {
     Flickable {
         objectName: "settingsFlick"
         id: settingsFlick
-        QQC.ScrollBar.vertical: MScrollBar {}
+        QQC.ScrollBar.vertical: settingsBar
         anchors.top: tabsBar.bottom
         anchors.left: parent.left
         anchors.right: parent.right
@@ -4267,6 +4267,7 @@ Window {
             }
         }
     }
+    MScrollBar { id: settingsBar; scroller: settingsFlick; edge: settingsFlick }
 
     // window-local overlays (this is a separate window from Main's);
     // selects use a REAL popup window so they can cross the window edge

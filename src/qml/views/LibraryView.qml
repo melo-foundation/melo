@@ -378,7 +378,7 @@ Item {
 
     ListView {
         id: list
-        QQC.ScrollBar.vertical: MScrollBar {}
+        QQC.ScrollBar.vertical: listBar
         // Not anchors.fill + margins: while the container is 0 tall at startup that
         // gives a negative height, and contentY stays parked negative for the session.
         // Held to a centred column (GridUi.listMaxW); the wheel works over the margins
@@ -578,12 +578,13 @@ Item {
             }
         }
     }
+    MScrollBar { id: listBar; scroller: list }
 
     // ---------- tracks: grid ----------
     GridView {
         id: grid
 
-        QQC.ScrollBar.vertical: MScrollBar {}
+        QQC.ScrollBar.vertical: gridBar
         // same reason as the list above: never a negative height
         y: libHead.y + libHead.height + Theme.inset("pageHeader", "bottom")
         height: Math.max(0, parent.height - y - GridUi.padBottom)
@@ -691,6 +692,7 @@ Item {
             }
         }
     }
+    MScrollBar { id: gridBar; scroller: grid }
 
     // An empty library and an empty search are different pages: this counts
     // what the filter left, so a search matching nothing shows a message

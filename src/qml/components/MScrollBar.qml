@@ -2,13 +2,30 @@ import QtQuick
 import QtQuick.Controls as QQC
 import ".."
 
-// The app's scrollbar. Attach with
-//   QQC.ScrollBar.vertical: MScrollBar {}
+// The app's scrollbar. It sits at the right edge of its parent, beside the
+// scroller and outside its clip, over the scroller's height:
+//   ListView { id: list; QQC.ScrollBar.vertical: bar }
+//   MScrollBar { id: bar; scroller: list }
+// `edge` names a sibling to sit at instead of the parent's edge. The scroller
+// must be a sibling, or `y` is set at the site. Qt lays out an attached bar
+// only when its parent is the Flickable, so this one places itself.
 // As a bar it is the `scrollbar` role: thin, no track, fading when idle. As a
 // slider (Theme.scrollbars) it takes the slider's rail, knob and shape and never
 // fades, since a fading rail looks broken.
 QQC.ScrollBar {
     id: sb
+    property Flickable scroller: null
+    property Item edge: parent
+    x: {
+        if (!edge) return 0
+        const left = edge === parent ? 0 : edge.x
+        return mirrored ? left : left + edge.width - width
+    }
+    y: scroller ? scroller.y : 0
+    height: scroller ? scroller.height : implicitHeight
+    // AsNeeded: hidden while the content fits, rail and all
+    visible: (!scroller || scroller.visible) && policy !== QQC.ScrollBar.AlwaysOff
+             && (policy === QQC.ScrollBar.AlwaysOn || size < 1)
     readonly property bool slider: Theme.scrollbars === "slider"
     // As a slider: the rail at the track height, the thumb at the knob size,
     // the wider setting the thickness and the narrower centred in it. A theme
@@ -20,8 +37,9 @@ QQC.ScrollBar {
     readonly property real thick: Math.max(rail, knob)
     policy: QQC.ScrollBar.AsNeeded
     minimumSize: 0.08
-    // the rail and thumb sit inside the theme's scrollbar inset: room from
-    // the scroller's edge on every side
+    // the rail and thumb sit inside the theme's scrollbar inset: right from
+    // the edge (negative runs past it), top and bottom from the scroller's,
+    // left the room kept from the content
     leftPadding: Theme.inset("scrollbar", "left"); rightPadding: Theme.inset("scrollbar", "right")
     topPadding: Theme.inset("scrollbar", "top"); bottomPadding: Theme.inset("scrollbar", "bottom")
     implicitWidth: thick + leftPadding + rightPadding
@@ -38,6 +56,8 @@ QQC.ScrollBar {
         radius: Theme.trackRadius(Theme.sliderTrackShape, Math.min(width, height))
         role: "scrollbarTrack"
     }
+    // the bar is outside the scroller, so the wheel over it is sent on
+    WheelScroll { parent: sb; target: sb.scroller; enabled: sb.scroller !== null }
     // The thumb is a child of the content item: a control stretches its
     // content item between the paddings, to the wider of rail and knob, which
     // would draw a narrow knob at the rail's width. The child is the knob's

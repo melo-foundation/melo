@@ -114,7 +114,7 @@ Item {
     // --- list / compact ---
     ListView {
         id: list
-        QQC.ScrollBar.vertical: MScrollBar {}
+        QQC.ScrollBar.vertical: listBar
         // The header sits at negative content y (originY = -headerHeight), so the top
         // is originY, not 0. When originY moves, hold the top only if already at the top;
         // otherwise leave contentY alone. `atTop` derives from contentY because the wheel
@@ -299,11 +299,12 @@ Item {
             }
         }
     }
+    MScrollBar { id: listBar; scroller: list }
 
     // --- grid (cells at least 160px wide, 16:9 thumbs) ---
     GridView {
         id: grid
-        QQC.ScrollBar.vertical: MScrollBar {}
+        QQC.ScrollBar.vertical: gridBar
         // The header sits at negative content y (originY = -headerHeight), so the top
         // is originY, not 0. When originY moves, hold the top only if already at the top;
         // otherwise leave contentY alone. `atTop` derives from contentY because the wheel
@@ -385,6 +386,7 @@ Item {
             }
         }
     }
+    MScrollBar { id: gridBar; scroller: grid }
 
     InkText {
         anchors.centerIn: parent

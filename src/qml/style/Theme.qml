@@ -1732,7 +1732,7 @@ QtObject {
         settings: [16, 12, 16, 12],  // a settings row's label and control from the row's edge
         settingsHover: [0, 0, 0, 0], // the row's hover fill from the row's edge
         tool:    [10, 10, 10, 10],   // a tool window's body: the picker, the gallery, the shelf, the equaliser
-        scrollbar: [2, 2, 2, 2],     // left: the content from the bar; right, top, bottom: the bar from the scroller's edge
+        scrollbar: [2, 2, 2, 2],     // left: the content from the bar; right: the bar from the page or panel edge, 0 flush, negative past it; top, bottom: from the scroller's
         // A card's, in units of a 160-WIDE TILE — a card is laid out in those
         // and drawn at its width, so these scale with it, not with uiScale
         cardArt: [0, 0, 0, 0],       // the picture from the card's edge

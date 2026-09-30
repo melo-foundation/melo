@@ -325,7 +325,7 @@ Item {
     // ---------- list / compact ----------
     ListView {
         id: list
-        QQC.ScrollBar.vertical: MScrollBar {}
+        QQC.ScrollBar.vertical: listBar
         // The header sits at negative content y (originY = -headerHeight), so the top
         // is originY, not 0. When originY moves, hold the top only if already at the top;
         // otherwise leave contentY alone. `atTop` derives from contentY because the wheel
@@ -529,11 +529,12 @@ Item {
             }
         }
     }
+    MScrollBar { id: listBar; scroller: list }
 
     // ---------- grid ----------
     GridView {
         id: grid
-        QQC.ScrollBar.vertical: MScrollBar {}
+        QQC.ScrollBar.vertical: gridBar
         // The header sits at negative content y (originY = -headerHeight), so the top
         // is originY, not 0. When originY moves, hold the top only if already at the top;
         // otherwise leave contentY alone. `atTop` derives from contentY because the wheel
@@ -606,6 +607,7 @@ Item {
             }
         }
     }
+    MScrollBar { id: gridBar; scroller: grid }
 
     // ONE handler, on the view rather than inside a list: a handler that
     // fills a column-width list only takes the wheel while the pointer is
