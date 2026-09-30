@@ -17,7 +17,7 @@ let apiGate: Promise<void> = Promise.resolve();
 // MusicBrainz rejects anonymous clients with 403 ("the application you are
 // using has not identified itself"), and the others
 // are happier with a real one too.
-const UA = "melo/0.2.1 ( https://github.com/melo-foundation/melo )";
+const UA = "melo/0.2.2 ( https://github.com/melo-foundation/melo )";
 
 async function rateLimitedFetch(url: string, minInterval: number): Promise<Response> {
   // Claim the next slot before awaiting anything, so a second caller entering

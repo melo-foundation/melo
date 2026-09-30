@@ -31,7 +31,7 @@ env:
     libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
     gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
     gstreamer1.0-pulseaudio gstreamer1.0-alsa
-    glib-networking patchelf libsoup2.4-1 libfuse2
+    glib-networking patchelf libsoup-3.0-0 libfuse2
     libwayland-dev libssl-dev zlib1g-dev xvfb
     fontconfig libfontconfig-dev libfreetype-dev
     libx11-dev libxext-dev libxrender-dev libxi-dev libxfixes-dev
@@ -224,6 +224,8 @@ jobs:
     timeout-minutes: 120
     env:
       KIND: ${{ needs.plan.outputs.kind }}
+      # the nightly follows the nightly; every release follows the latest release
+      UPDATE_CHANNEL: ${{ needs.plan.outputs.kind == 'nightly' && 'nightly' || 'latest' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -376,24 +378,32 @@ jobs:
             if (segs.length < 2) throw new Error("Thai segmentation broken");
             if (/Thursday/.test(new Intl.DateTimeFormat("km",{dateStyle:"full"}).format(0)))
               throw new Error("Khmer fell back to English");'
-          # libsoup is dlopened by libgstsoup, so it is named; the system
-          # libxml2 is used, because it would pull in Ubuntu's 29 MB ICU
+          # libgstsoup dlopens libsoup, so it is named here. libsoup 3, because 2.4
+          # needs libxml2.so.2 and Arch's libxml2 2.15 is libxml2.so.16. libxml2 stays
+          # out: it would pull in Ubuntu's 29 MB ICU.
+          # GStreamer scans new plugins in gst-plugin-scanner; without it the scan
+          # runs inside melo and logs "External plugin loader failed".
+          mkdir -p AppDir/usr/lib/gstreamer1.0
+          cp /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner AppDir/usr/lib/gstreamer1.0/
           ./linuxdeploy --appdir AppDir -e AppDir/usr/bin/melo \
             -d resources/melo.desktop -i resources/melo.png \
             --deploy-deps-only AppDir/usr/lib/gstreamer-1.0 \
             --deploy-deps-only AppDir/usr/lib/gio/modules \
-            -l /usr/lib/x86_64-linux-gnu/libsoup-2.4.so.1 \
+            --deploy-deps-only AppDir/usr/lib/gstreamer1.0/gst-plugin-scanner \
+            -l /usr/lib/x86_64-linux-gnu/libsoup-3.0.so.0 \
             --exclude-library "*libxml2*"
           patchelf --set-rpath '$ORIGIN/..' AppDir/usr/lib/gstreamer-1.0/*.so
+          patchelf --set-rpath '$ORIGIN/..' AppDir/usr/lib/gstreamer1.0/gst-plugin-scanner
           patchelf --set-rpath '$ORIGIN/../..' AppDir/usr/lib/gio/modules/*.so
           rm -f AppDir/usr/lib/libicu*.so.70*
-          python3 scripts/prune-appdir-libs.py AppDir usr/lib/libsoup-2.4.so.1
+          python3 scripts/prune-appdir-libs.py AppDir usr/lib/libsoup-3.0.so.0 usr/lib/gstreamer1.0/gst-plugin-scanner
           cp -L /usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0 AppDir/usr/lib/libxcb-cursor.so.0
           mkdir -p AppDir/apprun-hooks
           cat > AppDir/apprun-hooks/melo-env.sh <<'EOF'
           export GST_PLUGIN_SYSTEM_PATH_1_0="$APPDIR/usr/lib/gstreamer-1.0"
           export GST_PLUGIN_PATH_1_0="$APPDIR/usr/lib/gstreamer-1.0"
           export GST_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/melo-appimage-gst-registry.bin"
+          export GST_PLUGIN_SCANNER_1_0="$APPDIR/usr/lib/gstreamer1.0/gst-plugin-scanner"
           export GIO_EXTRA_MODULES="$APPDIR/usr/lib/gio/modules"
           export MELO_NODE="$APPDIR/usr/bin/node"
           EOF
@@ -407,8 +417,10 @@ jobs:
           exec "$HERE/usr/bin/melo" "$@"
           EOF
           chmod +x AppDir/AppRun
-          # squashfs, which AppImageHub and libappimage can mount
+          # squashfs, which AppImageHub and libappimage can mount. -u embeds where
+          # AppImageUpdate finds the next version and writes the .zsync beside it.
           ARCH=x86_64 ./appimagetool --runtime-file runtime-x86_64 --comp zstd \
+            -u "gh-releases-zsync|${GITHUB_REPOSITORY/\//|}|$UPDATE_CHANNEL|melo-x86_64.AppImage.zsync" \
             --mksquashfs-opt -Xcompression-level --mksquashfs-opt 22 \
             --mksquashfs-opt -b --mksquashfs-opt 1M \
             AppDir melo-x86_64.AppImage
@@ -433,6 +445,7 @@ jobs:
           EOF
           chmod +x AppDir-lite/AppRun
           ARCH=x86_64 ./appimagetool --runtime-file runtime-x86_64 --comp zstd \
+            -u "gh-releases-zsync|${GITHUB_REPOSITORY/\//|}|$UPDATE_CHANNEL|melo-lite-x86_64.AppImage.zsync" \
             --mksquashfs-opt -Xcompression-level --mksquashfs-opt 19 \
             --mksquashfs-opt -b --mksquashfs-opt 1M \
             AppDir-lite melo-lite-x86_64.AppImage
@@ -466,7 +479,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          files="melo-x86_64.AppImage melo-lite-x86_64.AppImage melo-x86_64.rpm
+          files="melo-x86_64.AppImage melo-x86_64.AppImage.zsync
+                 melo-lite-x86_64.AppImage melo-lite-x86_64.AppImage.zsync melo-x86_64.rpm
                  melo-amd64.deb melo-x86_64.pkg.tar.zst melo-sources.tar"
           if [ "$KIND" = alpha ]; then
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
