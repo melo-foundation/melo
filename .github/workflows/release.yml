@@ -224,6 +224,8 @@ jobs:
     timeout-minutes: 120
     env:
       KIND: ${{ needs.plan.outputs.kind }}
+      # the nightly follows the nightly; every release follows the latest release
+      UPDATE_CHANNEL: ${{ needs.plan.outputs.kind == 'nightly' && 'nightly' || 'latest' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -407,8 +409,10 @@ jobs:
           exec "$HERE/usr/bin/melo" "$@"
           EOF
           chmod +x AppDir/AppRun
-          # squashfs, which AppImageHub and libappimage can mount
+          # squashfs, which AppImageHub and libappimage can mount. -u embeds where
+          # AppImageUpdate finds the next version and writes the .zsync beside it.
           ARCH=x86_64 ./appimagetool --runtime-file runtime-x86_64 --comp zstd \
+            -u "gh-releases-zsync|${GITHUB_REPOSITORY/\//|}|$UPDATE_CHANNEL|melo-x86_64.AppImage.zsync" \
             --mksquashfs-opt -Xcompression-level --mksquashfs-opt 22 \
             --mksquashfs-opt -b --mksquashfs-opt 1M \
             AppDir melo-x86_64.AppImage
@@ -433,6 +437,7 @@ jobs:
           EOF
           chmod +x AppDir-lite/AppRun
           ARCH=x86_64 ./appimagetool --runtime-file runtime-x86_64 --comp zstd \
+            -u "gh-releases-zsync|${GITHUB_REPOSITORY/\//|}|$UPDATE_CHANNEL|melo-lite-x86_64.AppImage.zsync" \
             --mksquashfs-opt -Xcompression-level --mksquashfs-opt 19 \
             --mksquashfs-opt -b --mksquashfs-opt 1M \
             AppDir-lite melo-lite-x86_64.AppImage
@@ -466,7 +471,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          files="melo-x86_64.AppImage melo-lite-x86_64.AppImage melo-x86_64.rpm
+          files="melo-x86_64.AppImage melo-x86_64.AppImage.zsync
+                 melo-lite-x86_64.AppImage melo-lite-x86_64.AppImage.zsync melo-x86_64.rpm
                  melo-amd64.deb melo-x86_64.pkg.tar.zst melo-sources.tar"
           if [ "$KIND" = alpha ]; then
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
