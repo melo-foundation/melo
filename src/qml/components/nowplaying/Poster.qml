@@ -897,8 +897,10 @@ Item {
 
     // ---- the ways to move it ---------------------------------------------
     // Drag: the picture follows the hand and lets go to the nearer end.
+    // Off while the bar is being arranged: its drags land on this page too.
     DragHandler {
         target: null
+        enabled: !Theme.arranging
         xAxis.enabled: true
         yAxis.enabled: false
         property real from: 0
@@ -914,7 +916,7 @@ Item {
     WheelHandler {
         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
         // only at rest, so a notch never leaves the page half way across
-        enabled: Math.abs(s.phase - Math.round(s.phase)) < 0.02
+        enabled: !Theme.arranging && Math.abs(s.phase - Math.round(s.phase)) < 0.02
         onWheel: (e) => s.stepBy(e.angleDelta.y !== 0 ? e.angleDelta.y : -e.angleDelta.x)
     }
 }
