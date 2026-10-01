@@ -3,6 +3,7 @@
 #include <QFontDatabase>
 #include "media/ThumbImageProvider.h"
 #include <QQmlApplicationEngine>
+#include <QStandardPaths>
 #include <QQmlNetworkAccessManagerFactory>
 #include <QNetworkDiskCache>
 #include <QQmlComponent>
@@ -40,6 +41,7 @@
 #include "PcmQueue.h"
 #include "SourceDeck.h"
 #include "SidecarService.h"
+#include "StableQmlDir.h"
 #include "NodeBootstrap.h"
 #include "PlayerState.h"
 #include "QueueModel.h"
@@ -192,6 +194,28 @@ signals:
 // Main.qml loads, and may point qmlDir somewhere else.
 void meloExtraStartup(QQmlApplicationEngine& qml, QString& qmlDir, AudioEngine& audio);
 #endif
+
+// QML dir: env override -> beside the executable (packaged/portable layout)
+// -> the dev tree path compiled in at build time. The packaged exe MUST NOT
+// rely on MELO_DEV_QML_DIR — that's the build machine's path.
+static QString meloQmlDir() {
+    QString qmlDir = qEnvironmentVariable("MELO_QML_DIR");
+    if (!qmlDir.isEmpty()) return qmlDir;
+    // NB: "melo-qml", NOT "qml" — windeployqt owns appdir/qml (Qt's own
+    // QML modules), and copying into it nested our UI at qml/qml/
+    const QString local = QCoreApplication::applicationDirPath() + "/melo-qml";
+    qmlDir = QFileInfo::exists(local + "/Main.qml") ? local
+                                                    : QStringLiteral(MELO_DEV_QML_DIR);
+    const QString appDir = qEnvironmentVariable("APPDIR");
+    if (qEnvironmentVariableIsSet("APPIMAGE") && !appDir.isEmpty()
+            && qmlDir.startsWith(appDir + '/')) {
+        const QString cache = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+        // once: the cache of earlier AppImages, an entry per mount path (1 GB+)
+        if (!QFileInfo::exists(cache + "/qml")) QDir(cache + "/qmlcache").removeRecursively();
+        qmlDir = stableQmlDir(qmlDir, cache + "/qml");
+    }
+    return qmlDir;
+}
 
 int main(int argc, char** argv) {
     setvbuf(stderr, nullptr, _IONBF, 0);
@@ -542,17 +566,7 @@ int main(int argc, char** argv) {
     qml.rootContext()->setContextProperty("PluginWindows", nullptr);
     qml.rootContext()->setContextProperty("PluginUi", nullptr);
 
-    // QML dir: env override -> beside the executable (packaged/portable
-    // layout) -> the dev tree path compiled in at build time. The packaged
-    // exe MUST NOT rely on MELO_DEV_QML_DIR — that's the build machine's path.
-    QString qmlDir = qEnvironmentVariable("MELO_QML_DIR");
-    if (qmlDir.isEmpty()) {
-        // NB: "melo-qml", NOT "qml" — windeployqt owns appdir/qml (Qt's own
-        // QML modules), and copying into it nested our UI at qml/qml/
-        const QString local = QCoreApplication::applicationDirPath() + "/melo-qml";
-        qmlDir = QFileInfo::exists(local + "/Main.qml") ? local
-                                                        : QStringLiteral(MELO_DEV_QML_DIR);
-    }
+    QString qmlDir = meloQmlDir();
     static MeloNamFactory meloNamFactory;
     qml.setNetworkAccessManagerFactory(&meloNamFactory);
     // Decoded once: see ThumbImageProvider. Inert until QML asks for

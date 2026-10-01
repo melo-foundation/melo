@@ -703,6 +703,11 @@ if(Qt6Test_FOUND)
     set_tests_properties(librarystore PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(tst_stableqmldir tests/cpp/tst_stableqmldir.cpp src/core/StableQmlDir.h)
+    target_include_directories(tst_stableqmldir PRIVATE src/core)
+    target_link_libraries(tst_stableqmldir PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME stableqmldir COMMAND tst_stableqmldir)
+
     add_executable(tst_jsonrowmodel tests/cpp/tst_jsonrowmodel.cpp src/core/JsonRowModel.h)
     target_include_directories(tst_jsonrowmodel PRIVATE src/core)
     target_link_libraries(tst_jsonrowmodel PRIVATE Qt6::Core Qt6::Test)
