@@ -4,9 +4,9 @@ import "accounts.js" as Accounts
 
 // The accounts, held once, so the title-bar menu, the wizard's dropdown and
 // the settings window's Account choice change together.
-// Re-read on a switch (the sidecar dropped its cookies), when an account menu
-// opens, and when melo returns to the front, usually after a browser sign-in or
-// out; every browser is re-read, since the menus list them all.
+// Every browser is re-read on a switch (the sidecar dropped its cookies) and
+// when an account menu opens, since the menus list them all. Melo returning to
+// the front re-reads only the browser in use.
 QtObject {
     id: store
 
@@ -14,24 +14,11 @@ QtObject {
     property var browsers: []
     // cookies/status answers, keyed Accounts.statusKey(kind, id)
     property var status: ({})
-    // Re-reads in flight. A browser re-read decrypts its store (a second or
-    // two) and the stale answer shows until it lands; one past 300ms shows as
-    // checking, so a quick one does not flicker the row.
-    property var started: ({})    // key -> when its fresh read began
-    property var checking: ({})   // keys shown as checking
+    // Browser re-reads in flight, shown as checking until they land.
+    property var checking: ({})
     function settle(key) {
-        if (!(key in store.started)) return
-        const s = Object.assign({}, store.started); delete s[key]; store.started = s
-        if (key in store.checking) { const c = Object.assign({}, store.checking); delete c[key]; store.checking = c }
-    }
-    property Timer slowReads: Timer {
-        interval: 100; repeat: true
-        running: Object.keys(store.started).length > 0
-        onTriggered: {
-            const now = Date.now(), c = {}
-            for (const k in store.started) if (now - store.started[k] >= 300) c[k] = true
-            if (JSON.stringify(c) !== JSON.stringify(store.checking)) store.checking = c
-        }
+        if (!(key in store.checking)) return
+        const c = Object.assign({}, store.checking); delete c[key]; store.checking = c
     }
 
     // The active guest profile is always listed: the fetched list lags a
@@ -54,7 +41,7 @@ QtObject {
         if (!ready()) return
         const key = Accounts.statusKey(kind, id)
         if (fresh && kind === "browser") {
-            const s = Object.assign({}, store.started); s[key] = Date.now(); store.started = s
+            const c = Object.assign({}, store.checking); c[key] = true; store.checking = c
         }
         Accounts.askStatus(sidecar, kind, id, (k, st) => {
             const next = Object.assign({}, store.status)
@@ -83,17 +70,16 @@ QtObject {
     }
 
     // Melo coming to the front from any of its windows, including the wizard
-    // and the settings window. At most every 5 seconds: each read decrypts a
-    // browser's store. And once more a little later, for a browser that had
-    // not saved its cookies yet when melo came back.
+    // and the settings window, usually after a sign-in or out in the browser.
+    // At most every 5 seconds: a read costs about 2 s of CPU. It also drops
+    // the sidecar's copy of the cookies, which home and library use.
     property double lastFront: 0
     function cameToFront() {
         if (Date.now() - lastFront < 5000) return
         lastFront = Date.now()
-        refresh(true)
-        lateCheck.restart()
+        const b = Accounts.frontRead(Settings.cookieSource, Settings.browser)
+        if (b) ask("browser", b, true)
     }
-    property Timer lateCheck: Timer { interval: 12000; onTriggered: store.refresh(true) }
     property Connections appFront: Connections {
         target: Qt.application
         function onStateChanged() { if (Qt.application.state === Qt.ApplicationActive) store.cameToFront() }

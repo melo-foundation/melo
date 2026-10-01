@@ -86,6 +86,11 @@ function askStatus(host, kind, id, done, fresh, fail) {
     })
 }
 
+// the browser re-read when melo comes to the front: only the one in use
+function frontRead(cookieSource, browser) {
+    return cookieSource === "browser" && browser ? browser : ""
+}
+
 function activeOf(list) {
     return (list || []).find((e) => e.active) || null
 }

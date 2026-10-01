@@ -197,4 +197,11 @@ TestCase {
         Accounts.askStatus(fakeRpc({ ok: false }), "browser", "firefox", () => {}, true, (k) => failedKey = k)
         compare(failedKey, "browser:firefox")
     }
+
+    function test_coming_to_the_front_re_reads_only_the_browser_in_use() {
+        compare(Accounts.frontRead("browser", "firefox"), "firefox")
+        compare(Accounts.frontRead("guest", "firefox"), "")
+        compare(Accounts.frontRead("none", "firefox"), "")
+        compare(Accounts.frontRead("browser", ""), "")
+    }
 }
