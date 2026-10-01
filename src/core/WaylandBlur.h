@@ -76,6 +76,7 @@ private:
     void debug(const char* fmt, ...) const;
 
     struct State {
+        bool applied = false;   // blur state sent to the current surface
         bool blurOn = false;
         bool followShape = false;
         QRegion blurRegion;

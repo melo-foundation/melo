@@ -205,15 +205,21 @@ static wl_region* makeRegion(wl_compositor* comp, const QRegion& region) {
 void WaylandBlur::setBlur(QWindow* w, bool on, const QRegion& region, bool followShape) {
     if (!w) return;
     track(w);
-    states_[w].blurOn = on;
-    states_[w].followShape = followShape;
-    states_[w].blurRegion = region;
+    State& st = states_[w];
+    // Already on the surface. Re-sending makes the window draw a frame, and the
+    // hidden window drawing on every step of the other's resize makes it jitter.
+    if (st.applied && st.blurOn == on && st.followShape == followShape && st.blurRegion == region)
+        return;
+    st.blurOn = on;
+    st.followShape = followShape;
+    st.blurRegion = region;
     applyBlur(w);
 }
 
 void WaylandBlur::applyBlur(QWindow* w) {
     wl_surface* surface = surfaceFor(w);
     if (!surface) return;
+    states_[w].applied = true;
     const State st = states_.value(w);
     const BlurSupport::Path path = support_.path();
     bool sent = false;
@@ -349,6 +355,7 @@ void WaylandBlur::dropHandles(QWindow* w) {
     if (auto* e = exts_.take(w)) ext_background_effect_surface_v1_destroy(e);
     if (auto* b = blurs_.take(w)) org_kde_kwin_blur_release(b);
     if (auto* c = contrasts_.take(w)) org_kde_kwin_contrast_release(c);
+    if (states_.contains(w)) states_[w].applied = false;
     if (display_) wl_display_flush(display_);
 }
 
