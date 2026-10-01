@@ -58,6 +58,12 @@ QtObject {
     // the lists, then every identity on them; `fresh` re-reads each browser
     function refresh(fresh) {
         if (!ready()) return
+        // checking from the first frame: the browser list is a round trip away
+        if (fresh) {
+            const c = Object.assign({}, store.checking)
+            for (const b of store.browsers) c[Accounts.statusKey("browser", b)] = true
+            store.checking = c
+        }
         sidecar.rpc("cookies/profiles", {}, (r) => {
             const list = r.ok && r.result ? r.result.profiles : null
             store.profiles = (list && list.length) ? list : []
@@ -65,6 +71,9 @@ QtObject {
         })
         sidecar.rpc("cookies/browsers", {}, (r) => {
             store.browsers = r.ok && r.result && r.result.browsers ? r.result.browsers : []
+            for (const k in store.checking)
+                if (k !== Accounts.statusKey("browser", Settings.browser)
+                        && !store.browsers.some((b) => Accounts.statusKey("browser", b) === k)) store.settle(k)
             for (const b of store.browsers) store.ask("browser", b, fresh)
         })
     }
