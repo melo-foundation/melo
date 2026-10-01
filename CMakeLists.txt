@@ -718,6 +718,12 @@ if(Qt6Test_FOUND)
     set_tests_properties(librarystore PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(tst_splash tests/cpp/tst_splash.cpp)
+    target_compile_definitions(tst_splash PRIVATE MELO_BIN="$<TARGET_FILE:melo>")
+    target_link_libraries(tst_splash PRIVATE Qt6::Core Qt6::Test)
+    add_dependencies(tst_splash melo)
+    add_test(NAME splash COMMAND tst_splash)
+
     add_executable(tst_stableqmldir tests/cpp/tst_stableqmldir.cpp src/core/StableQmlDir.h)
     target_include_directories(tst_stableqmldir PRIVATE src/core)
     target_link_libraries(tst_stableqmldir PRIVATE Qt6::Core Qt6::Test)

@@ -20,6 +20,8 @@ To run a second window on the same config, set `MELO_ALLOW_SECOND_INSTANCE=1`.
 Both windows then save to the same `library.v2.json` and `settings.v2.json`, and
 the last save wins.
 
+To start without the splash, set `MELO_NO_SPLASH=1`.
+
 ## Checks
 
 CI runs these on every pull request. Run them before you push:

@@ -42,6 +42,7 @@
 #include "SourceDeck.h"
 #include "SidecarService.h"
 #include "StableQmlDir.h"
+#include "Splash.h"
 #include "NodeBootstrap.h"
 #include "PlayerState.h"
 #include "QueueModel.h"
@@ -197,7 +198,8 @@ void meloExtraStartup(QQmlApplicationEngine& qml, QString& qmlDir, AudioEngine& 
 
 // QML dir: env override -> beside the executable (packaged/portable layout)
 // -> the dev tree path compiled in at build time. The packaged exe MUST NOT
-// rely on MELO_DEV_QML_DIR — that's the build machine's path.
+// rely on MELO_DEV_QML_DIR — that's the build machine's path. Needs the app
+// object: the splash (Splash.h) and the window both call it.
 static QString meloQmlDir() {
     QString qmlDir = qEnvironmentVariable("MELO_QML_DIR");
     if (!qmlDir.isEmpty()) return qmlDir;
@@ -218,6 +220,7 @@ static QString meloQmlDir() {
 }
 
 int main(int argc, char** argv) {
+    if (argc > 1 && std::string(argv[1]) == "--splash") return runSplash(argc, argv, &meloQmlDir);
     setvbuf(stderr, nullptr, _IONBF, 0);
     const bool smoke = [argc, argv] {
         for (int i = 1; i < argc; ++i)
@@ -240,34 +243,6 @@ int main(int argc, char** argv) {
             qputenv("GIO_EXTRA_MODULES", QDir::toNativeSeparators(exeDir + "/gio-modules").toLocal8Bit());
     }
 #endif
-    gst_init(&argc, &argv);
-
-    // Lite AppImage runs on the SYSTEM GStreamer — probe every element the
-    // pipelines need and report what's missing instead of failing silently
-    // (an unbuildable pipeline just logs to stderr and plays nothing).
-    const auto haveGstElement = [](const char* name) {
-        if (GstElementFactory* f = gst_element_factory_find(name)) {
-            gst_object_unref(f);
-            return true;
-        }
-        return false;
-    };
-    QStringList missingGst;
-    for (const char* name : {"audiomixer", "equalizer-10bands", "audioconvert",
-                             "audioresample", "volume", "appsink", "uridecodebin",
-                             "typefind", "autoaudiosink", "pulsesink", "souphttpsrc", "oggdemux",
-                             "vorbisdec", "opusdec", "mpg123audiodec",
-                             "qtdemux", "matroskademux", "id3demux", "flacdec",
-                             "wavparse"}) {
-        if (!haveGstElement(name)) missingGst << QString::fromLatin1(name);
-    }
-    // AAC: uridecodebin takes whichever decoder exists. faad and fdkaacdec are
-    // in each distro's "bad" plugins package, avdec_aac in its libav one
-    if (!haveGstElement("faad") && !haveGstElement("avdec_aac") && !haveGstElement("fdkaacdec"))
-        missingGst << QStringLiteral("aac decoder");
-    if (!missingGst.isEmpty())
-        std::fprintf(stderr, "[melo] missing GStreamer elements: %s\n",
-                     missingGst.join(", ").toUtf8().constData());
 
 #ifndef Q_OS_WIN
     // projectM renders raw GL under the scenegraph, so force the OpenGL RHI
@@ -355,6 +330,41 @@ int main(int argc, char** argv) {
 #endif
         return 0;
     }
+
+    // up until the window shows (Splash.h); MELO_NO_SPLASH=1 turns it off
+    SplashLauncher splash;
+    if (!smoke && !qEnvironmentVariableIsSet("MELO_NO_SPLASH")) splash.start();
+
+    // After the splash: with no registry yet (a first start) this scans every
+    // GStreamer plugin, ~2 s.
+    gst_init(&argc, &argv);
+
+    // Lite AppImage runs on the SYSTEM GStreamer — probe every element the
+    // pipelines need and report what's missing instead of failing silently
+    // (an unbuildable pipeline just logs to stderr and plays nothing).
+    const auto haveGstElement = [](const char* name) {
+        if (GstElementFactory* f = gst_element_factory_find(name)) {
+            gst_object_unref(f);
+            return true;
+        }
+        return false;
+    };
+    QStringList missingGst;
+    for (const char* name : {"audiomixer", "equalizer-10bands", "audioconvert",
+                             "audioresample", "volume", "appsink", "uridecodebin",
+                             "typefind", "autoaudiosink", "pulsesink", "souphttpsrc", "oggdemux",
+                             "vorbisdec", "opusdec", "mpg123audiodec",
+                             "qtdemux", "matroskademux", "id3demux", "flacdec",
+                             "wavparse"}) {
+        if (!haveGstElement(name)) missingGst << QString::fromLatin1(name);
+    }
+    // AAC: uridecodebin takes whichever decoder exists. faad and fdkaacdec are
+    // in each distro's "bad" plugins package, avdec_aac in its libav one
+    if (!haveGstElement("faad") && !haveGstElement("avdec_aac") && !haveGstElement("fdkaacdec"))
+        missingGst << QStringLiteral("aac decoder");
+    if (!missingGst.isEmpty())
+        std::fprintf(stderr, "[melo] missing GStreamer elements: %s\n",
+                     missingGst.join(", ").toUtf8().constData());
 
     // Fonts melo ships, plus anything the user has dropped in their own fonts
     // folder. The default family is only a default if it is actually there:
@@ -580,6 +590,18 @@ int main(int argc, char** argv) {
     // Before the load, so the window is built once, in the saved theme.
     settings.loadLocal();
     qml.load(QUrl::fromLocalFile(qmlDir + "/Main.qml"));
+    // the splash goes with the first frame that shows the window's content
+    if (auto* win = qobject_cast<QQuickWindow*>(qml.rootObjects().value(0))) {
+        auto* shown = new QMetaObject::Connection;
+        *shown = QObject::connect(win, &QQuickWindow::frameSwapped, &app, [win, &splash, shown] {
+            if (!win->property("ready").toBool()) return;
+            splash.close();
+            QObject::disconnect(*shown);
+            delete shown;
+        });
+    } else {
+        splash.close();
+    }
     if (qml.rootObjects().isEmpty()) {
         std::fprintf(stderr, "[melo] failed to load Main.qml\n");
         // QQmlApplicationEngine swallows the diagnostics for some load
