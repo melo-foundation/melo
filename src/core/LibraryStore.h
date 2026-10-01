@@ -61,6 +61,8 @@ public:
 
     // SearchResult-shaped arrays for Player.playQueue()
     Q_INVOKABLE QVariantList playAllTracks(bool shuffle) const;
+    // the whole library, in stored order, whatever the page shows
+    Q_INVOKABLE QVariantList allTracks() const;
     // one entry as the player takes it (edited title and artist, art), or {}
     Q_INVOKABLE QVariantMap playable(const QString& id) const;
     Q_INVOKABLE QVariantList playlistTracks(const QString& playlistId) const;

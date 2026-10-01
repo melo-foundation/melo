@@ -2057,7 +2057,7 @@ Window {
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                         label: "Download"
                         onClicked: {
-                            const nd = Library.playAllTracks(false)
+                            const nd = Library.allTracks()
                                 .filter((t) => !t.downloaded).map((t) => t.id)
                             if (nd.length) Library.downloadAll(nd)
                         }

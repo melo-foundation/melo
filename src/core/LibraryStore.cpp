@@ -322,15 +322,24 @@ void LibraryStore::removeTrackFromPlaylist(const QString& playlistId, const QStr
 }
 
 QVariantList LibraryStore::playAllTracks(bool shuffle) const {
-    // current view order (rebuild() sort), full unfiltered library if no filter
-    QList<QJsonObject> ts;
-    for (const auto& v : rawTracks_) ts.append(v.toObject());
+    // the tracks as the page lists them: rebuild()'s sort, and its filter
     QVariantList out;
-    for (const auto& t : ts) out.append(toPlayable(t));
+    out.reserve(tracks_->count());
+    for (int r = 0; r < tracks_->count(); ++r) {
+        const int i = trackAt(tracks_->get(r)["trackId"].toString());
+        if (i >= 0) out.append(toPlayable(rawTracks_[i].toObject()));
+    }
     if (shuffle) {
         for (int i = out.size() - 1; i > 0; --i)
             out.swapItemsAt(i, QRandomGenerator::global()->bounded(i + 1));
     }
+    return out;
+}
+
+QVariantList LibraryStore::allTracks() const {
+    QVariantList out;
+    out.reserve(rawTracks_.size());
+    for (const auto& v : rawTracks_) out.append(toPlayable(v.toObject()));
     return out;
 }
 

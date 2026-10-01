@@ -161,6 +161,29 @@ private slots:
         QCOMPARE(pts.first().toMap()["id"].toString(), ids.first());
         QVERIFY2(ms < 1000, qPrintable(QStringLiteral("playlistTracks took %1 ms").arg(ms)));
     }
+
+    static QStringList ids(const QVariantList& ts) {
+        QStringList out;
+        for (const auto& t : ts) out << t.toMap()["id"].toString();
+        return out;
+    }
+
+    // Play All plays the tracks as the page lists them: sorted, and filtered
+    // while a filter is set.
+    void playAllFollowsTheView() {
+        LibraryStore s(sidecar_, settings_);
+        s.applyLibrary(smallLibrary());
+        s.setSort(QStringLiteral("title"), true);
+        QCOMPARE(ids(s.playAllTracks(false)), (QStringList{"t2", "t3", "t1", "t4"}));
+        s.setSort(QStringLiteral("title"), false);
+        QCOMPARE(ids(s.playAllTracks(false)), (QStringList{"t4", "t1", "t3", "t2"}));
+
+        s.setFilter(QStringLiteral("alpha"));
+        auto* m = qobject_cast<JsonRowModel*>(s.tracks());
+        QTRY_COMPARE(m->count(), 1);
+        QCOMPARE(ids(s.playAllTracks(false)), QStringList{"t2"});
+        QCOMPARE(ids(s.allTracks()).size(), 4);   // Settings' Download all ignores the filter
+    }
 };
 
 QTEST_MAIN(TstLibraryStore)
