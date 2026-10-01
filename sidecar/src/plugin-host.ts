@@ -148,7 +148,10 @@ notifyParent("registered", {
   events: [...listeners.keys()],
 });
 
-createInterface({ input: process.stdin }).on("line", async (line) => {
+// Exit with the sidecar: a plugin holding a timer would keep this running.
+const input = createInterface({ input: process.stdin });
+input.on("close", () => process.exit(0));
+input.on("line", async (line) => {
   if (!line.trim()) return;
   let msg: any;
   try { msg = JSON.parse(line); } catch { return; }

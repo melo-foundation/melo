@@ -9,6 +9,7 @@ import { createInterface } from "readline";
 const HOST = resolve(__dirname, "../../dist/melo-plugin-host.mjs");
 const FIXTURE = resolve(__dirname, "../../test-fixtures/sample-source");
 const BROKEN = resolve(__dirname, "../../test-fixtures/broken-source");
+const BUSY = resolve(__dirname, "../../test-fixtures/busy-source");
 let procs: ChildProcess[] = [];
 afterEach(() => { for (const p of procs) p.kill(); procs = []; });
 // npm and pnpm read the same package.json build script.
@@ -59,6 +60,14 @@ describe("plugin host", () => {
              params: { sourceId: "sample", trackId: "smp:1" } });
     const r2 = await h.next();
     expect(r2.result.url).toMatch(/smp:1/);
+  }, 20000);
+
+  it("exits when the sidecar goes away, even with a timer running", async () => {
+    const h = startHost(BUSY);
+    expect((await h.next()).method).toBe("registered");
+    const exited = new Promise<number | null>((res) => h.p.on("exit", (code) => res(code)));
+    h.p.stdin!.end();
+    expect(await Promise.race([exited, new Promise((r) => setTimeout(() => r("running"), 3000))])).toBe(0);
   }, 20000);
 
   it("delivers player events and forwards melo.log to the parent", async () => {

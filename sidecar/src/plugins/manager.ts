@@ -179,6 +179,9 @@ function onHostLine(id: string, line: string): void {
   }
 }
 
+// The sidecar exiting ends its plugins too, including one still booting.
+process.on("exit", () => { for (const rt of plugins.values()) rt.proc?.kill(); });
+
 function onExit(id: string, code: number): void {
   const rt = plugins.get(id);
   if (!rt) return;
