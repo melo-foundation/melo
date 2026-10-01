@@ -3,14 +3,11 @@ import { join, basename, extname } from "path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync, renameSync } from "fs";
 import { writeFileAtomic, backupOnce, backupPath } from "./atomic";
 import { isSafeIdForPath } from "./trackid";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
-import { ytdlpReady } from "./ytdlp";
+import { ytdlp } from "./ytdlp";
 import { type TrackMetadata } from "./metadata";
 
-const execFileAsync = promisify(execFile);
 
 export interface LibraryTrack {
   id: string;
@@ -204,9 +201,7 @@ async function doDownload(videoId: string, cookieArgsFn: () => Promise<string[]>
   try {
     const cArgs = await cookieArgsFn();
     const outputTemplate = join(downloadPath, `${videoId}.%(ext)s`);
-    await execFileAsync(
-      await ytdlpReady(),
-      [
+    await ytdlp([
         ...cArgs,
         "-f", "bestaudio/best",
         "-o", outputTemplate,

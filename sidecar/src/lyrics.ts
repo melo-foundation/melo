@@ -1,16 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { isSafeIdForPath } from "./trackid";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dataDir } from "./env";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { ytdlpReady } from "./ytdlp";
+import { ytdlp } from "./ytdlp";
+import { makeTempDir, removeTempDir } from "./ytdlp-proc";
 import { localePref } from "./settings";
 import { cookieArgs } from "./streams";
 import { searchableTitle } from "./metadata";
 
-const execFileAsync = promisify(execFile);
 
 export type LyricLine = { t: number; text: string };
 export type Lyrics = {
@@ -79,14 +76,12 @@ async function fromCaptions(videoId: string, allowAuto: boolean): Promise<Lyrics
   // auto ones only when asked for, and they arrive labelled.
   const { hl } = localePref();
   const lang = (hl || "en").split("-")[0];
-  const dir = mkdtempSync(join(tmpdir(), "melo-subs-"));
+  const dir = makeTempDir("melo-subs-");
   const langs = lang === "en" ? "en.*" : `${lang}.*,en.*`;
   try {
     for (const auto of allowAuto ? [false, true] : [false]) {
       try {
-        await execFileAsync(
-          await ytdlpReady(),
-          [...(await cookieArgs()), "--no-warnings", "--skip-download", "--no-playlist",
+        await ytdlp([...(await cookieArgs()), "--no-warnings", "--skip-download", "--no-playlist",
            auto ? "--write-auto-subs" : "--write-subs",
            "--sub-langs", langs, "--sub-format", "json3",
            // YouTube answers caption downloads with 429 readily, and the
@@ -112,7 +107,7 @@ async function fromCaptions(videoId: string, allowAuto: boolean): Promise<Lyrics
     }
     return null;
   } finally {
-    try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+    removeTempDir(dir);
   }
 }
 

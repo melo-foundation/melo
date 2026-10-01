@@ -1,13 +1,12 @@
 import { dataDir } from "./env";
 import { join } from "path";
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, renameSync, cpSync, rmSync, readdirSync, mkdtempSync, chmodSync } from "fs";
-import { execFile, spawn, type ChildProcess } from "child_process";
-import { promisify } from "util";
+import { spawn, type ChildProcess } from "child_process";
 import { tmpdir } from "os";
 import { USER_AGENT } from "./platform";
-import { ytdlpReady } from "./ytdlp";
+import { ytdlp } from "./ytdlp";
+import { makeTempDir, removeTempDir } from "./ytdlp-proc";
 
-const execFileAsync = promisify(execFile);
 
 interface GuestCookie {
   domain: string;
@@ -393,24 +392,20 @@ export function youtubeCookies<T extends { domain: string }>(cookies: T[]): T[] 
 // that video exits 1 with the jar already on disk. Only a missing or empty jar
 // is a failure; then the exec error is thrown with its stderr.
 export async function dumpBrowserCookies(browser: string): Promise<GuestCookie[]> {
-  // mkdtemp: for the seconds this runs the file is the user's logged-in
-  // Google session in plaintext, so its name must not be guessable
-  const dir = mkdtempSync(join(tmpdir(), "melo-cookies-"));
+  // For the seconds this runs the file is the browser's whole cookie jar in
+  // plain text: a 0700 folder with an unguessable name, removed at exit too
+  const dir = makeTempDir("melo-cookies-");
   const file = join(dir, "cookies.txt");
   try {
     let exitError: any = null;
     try {
-      await execFileAsync(
-        await ytdlpReady(),
-        [
-          "--cookies-from-browser", browser,
-          "--cookies", file,
-          "--skip-download",
-          "--flat-playlist",
-          "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-        ],
-        { timeout: 15000 },
-      );
+      await ytdlp([
+        "--cookies-from-browser", browser,
+        "--cookies", file,
+        "--skip-download",
+        "--flat-playlist",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      ], { timeout: 15000 });
     } catch (e) {
       exitError = e;
     }
@@ -418,7 +413,7 @@ export async function dumpBrowserCookies(browser: string): Promise<GuestCookie[]
     if (all.length === 0) throw exitError ?? new Error("yt-dlp wrote no cookies");
     return all;
   } finally {
-    try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    removeTempDir(dir);
   }
 }
 

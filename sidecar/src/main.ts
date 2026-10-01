@@ -14,6 +14,7 @@ import { registerHandlers } from "./handlers";
 import { initLibrary } from "./library";
 import { loadSettings } from "./settings";
 import { ensureYtdlp, maybeUpdateYtdlp, downloadYtdlp } from "./ytdlp";
+import { reapOrphans, sweepStale } from "./ytdlp-proc";
 import { warmStreamSession } from "./streams";
 import { warmPoTokenSession } from "./potoken";
 
@@ -24,6 +25,10 @@ let initialized = false;
 method("initialize", (params: SidecarEnv & { ytdlpSeedPath?: string }) => {
   if (initialized) return { sidecarVersion: SIDECAR_VERSION, capabilities: [] };
   setEnv(params);
+  // what an earlier sidecar left when it was killed: yt-dlp runs still going,
+  // and temporary folders, cookie dumps among them
+  const reaped = reapOrphans(params.ytdlpPath), swept = sweepStale();
+  if (reaped || swept) log(`[init] ended ${reaped} leftover yt-dlp runs, removed ${swept} leftover folders`);
 
   const settings = loadSettings();
   initLibrary(settings.downloadPath);

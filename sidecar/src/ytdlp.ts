@@ -3,8 +3,6 @@
 // regularly; updates must not require app releases. Every binary installed here
 // matches a SHA2-256SUMS entry signed by yt-dlp's pinned release key.
 
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { createHash } from "crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "fs";
 import { dirname } from "path";
@@ -13,8 +11,7 @@ import { YTDLP_KEY_FINGERPRINT, YTDLP_PUBLIC_KEY } from "./ytdlp-key";
 import { getEnv } from "./env";
 import { loadSettings } from "./settings";
 import { log, notify } from "./rpc";
-
-const execFileAsync = promisify(execFile);
+import { runYtdlp, type RunOptions, type RunResult } from "./ytdlp-proc";
 
 const UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -155,7 +152,7 @@ async function installVerified(channel: string, expected: string, onProgress?: P
     writeFileSync(part, buf);
     chmodSync(part, 0o755);
     try {
-      await execFileAsync(part, ["--version"], { timeout: 20000 });
+      await runYtdlp(part, ["--version"], { timeout: 20000 });
     } catch (e) {
       throw new Refused(`the downloaded binary failed --version: ${String(e).split("\n")[0]}`);
     }
@@ -221,6 +218,12 @@ export async function ytdlpReady(): Promise<string> {
   if (outcome === "refused") throw new Error("yt-dlp could not be verified; not installed");
   if (outcome === "failed") throw new Error("yt-dlp could not be downloaded; check the connection and try again");
   return bin;
+}
+
+/** Runs the installed yt-dlp (see ytdlp-proc.ts), waiting for a first-run
+ *  download as ytdlpReady does. */
+export async function ytdlp(args: string[], opts: RunOptions = {}): Promise<RunResult> {
+  return runYtdlp(await ytdlpReady(), args, opts);
 }
 
 /** First-run install from the official releases when no seed exists. */

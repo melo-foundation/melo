@@ -1,9 +1,7 @@
 // Stream/video/playlist/radio functions. Settings come from loadSettings(),
-// the yt-dlp path from ytdlpReady(), and yt-dlp runs with `--js-runtimes node`
+// yt-dlp runs through ytdlp() (ytdlp-proc.ts) with `--js-runtimes node`
 // (YouTube's SABR/PO-token era requires a JS runtime; we ship Node anyway).
 
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "path";
@@ -20,7 +18,7 @@ import {
 import { getDownloadedUrl, getTrackMetadata } from "./library";
 import { resolveCookies } from "./innertube";
 import { relayUrl } from "./stream-relay";
-import { looksStale, ytdlpChannel, ytdlpReady } from "./ytdlp";
+import { looksStale, ytdlp, ytdlpChannel } from "./ytdlp";
 import { notify } from "./rpc";
 import { mintPoToken, poTokenSession, type PoToken } from "./potoken";
 
@@ -46,7 +44,6 @@ function ytdlpHttpHeaders(data: { http_headers?: unknown }): Record<string, stri
   return Object.keys(out).length ? out : undefined;
 }
 
-const execFileAsync = promisify(execFile);
 
 // ---- fast in-process stream resolution (youtubei.js) --------------------
 // yt-dlp with `--js-runtimes node` costs ~6s per stream (and ~20s whenever
@@ -695,13 +692,11 @@ async function resolveWithClient(
   videoId: string, client: string | null, cookies: string[], haveIdentity: boolean,
   pot: PoToken | null,
 ): Promise<CachedStream> {
-  const { stdout } = await execFileAsync(
-    await ytdlpReady(),
-    [...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
+  const { stdout } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
      ...YTDLP_COMMON, "-f", "bestaudio/best", "-j",
      `https://www.youtube.com/watch?v=${videoId}`],
     // maxBuffer as in every sibling call: `-j` output with a large caption
-    // list exceeds Node's 1MB default and execFile kills the process. This
+    // list exceeds the 1MB default and the run is killed. This
     // fallback runs only after the fast path already failed.
     { timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
   );
@@ -850,9 +845,7 @@ export async function fetchStreamUrl(videoId: string): Promise<StreamResult | St
 
 /** Homepage recommended feed via yt-dlp flat-playlist. */
 export async function fetchRecommendedTracks(count: number = 30): Promise<FlatTrack[]> {
-  const { stdout } = await execFileAsync(
-    await ytdlpReady(),
-    [...(await cookieArgs()), "--flat-playlist", "-j", "--no-warnings", "--no-cache-dir",
+  const { stdout } = await ytdlp([...(await cookieArgs()), "--flat-playlist", "-j", "--no-warnings", "--no-cache-dir",
      "--playlist-items", `1:${count}`, "https://www.youtube.com/feed/recommended"],
     { timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
   );
@@ -928,9 +921,7 @@ export async function fetchPlaylistTracks(playlistId: string) {
     } else {
       url = `https://music.youtube.com/playlist?list=${playlistId}`;
     }
-    const { stdout } = await execFileAsync(
-      await ytdlpReady(),
-      [...(await cookieArgs()), ...YTDLP_COMMON, "--flat-playlist", "-j",
+    const { stdout } = await ytdlp([...(await cookieArgs()), ...YTDLP_COMMON, "--flat-playlist", "-j",
        ...(isMix ? ["--playlist-items", "1:50"] : []), url],
       { timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
     );
@@ -986,9 +977,7 @@ async function fetchRadioTracks(
       ? `https://www.youtube.com/watch?v=${seedId}&list=${playlistId}`
       : `https://www.youtube.com/playlist?list=${playlistId}`;
   }
-  const { stdout } = await execFileAsync(
-    await ytdlpReady(),
-    [...(await cookieArgs()), ...YTDLP_COMMON, "--flat-playlist", "-j",
+  const { stdout } = await ytdlp([...(await cookieArgs()), ...YTDLP_COMMON, "--flat-playlist", "-j",
      "--no-cache-dir", "--playlist-items", "1:50", url],
     { timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
   );
