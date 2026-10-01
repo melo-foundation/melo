@@ -268,50 +268,66 @@ Window {
         trackLayout = mode
         Settings.uiSet("library-layout", mode)
     }
-    Connections {   // settings mirror is empty until the sidecar delivers it
+    // Read from the file before this loads (SettingsStore::loadLocal), or from
+    // the sidecar when there is no file yet
+    Connections {
         target: Settings
-        function onLoadedChanged() {
-            root.trackLayout = Settings.uiGet("library-layout", "grid")
-            root.refreshShortcuts()
-            root.miniPanelH = Number(Settings.uiGet("miniPanelHeight", 400))
-            // restore last window size (saved on resize, debounced)
-            const w = Settings.uiGet("windowW", 0), h = Settings.uiGet("windowH", 0)
-            if (w >= root.minimumWidth && h >= root.minimumHeight) {
-                root.width = w
-                root.height = h
-            }
-            // restore position via KWin (clients can't move themselves on
-            // Wayland), then start the event-driven geometry watcher — KWin
-            // reports once per completed user move/resize, no polling
-            const px = Settings.uiGet("windowX", -99999), py = Settings.uiGet("windowY", -99999)
-            Qt.callLater(() => {
-                if (px !== -99999 && py !== -99999) WindowCtl.applyMainPosition(px, py)
-                WindowCtl.watchMainGeometry()
-                // reveal content only after the KWin position move — else the
-                // window shows at KWin's DEFAULT placement for a frame before
-                // it jumps to the saved position
-                root.ready = true
-            })
-            sizeRestored = true
-            // apply the saved EQ to the pipeline (window not needed)
-            const eq = Settings.uiGet("eqConfig", null)
-            if (eq) Player.applyEqConfig(eq)
-            // restore volume into melo's OWN state rather than leaving it to
-            // PulseAudio stream-restore, or PlayerState boots at 1.0 and the
-            // first wheel step jumps to ~100%. Stored on the cubic scale as
-            // volumeUi; an old linear "volume" save is converted once
-            const savedVol = Settings.uiGet("volumeUi", -1)
-            Player.setVolume(savedVol >= 0 ? Number(savedVol)
-                                           : Math.cbrt(Number(Settings.uiGet("volume", 1))))
-            // restore pin (KWin keepAbove doesn't survive the window going away)
-            if (root.pinToggles && Settings.uiGet("alwaysOnTop", false) === true) {
-                root.alwaysOnTop = true
-                WindowCtl.setKeepAbove(true)
-            }
-            // first run: the look, the account, done — once, whether finished or skipped
-            if (Settings.uiGet("onboardingDone", false) !== true)
-                onboarding.open()
+        function onLoadedChanged() { root.applySavedSettings() }
+    }
+    // KWin can place the window only once it has a frame on screen
+    property bool firstFrameShown: false
+    property var placeWhenFramed: null
+    Connections {
+        target: root
+        enabled: !root.firstFrameShown
+        function onFrameSwapped() {
+            root.firstFrameShown = true
+            if (root.placeWhenFramed) Qt.callLater(root.placeWhenFramed)
         }
+    }
+    function applySavedSettings() {
+        root.trackLayout = Settings.uiGet("library-layout", "grid")
+        root.refreshShortcuts()
+        root.miniPanelH = Number(Settings.uiGet("miniPanelHeight", 400))
+        // restore last window size (saved on resize, debounced)
+        const w = Settings.uiGet("windowW", 0), h = Settings.uiGet("windowH", 0)
+        if (w >= root.minimumWidth && h >= root.minimumHeight) {
+            root.width = w
+            root.height = h
+        }
+        // restore position via KWin (clients can't move themselves on
+        // Wayland), then start the event-driven geometry watcher — KWin
+        // reports once per completed user move/resize, no polling
+        const px = Settings.uiGet("windowX", -99999), py = Settings.uiGet("windowY", -99999)
+        const place = () => {
+            if (px !== -99999 && py !== -99999) WindowCtl.applyMainPosition(px, py)
+            WindowCtl.watchMainGeometry()
+            // reveal content only after the KWin position move — else the
+            // window shows at KWin's DEFAULT placement for a frame before
+            // it jumps to the saved position
+            root.ready = true
+        }
+        if (root.firstFrameShown) Qt.callLater(place)
+        else root.placeWhenFramed = place
+        sizeRestored = true
+        // apply the saved EQ to the pipeline (window not needed)
+        const eq = Settings.uiGet("eqConfig", null)
+        if (eq) Player.applyEqConfig(eq)
+        // restore volume into melo's OWN state rather than leaving it to
+        // PulseAudio stream-restore, or PlayerState boots at 1.0 and the
+        // first wheel step jumps to ~100%. Stored on the cubic scale as
+        // volumeUi; an old linear "volume" save is converted once
+        const savedVol = Settings.uiGet("volumeUi", -1)
+        Player.setVolume(savedVol >= 0 ? Number(savedVol)
+                                       : Math.cbrt(Number(Settings.uiGet("volume", 1))))
+        // restore pin (KWin keepAbove doesn't survive the window going away)
+        if (root.pinToggles && Settings.uiGet("alwaysOnTop", false) === true) {
+            root.alwaysOnTop = true
+            WindowCtl.setKeepAbove(true)
+        }
+        // first run: the look, the account, done — once, whether finished or skipped
+        if (Settings.uiGet("onboardingDone", false) !== true)
+            onboarding.open()
     }
 
     // persist window size across sessions
@@ -551,6 +567,7 @@ Window {
     }
 
     Component.onCompleted: {
+        if (Settings.loaded) applySavedSettings()
         // Once at startup, or it never runs at all: the window opens at the
         // size it was saved with, so nothing resizes it, and dprGeneration
         // cannot fire either -- its event filter arms on the first dprOf call,

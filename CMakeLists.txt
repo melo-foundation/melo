@@ -583,6 +583,21 @@ if(Qt6Test_FOUND)
     set_tests_properties(themeswatches PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(tst_earlysettings
+        tests/cpp/tst_earlysettings.cpp
+        src/core/ThemeStore.cpp
+        src/core/ThemeFormat.cpp
+        src/core/SettingsStore.cpp
+        src/rpc/SidecarService.cpp
+        src/rpc/SidecarProcess.cpp
+        src/rpc/RpcClient.cpp
+        src/rpc/NodeBootstrap.cpp)
+    target_include_directories(tst_earlysettings PRIVATE src/core src/rpc)
+    target_link_libraries(tst_earlysettings PRIVATE Qt6::Gui Qt6::Qml Qt6::Test)
+    add_test(NAME earlysettings COMMAND tst_earlysettings)
+    set_tests_properties(earlysettings PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     add_executable(tst_themedefault
         tests/cpp/tst_themedefault.cpp
         src/core/ThemeStore.cpp

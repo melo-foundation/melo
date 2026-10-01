@@ -6,6 +6,8 @@
 #include "RpcClient.h"
 
 #include <QDir>
+#include <QFile>
+#include <QJsonDocument>
 #include <QJSValue>
 #include <QJsonValue>
 
@@ -20,6 +22,16 @@ SettingsStore::SettingsStore(SidecarService* sidecar, QObject* parent)
 
 QString SettingsStore::dataDir() const {
     return meloConfigDir();   // shared source of truth (src/core/paths.h)
+}
+
+bool SettingsStore::loadLocal() {
+    QFile f(dataDir() + QStringLiteral("/settings.v2.json"));
+    if (!f.open(QIODevice::ReadOnly)) return false;
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) return false;
+    apply(doc.object());
+    return true;
 }
 
 void SettingsStore::refresh() {

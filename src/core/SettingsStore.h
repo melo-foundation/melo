@@ -90,6 +90,10 @@ public:
     bool uiHas(const QString& key) const;
 
     Q_INVOKABLE void refresh();   // settings/get -> replace local mirror
+    // The file as saved, read before the sidecar is up, so the first frame
+    // has the saved theme, size and layout. The sidecar's reply replaces it.
+    // False when there is no file or it will not parse.
+    bool loadLocal();
 
 signals:
     void loadedChanged();

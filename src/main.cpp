@@ -577,6 +577,8 @@ int main(int argc, char** argv) {
 #ifdef MELO_EXTRA_STARTUP
     meloExtraStartup(qml, qmlDir, engine);
 #endif
+    // Before the load, so the window is built once, in the saved theme.
+    settings.loadLocal();
     qml.load(QUrl::fromLocalFile(qmlDir + "/Main.qml"));
     if (qml.rootObjects().isEmpty()) {
         std::fprintf(stderr, "[melo] failed to load Main.qml\n");
