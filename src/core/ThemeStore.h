@@ -182,6 +182,7 @@ private:
     QJsonObject findTheme(const QString& id) const;
     void loadUserThemes();
     void applyPalette();
+    QJsonObject rawPalette() const;
     void rebuildSettings();
     void writeUserTheme(const QJsonObject& theme);
 

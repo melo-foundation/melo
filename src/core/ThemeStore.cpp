@@ -744,17 +744,21 @@ bool ThemeStore::eventFilter(QObject* obj, QEvent* ev) {
     return QObject::eventFilter(obj, ev);
 }
 
-void ThemeStore::applyPalette() {
-    const QJsonObject theme = findTheme(activeId_);
-
-    // The palette: the theme's, through a pointer if it names another's,
-    // with the edits made since on top — those are ui.paletteOverrides, a
-    // role to an entry, and no file holds them until Save as theme
-    QJsonObject pal = ThemeFormat::resolvedPalette(theme, [this](const QString& i) { return findTheme(i); });
+// The palette in use, tokens unresolved: the theme's, through a pointer if it
+// names another's, with the edits made since on top. Those are
+// ui.paletteOverrides, a role to an entry, and no file holds them until Save
+// as theme.
+QJsonObject ThemeStore::rawPalette() const {
+    QJsonObject pal = ThemeFormat::resolvedPalette(findTheme(activeId_), [this](const QString& i) { return findTheme(i); });
     QVariantMap over = settings_->uiGet("paletteOverrides", QVariantMap{}).toMap();
     // an override written when the role was still called `field`
     if (over.contains("field") && !over.contains("button")) { over["button"] = over.take("field"); }
     for (auto it = over.constBegin(); it != over.constEnd(); ++it) pal[it.key()] = QJsonValue::fromVariant(it.value());
+    return pal;
+}
+
+void ThemeStore::applyPalette() {
+    QJsonObject pal = rawPalette();
     // resolve "systemaccent[:fallback]" to the OS accent (portal-fed QPalette)
     const QColor osAccent = QGuiApplication::palette().color(QPalette::Highlight);
     auto isSys = [](const QString& v) {
@@ -1531,12 +1535,11 @@ QString ThemeStore::resolveFont(const QString& family) const {
 
 QString ThemeStore::matchingPreset(const QString& kind) const {
     // A palette preset stores the theme's RAW palette, tokens and all
-    // ("systemaccent:#cc3333"), so it has to be compared against the raw one —
-    // resolvedPalette_ has already turned those into colours and would never
-    // match a built-in.
-    const QJsonObject body = kind == QLatin1String("palette")
-        ? findTheme(activeId_)["palette"].toObject()
-        : currentBody(kind);
+    // ("systemaccent:#cc3333"), so it is compared against the raw palette in
+    // use: the theme's with the overrides a picked colour writes on top.
+    // resolvedPalette_ has already turned the tokens into colours and would
+    // never match a built-in.
+    const QJsonObject body = kind == QLatin1String("palette") ? rawPalette() : currentBody(kind);
     if (body.isEmpty()) return {};
     // A slot that has been arranged is not the layout it names, so no player
     // preset holds while one carries an unsaved arrangement: applying a preset

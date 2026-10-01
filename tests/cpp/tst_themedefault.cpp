@@ -20,6 +20,23 @@ private slots:
         QCOMPARE(store.activeId(), QStringLiteral("system"));
         QCOMPARE(store.matchingPreset(QStringLiteral("transparency")), QStringLiteral("bi-tr-off"));
     }
+
+    // Picking a colour names it, as the onboarding and settings rows show it
+    void aPickedColourIsTheOneMatched() {
+        qputenv("MELO_CONFIG_DIR", dir_.path().toLocal8Bit());
+        SidecarService sidecar;
+        SettingsStore settings(&sidecar);
+        ThemeStore store(&settings);
+        const QString before = store.matchingPreset(QStringLiteral("palette"));
+        QString other;
+        for (const QVariant& v : store.presets(QStringLiteral("palette"))) {
+            const QString id = v.toMap()["id"].toString();
+            if (id != before) { other = id; break; }
+        }
+        QVERIFY(!other.isEmpty());
+        store.applyPreset(QStringLiteral("palette"), other);
+        QCOMPARE(store.matchingPreset(QStringLiteral("palette")), other);
+    }
 };
 
 QTEST_MAIN(TestThemeDefault)
