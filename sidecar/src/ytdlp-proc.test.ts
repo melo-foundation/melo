@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, ut
 import { tmpdir } from "os";
 import { join } from "path";
 import {
-  findOrphans, makeTempDir, privateTmp, runYtdlp, shutdownYtdlp, sweepStale,
+  chooseUnpackDir, findOrphans, makeTempDir, privateTmp, runYtdlp, shutdownYtdlp, sweepStale,
 } from "./ytdlp-proc";
 
 const linux = process.platform === "linux";
@@ -86,6 +86,20 @@ esac`);
 
   it("says the disk is full when yt-dlp cannot unpack", async () => {
     await expect(runYtdlp(fake, ["full"])).rejects.toThrow(/the disk is full/);
+  });
+});
+
+describe("where yt-dlp unpacks", () => {
+  const GB = 1024 ** 3;
+  it("melo's cache folder while it has room", () => {
+    expect(chooseUnpackDir([{ dir: "cache", free: 2 * GB }, { dir: "tmp", free: 8 * GB }])).toBe("cache");
+  });
+  it("the folder with more room once the cache is short", () => {
+    expect(chooseUnpackDir([{ dir: "cache", free: 0.1 * GB }, { dir: "tmp", free: 2 * GB }])).toBe("tmp");
+    expect(chooseUnpackDir([{ dir: "cache", free: 0.3 * GB }, { dir: "tmp", free: 0.1 * GB }])).toBe("cache");
+  });
+  it("skips a folder it cannot use", () => {
+    expect(chooseUnpackDir([{ dir: "cache", free: -1 }, { dir: "tmp", free: 0.2 * GB }])).toBe("tmp");
   });
 });
 

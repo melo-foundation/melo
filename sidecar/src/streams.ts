@@ -17,6 +17,7 @@ import {
 } from "./guest-cookies";
 import { getDownloadedUrl, getTrackMetadata } from "./library";
 import { resolveCookies } from "./innertube";
+import { UNPACK_FAILED, unpackFailedMessage } from "./ytdlp-proc";
 import { relayUrl } from "./stream-relay";
 import { looksStale, ytdlp, ytdlpChannel } from "./ytdlp";
 import { notify } from "./rpc";
@@ -771,6 +772,8 @@ export async function runYtdlpStream(videoId: string): Promise<StreamResult> {
 // yt-dlp's reason, without its "ERROR: [youtube] id: " prefix. stderr can open
 // with a blank line or WARNINGs, so the first line is often not it.
 export function ytdlpReason(text: string): string {
+  // PyInstaller's own line names a module, not the cause
+  if (UNPACK_FAILED.test(text)) return unpackFailedMessage();
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const err = lines.find((l) => l.startsWith("ERROR:")) ?? lines[0] ?? "";
   return err.replace(/^ERROR:\s*(\[[^\]]+\]\s*[\w-]+:\s*)?/, "");

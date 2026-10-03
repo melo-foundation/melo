@@ -30,4 +30,8 @@ describe("ytdlpReason", () => {
   it("is empty for empty output", () => {
     expect(ytdlpReason("\n\n")).toBe("");
   });
+  it("says the disk is full when yt-dlp could not unpack itself", () => {
+    expect(ytdlpReason("[PYI-4672:ERROR] Failed to extract Cryptodome/Cipher/_ARC4.abi3.so: decompression resulted in return code -1!\n"))
+      .toMatch(/^yt-dlp could not unpack into .+: the disk is full$/);
+  });
 });

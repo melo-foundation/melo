@@ -7,19 +7,51 @@
 // it remove what it unpacked; SIGKILL leaves the 80 MB behind.
 
 import { spawn, type ChildProcess } from "child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, statfsSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 
 const unixGroups = process.platform !== "win32";
 
-/** Where yt-dlp unpacks and where melo's temporary folders go. */
+export interface DirRoom { dir: string; free: number }   // free < 0: not usable
+
+const UNPACK_ROOM = 512 * 1024 ** 2;
+
+/** The first folder while it has room for a few unpacks, else the roomiest. */
+export function chooseUnpackDir(dirs: DirRoom[]): string {
+  const usable = dirs.filter((d) => d.free >= 0);
+  if (!usable.length) return dirs[0].dir;
+  if (usable[0].free >= UNPACK_ROOM) return usable[0].dir;
+  return usable.reduce((a, b) => (b.free > a.free ? b : a)).dir;
+}
+
+// A 0700 folder that is ours: not a link, owned by this user.
+function ownFolder(dir: string): string | null {
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const st = lstatSync(dir);
+    if (!st.isDirectory() || (process.getuid && st.uid !== process.getuid())) return null;
+    return dir;
+  } catch { return null; }
+}
+
+function freeBytes(dir: string | null): number {
+  if (!dir) return -1;
+  try { const s = statfsSync(dir); return s.bavail * s.bsize; } catch { return -1; }
+}
+
+/** melo's own temporary folders on Linux: ~/.cache/melo/tmp, and a private one under /tmp. */
+export function ownTmpDirs(): string[] {
+  const cache = process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
+  return [join(cache, "melo", "tmp"), join(tmpdir(), `melo-${process.getuid ? process.getuid() : 0}`)];
+}
+
+/** Where yt-dlp unpacks and melo's temporary folders go: melo's cache folder,
+ *  or /tmp when the cache's disk is short (a live session's home is tiny). */
 export function privateTmp(): string {
   if (process.platform !== "linux") return tmpdir();
-  const cache = process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
-  const dir = join(cache, "melo", "tmp");
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  return dir;
+  const dirs = ownTmpDirs().map((d) => { const o = ownFolder(d); return { dir: o ?? d, free: freeBytes(o) }; });
+  return chooseUnpackDir(dirs);
 }
 
 const running = new Set<ChildProcess>();
@@ -56,7 +88,8 @@ export interface RunOptions { timeout?: number; maxBuffer?: number }
 export interface RunResult { stdout: string; stderr: string }
 
 // A full disk shows up as PyInstaller failing to unpack a module.
-const UNPACK_FAILED = /Failed to extract|No space left on device|Disk quota exceeded/;
+export const UNPACK_FAILED = /Failed to extract|No space left on device|Disk quota exceeded/;
+export const unpackFailedMessage = (): string => `yt-dlp could not unpack into ${privateTmp()}: the disk is full`;
 
 /** Runs yt-dlp like execFile: resolves with its output on exit 0, rejects with
  *  an Error carrying code, signal, killed, stdout and stderr otherwise. */
@@ -64,7 +97,7 @@ export function runYtdlp(bin: string, args: string[], opts: RunOptions = {}): Pr
   const maxBuffer = opts.maxBuffer ?? 1024 * 1024;
   const tmp = privateTmp();
   // nothing is unpacking now, so any unpack folder left is a leftover
-  if (running.size === 0 && process.platform === "linux") sweepStale(tmp, []);
+  if (running.size === 0 && process.platform === "linux") sweepStale(ownTmpDirs(), []);
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, {
       detached: unixGroups,
@@ -88,7 +121,7 @@ export function runYtdlp(bin: string, args: string[], opts: RunOptions = {}): Pr
       if (code === 0 && !killed) { resolve({ stdout, stderr }); return; }
       const why = overflow ? "output exceeded maxBuffer"
         : killed ? `timed out after ${opts.timeout} ms`
-        : UNPACK_FAILED.test(stderr) ? `could not unpack into ${tmp}: the disk is full`
+        : UNPACK_FAILED.test(stderr) ? unpackFailedMessage().replace(/^yt-dlp /, "")
         : `exited with ${code ?? signal}`;
       const err: any = new Error(`yt-dlp ${why}\n${stderr.trim()}`);
       Object.assign(err, { code, signal, killed, stdout, stderr });
@@ -125,19 +158,20 @@ function olderThan(path: string, ms: number, now: number): boolean {
  *  and yt-dlp's unpack folders in `own` only, since other programs unpack into
  *  a shared temp folder too. Returns how many it removed. */
 export function sweepStale(
-  own: string | null = process.platform === "linux" ? privateTmp() : null,
+  own: string | string[] | null = process.platform === "linux" ? ownTmpDirs() : null,
   shared: string[] = [tmpdir()],
   now = Date.now(),
 ): number {
   let removed = 0;
-  const bases = [...(own ? [own] : []), ...shared.filter((d) => d !== own)];
+  const owned = own === null ? [] : Array.isArray(own) ? own : [own];
+  const bases = [...owned, ...shared.filter((d) => !owned.includes(d))];
   for (const base of bases) {
     let names: string[] = [];
     try { names = readdirSync(base); } catch { continue; }
     for (const name of names) {
       const path = join(base, name);
       const stale = TEMP_PREFIXES.some((p) => name.startsWith(p)) ? olderThan(path, STALE_TEMP_MS, now)
-        : name.startsWith("_MEI") && base === own ? olderThan(path, STALE_UNPACK_MS, now)
+        : name.startsWith("_MEI") && owned.includes(base) ? olderThan(path, STALE_UNPACK_MS, now)
         : false;
       if (!stale) continue;
       try { rmSync(path, { recursive: true, force: true }); removed++; } catch { /* not ours */ }
