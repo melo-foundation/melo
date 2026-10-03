@@ -92,6 +92,13 @@ Item {
             compare(n["compact.escape"], "toggleCompact")   // not this command's
         }
 
+        function test_clearing_unbinds_default_gestures_too() {
+            const n = CMD.clearOccupants({}, "toggleCompact")
+            compare(n["playerBar.doubleClick"], CMD.NONE)
+            compare(n["compact.escape"], CMD.NONE)
+            compare(n.hasOwnProperty("titleBar.doubleClick"), false)   // not this command's
+        }
+
         function test_has_gesture_default_only_for_catalog_occupants() {
             compare(CMD.hasGestureDefault("toggleCompact"), true)
             compare(CMD.hasGestureDefault("toggleMaximize"), true)

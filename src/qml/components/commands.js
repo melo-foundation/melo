@@ -44,13 +44,20 @@ function defaultGestures(gestures, commandId) {
 // hands the gesture straight back to the command it was taken from.
 var NONE = "none"
 
-// This command holds no gesture: every gesture it holds becomes unbound.
+// Who holds a gesture: the stored binding, else the builtin default.
+function occupant(gestures, gestureId) {
+    return gestures && gestures.hasOwnProperty(gestureId) ? gestures[gestureId]
+                                                         : GESTURE_DEFAULTS[gestureId]
+}
+
+// This command holds no gesture: every gesture it holds becomes unbound,
+// defaults included.
 function clearOccupants(gestures, commandId) {
     const out = {}
     for (const k in gestures) out[k] = gestures[k]
     for (let i = 0; i < GESTURES.length; i++) {
         const gid = GESTURES[i]
-        if (out[gid] === commandId) out[gid] = NONE
+        if (occupant(out, gid) === commandId) out[gid] = NONE
     }
     return out
 }
