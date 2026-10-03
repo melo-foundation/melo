@@ -7,7 +7,7 @@ var GESTURES = ["playerBar.doubleClick", "compact.escape", "titleBar.doubleClick
 
 var LABELS = {
     "playerBar.doubleClick": "Player bar double-click",
-    "compact.escape": "Escape in compact",
+    "compact.escape": "Escape in mini player",
     "titleBar.doubleClick": "Title bar double-click",
 }
 
@@ -60,6 +60,13 @@ function clearOccupants(gestures, commandId) {
         if (occupant(out, gid) === commandId) out[gid] = NONE
     }
     return out
+}
+
+// The first gesture a command holds, by its label; "\u2014" when it holds none.
+function gestureLabel(gestures, commandId) {
+    for (let i = 0; i < GESTURES.length; i++)
+        if (occupant(gestures, GESTURES[i]) === commandId) return LABELS[GESTURES[i]]
+    return "\u2014"
 }
 
 function hasGestureDefault(commandId) {

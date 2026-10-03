@@ -62,7 +62,7 @@ Item {
                                    "compact.escape",
                                    "titleBar.doubleClick"])
             compare(CMD.LABELS["playerBar.doubleClick"], "Player bar double-click")
-            compare(CMD.LABELS["compact.escape"], "Escape in compact")
+            compare(CMD.LABELS["compact.escape"], "Escape in mini player")
             compare(CMD.LABELS["titleBar.doubleClick"], "Title bar double-click")
             compare(CMD.GESTURE_DEFAULTS["playerBar.doubleClick"], "toggleCompact")
             compare(CMD.GESTURE_DEFAULTS["compact.escape"], "toggleCompact")
@@ -92,6 +92,13 @@ Item {
             compare(n["compact.escape"], "toggleCompact")   // not this command's
         }
 
+        function test_gesture_label_names_the_first_gesture_a_command_holds() {
+            compare(CMD.gestureLabel({}, "toggleCompact"), "Player bar double-click")
+            compare(CMD.gestureLabel({ "playerBar.doubleClick": "playPause" }, "toggleCompact"), "Escape in mini player")
+            compare(CMD.gestureLabel(CMD.clearOccupants({}, "toggleCompact"), "toggleCompact"), "—")
+            compare(CMD.gestureLabel({}, "playPause"), "—")
+        }
+
         function test_clearing_unbinds_default_gestures_too() {
             const n = CMD.clearOccupants({}, "toggleCompact")
             compare(n["playerBar.doubleClick"], CMD.NONE)
@@ -108,7 +115,7 @@ Item {
 
         function test_command_rows_include_plugin_commands() {
             const order = ["playPause", "toggleCompact"]
-            const labels = { playPause: "Play / Pause", toggleCompact: "Compact mode" }
+            const labels = { playPause: "Play / Pause", toggleCompact: "Mini player" }
             const plugins = [
                 { id: "winamp", commands: [
                     { id: "toggleGroup", label: "Show / hide Winamp" },

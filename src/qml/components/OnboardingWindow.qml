@@ -4,6 +4,7 @@ import ".."
 import "accounts.js" as Accounts
 import "onboarding.js" as Onboarding
 import "locales.js" as Locales
+import "commands.js" as CMD
 
 // First run, in its own window: the look, the account, playback. Shown until
 // Settings.ui.onboardingDone, which Skip and Done both set. Every pick applies as
@@ -50,8 +51,14 @@ MeloWindow {
     readonly property var entries: AccountStore.entries
     readonly property var moods: Onboarding.moodSuggestions(AccountStore.profiles)
 
+    // gesture bindings, read and written as the settings window does
+    property var gestures: ({})
+    function setGestures(g) { gestures = g; Settings.uiSet("gestures", g) }
     function open() {
         cfOnSkip = Settings.uiGet("crossfadeOnSkip", false) === true
+        const rawG = Settings.uiGet("gestures", null), g = {}
+        if (rawG) for (const k in rawG) if (rawG[k]) g[k] = rawG[k]
+        gestures = g
         step = 0
         refresh()
         openWindow()
@@ -238,6 +245,36 @@ MeloWindow {
                             // the title bar's own command, so a plugin that intercepts
                             // togglePin sees this one too
                             onToggled: (v) => { if (v !== pinned) CommandMap.invoke("togglePin") }
+                        }
+                    }
+
+                    Item {
+                        width: parent.width
+                        height: obw.rowH
+                        InkText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Mini player"
+                            ink: "text"
+                            font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
+                        }
+                        SelectHead {
+                            id: miniHead
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - obw.labelW
+                            label: CMD.gestureLabel(obw.gestures, "toggleCompact")
+                            menu: obMenu
+                            onClicked: {
+                                const acts = CMD.GESTURES.map((gid) => ({
+                                    label: CMD.LABELS[gid],
+                                    act: () => obw.setGestures(CMD.applyGesture(obw.gestures, gid, "toggleCompact")) }))
+                                acts.push({ label: "None",
+                                            act: () => obw.setGestures(CMD.clearOccupants(obw.gestures, "toggleCompact")) })
+                                acts.push({ label: "Default",
+                                            act: () => obw.setGestures(CMD.defaultGestures(obw.gestures, "toggleCompact")) })
+                                const p = miniHead.mapToItem(null, 0, miniHead.height + 2)
+                                obMenu.openAt(miniHead.Window.window, p.x, p.y, acts, miniHead)
+                            }
                         }
                     }
                 }

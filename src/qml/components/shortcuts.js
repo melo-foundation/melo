@@ -49,7 +49,7 @@ var LABELS = {
     addToLibrary: "Add to library",
     bgPresetNext: "Next BG preset",
     bgPresetPrev: "Prev BG preset",
-    toggleCompact: "Compact mode",
+    toggleCompact: "Mini player",
     toggleMaximize: "Maximize / restore",
     toggleQueue: "Queue panel",
     toggleEq: "Equalizer",

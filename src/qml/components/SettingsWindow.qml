@@ -1291,15 +1291,7 @@ Window {
                 readonly property string defSeq: SC.DEFAULTS[actionId] !== undefined
                                                  ? SC.DEFAULTS[actionId] : ""
                 readonly property bool recording: win.recordingAction === actionId
-                readonly property string gestureText: {
-                    const g = win.gestures
-                    for (let i = 0; i < CMD.GESTURES.length; i++) {
-                        const gid = CMD.GESTURES[i]
-                        const occ = (g && g[gid]) || CMD.GESTURE_DEFAULTS[gid]
-                        if (occ === actionId) return CMD.LABELS[gid]
-                    }
-                    return "—"
-                }
+                readonly property string gestureText: CMD.gestureLabel(win.gestures, actionId)
                 name: srow.row.label
                 desc: ""
                 reserve: 300
