@@ -2,9 +2,9 @@
 // here, so the sidecar can end them all when it exits.
 //
 // yt-dlp's release binary unpacks ~80 MB into TMPDIR on each start and runs as
-// a parent and a child. On Linux TMPDIR is ~/.cache/melo/tmp, since /tmp is
-// often a small RAM disk. Each run gets its own process group: killing the
-// parent alone leaves the child running.
+// a parent and a child. Each run gets its own process group: killing the
+// parent alone leaves the child running. It is stopped with SIGTERM, which lets
+// it remove what it unpacked; SIGKILL leaves the 80 MB behind.
 
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
@@ -37,12 +37,19 @@ export function removeTempDir(dir: string): void {
   try { rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ }
 }
 
-function killTree(child: ChildProcess): void {
-  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
-  try {
-    if (unixGroups) process.kill(-child.pid, "SIGKILL");
-    else spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-  } catch { /* already gone */ }
+const KILL_GRACE_MS = 2000;
+
+// SIGTERM to the group, then SIGKILL to whatever ignored it.
+function stopTree(child: ChildProcess, grace = true): void {
+  const pid = child.pid;
+  if (pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+  if (!unixGroups) {
+    spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+    return;
+  }
+  try { process.kill(-pid, "SIGTERM"); } catch { return; }
+  if (!grace) return;
+  setTimeout(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* gone */ } }, KILL_GRACE_MS).unref();
 }
 
 export interface RunOptions { timeout?: number; maxBuffer?: number }
@@ -56,6 +63,8 @@ const UNPACK_FAILED = /Failed to extract|No space left on device|Disk quota exce
 export function runYtdlp(bin: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
   const maxBuffer = opts.maxBuffer ?? 1024 * 1024;
   const tmp = privateTmp();
+  // nothing is unpacking now, so any unpack folder left is a leftover
+  if (running.size === 0 && process.platform === "linux") sweepStale(tmp, []);
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, {
       detached: unixGroups,
@@ -64,7 +73,7 @@ export function runYtdlp(bin: string, args: string[], opts: RunOptions = {}): Pr
     });
     running.add(child);
     let stdout = "", stderr = "", killed = false, overflow = false;
-    const stop = (): void => { killed = true; killTree(child); };
+    const stop = (): void => { killed = true; stopTree(child); };
     const timer = opts.timeout ? setTimeout(stop, opts.timeout) : null;
     const take = (which: "out" | "err") => (chunk: Buffer): void => {
       if (which === "out") stdout += chunk; else stderr += chunk;
@@ -90,9 +99,10 @@ export function runYtdlp(bin: string, args: string[], opts: RunOptions = {}): Pr
 
 /** Ends every running yt-dlp and removes every temporary folder. Synchronous,
  *  for the exit handler: process.exit() skips the finally blocks of pending
- *  work. */
+ *  work, and nothing can wait here, so runs only get SIGTERM; one that ignores
+ *  it is ended by reapOrphans at the next start. */
 export function shutdownYtdlp(): void {
-  for (const child of running) killTree(child);
+  for (const child of running) stopTree(child, false);
   running.clear();
   for (const dir of tempDirs) {
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ }
@@ -103,7 +113,7 @@ export function shutdownYtdlp(): void {
 process.on("exit", shutdownYtdlp);
 
 const STALE_TEMP_MS = 10 * 60 * 1000;
-const STALE_UNPACK_MS = 60 * 60 * 1000;
+const STALE_UNPACK_MS = 2 * 60 * 1000;
 const TEMP_PREFIXES = ["melo-cookies-", "melo-subs-"];
 
 function olderThan(path: string, ms: number, now: number): boolean {
@@ -160,9 +170,11 @@ export function findOrphans(bin: string, procRoot = "/proc"): number[] {
  *  its exit handler ran). Returns how many. */
 export function reapOrphans(bin: string): number {
   if (process.platform !== "linux") return 0;
+  const pids = findOrphans(bin);
   let n = 0;
-  for (const pid of findOrphans(bin)) {
-    try { process.kill(pid, "SIGKILL"); n++; } catch { /* gone */ }
+  for (const pid of pids) {
+    try { process.kill(pid, "SIGTERM"); n++; } catch { /* gone */ }
   }
+  setTimeout(() => { for (const pid of pids) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } } }, KILL_GRACE_MS).unref();
   return n;
 }

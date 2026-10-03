@@ -28,6 +28,9 @@ case "$1" in
   tmpdir) echo "$TMPDIR"; exit 0 ;;
   full) echo "[PYI-1:ERROR] Failed to extract x.so: decompression resulted in return code -1!" >&2; exit 1 ;;
   hang) sleep 60 & echo "$$ $!" > "$2"; wait ;;
+  # like PyInstaller's launcher: unpacks, removes the folder on SIGTERM, not on SIGKILL
+  unpack) d="$TMPDIR/_MEItest$$"; mkdir -p "$d"; trap 'rm -rf "$d"; exit 143' TERM
+          sleep 60 & echo "$$ $! $d" > "$2"; wait ;;
 esac`);
     chmodSync(fake, 0o755);
   });
@@ -62,6 +65,23 @@ esac`);
     expect(await until(() => !alive(parent) && !alive(child))).toBe(true);
     expect(existsSync(dir)).toBe(false);
     await run;
+  });
+
+  it("a timeout lets yt-dlp remove what it unpacked", async () => {
+    mkdirSync(pids, { recursive: true });
+    const f = join(pids, "unpack");
+    await expect(runYtdlp(fake, ["unpack", f], { timeout: 500 })).rejects.toMatchObject({ killed: true });
+    const [parent, child, dir] = readFileSync(f, "utf-8").trim().split(" ");
+    expect(await until(() => !alive(Number(parent)) && !alive(Number(child)))).toBe(true);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("clears old unpack folders before a run when none is going", async () => {
+    const stale = join(privateTmp(), "_MEIstale");
+    mkdirSync(stale, { recursive: true });
+    const t = new Date(Date.now() - 10 * 60e3); utimesSync(stale, t, t);
+    await runYtdlp(fake, ["tmpdir"]);
+    expect(existsSync(stale)).toBe(false);
   });
 
   it("says the disk is full when yt-dlp cannot unpack", async () => {
