@@ -46,6 +46,27 @@ contents:
     dst: /usr/lib/melo/share/melo/
     packager: rpm
 # shared libraries the binary needs, per distro
+  # The package repository, written by the release workflow (pkgrepo/): each
+  # release carries the address, so a later move reaches everyone who updates.
+  - src: ./pkgrepo/melo.sources
+    dst: /etc/apt/sources.list.d/melo.sources
+    type: config
+    packager: deb
+  - src: ./pkgrepo/melo-archive-keyring.pgp
+    dst: /usr/share/keyrings/melo-archive-keyring.pgp
+    packager: deb
+  - src: ./pkgrepo/melo-dnf.repo
+    dst: /etc/yum.repos.d/melo.repo
+    type: config
+    packager: rpm
+  - src: ./pkgrepo/melo-zypp.repo
+    dst: /etc/zypp/repos.d/melo.repo
+    type: config
+    packager: rpm
+  - src: ./pkgrepo/melo.asc
+    dst: /etc/pki/rpm-gpg/RPM-GPG-KEY-melo
+    packager: rpm
+
 overrides:
   deb:
     depends:
@@ -79,23 +100,58 @@ overrides:
       - libsm6
       - libice6
   rpm:
+    # Libraries by soname, which every rpm distribution's packages provide whatever
+    # they are named; GStreamer plugins are listed by Fedora's or openSUSE's package name.
+    # From the NEEDED entries of melo, node and ffmpeg.
     depends:
-      - gstreamer1
-      - gstreamer1-plugins-base
-      - gstreamer1-plugins-good
-      - gstreamer1-plugins-bad-free   # fdkaacdec, the AAC decoder
-      - libxkbcommon
-      - libxkbcommon-x11
-      - fontconfig
-      - libglvnd-opengl
-      - libwayland-server
-      - xcb-util-cursor
-      - xcb-util-wm
-      - xcb-util-image
-      - xcb-util-keysyms
-      - xcb-util-renderutil
-      - libSM
-      - libICE
+      - (gstreamer1-plugins-base or gstreamer-plugins-base)
+      - (gstreamer1-plugins-good or gstreamer-plugins-good)
+      - (gstreamer1-plugins-bad-free or gstreamer-plugins-bad)   # fdkaacdec, the AAC decoder
+      - ld-linux-x86-64.so.2()(64bit)
+      - libc.so.6()(64bit)
+      - libdl.so.2()(64bit)
+      - libdrm.so.2()(64bit)
+      - libEGL.so.1()(64bit)
+      - libfontconfig.so.1()(64bit)
+      - libfreetype.so.6()(64bit)
+      - libgbm.so.1()(64bit)
+      - libgcc_s.so.1()(64bit)
+      - libgio-2.0.so.0()(64bit)
+      - libglib-2.0.so.0()(64bit)
+      - libGLX.so.0()(64bit)
+      - libgobject-2.0.so.0()(64bit)
+      - libgstapp-1.0.so.0()(64bit)
+      - libgstreamer-1.0.so.0()(64bit)
+      - libICE.so.6()(64bit)
+      - libm.so.6()(64bit)
+      - libOpenGL.so.0()(64bit)
+      - libpthread.so.0()(64bit)
+      - libSM.so.6()(64bit)
+      - libstdc++.so.6()(64bit)
+      - libudev.so.1()(64bit)
+      - libwayland-client.so.0()(64bit)
+      - libwayland-cursor.so.0()(64bit)
+      - libwayland-egl.so.1()(64bit)
+      - libwayland-server.so.0()(64bit)
+      - libX11.so.6()(64bit)
+      - libX11-xcb.so.1()(64bit)
+      - libxcb-cursor.so.0()(64bit)
+      - libxcb-glx.so.0()(64bit)
+      - libxcb-icccm.so.4()(64bit)
+      - libxcb-image.so.0()(64bit)
+      - libxcb-keysyms.so.1()(64bit)
+      - libxcb-randr.so.0()(64bit)
+      - libxcb-render.so.0()(64bit)
+      - libxcb-render-util.so.0()(64bit)
+      - libxcb-shape.so.0()(64bit)
+      - libxcb-shm.so.0()(64bit)
+      - libxcb.so.1()(64bit)
+      - libxcb-sync.so.1()(64bit)
+      - libxcb-xfixes.so.0()(64bit)
+      - libxcb-xkb.so.1()(64bit)
+      - libxkbcommon.so.0()(64bit)
+      - libxkbcommon-x11.so.0()(64bit)
+      - libz.so.1()(64bit)
   archlinux:
     depends:
       - gstreamer
@@ -119,3 +175,6 @@ deb:
   compression: xz
 rpm:
   compression: xz
+  # signed when the release workflow provides the key; unsigned otherwise
+  signature:
+    key_file: ${MELO_SIGNING_KEY_FILE}

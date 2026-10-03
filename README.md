@@ -51,6 +51,8 @@
 
 **[Latest alpha](https://github.com/melo-foundation/melo/releases/latest)**: tested before release. Linux only for now: AppImage, `.deb`, `.rpm` and Arch package.
 
+**[Package repositories](https://melo-foundation.github.io/packages)**: install through apt, dnf, zypper or pacman and get automatic updates.
+
 **[Nightly](https://github.com/melo-foundation/melo/releases/tag/nightly)**: built daily from the newest commit and not tested.
 
 ## Build from source

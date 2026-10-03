@@ -451,7 +451,35 @@ jobs:
             AppDir-lite melo-lite-x86_64.AppImage
 
       - name: rpm, deb and Arch packages
+        env:
+          SIGNING_KEY: ${{ secrets.PACKAGE_SIGNING_KEY }}
         run: |
+          # the .rpm is signed with the key the package repositories use (repos.yml)
+          if [ -n "$SIGNING_KEY" ]; then
+            printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/signing.asc"
+            export MELO_SIGNING_KEY_FILE="$RUNNER_TEMP/signing.asc"
+          fi
+          # The package repository every package points at, built by the owner's
+          # `packages` repo; a move is PACKAGE_REPO_URL plus a release. Without the
+          # key the entries are disabled.
+          REPO_URL="${{ vars.PACKAGE_REPO_URL }}"
+          [ -n "$REPO_URL" ] || REPO_URL="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/packages"
+          mkdir -p pkgrepo
+          on=yes; one=1
+          if [ -n "$SIGNING_KEY" ]; then
+            export GNUPGHOME="$RUNNER_TEMP/gnupg"; mkdir -p -m 700 "$GNUPGHOME"
+            gpg --batch --import "$RUNNER_TEMP/signing.asc" 2>/dev/null
+            gpg --armor --export > pkgrepo/melo.asc
+            gpg --export > pkgrepo/melo-archive-keyring.pgp
+          else
+            : > pkgrepo/melo.asc; : > pkgrepo/melo-archive-keyring.pgp; on=no; one=0
+          fi
+          printf 'Types: deb\nURIs: %s/deb\nSuites: stable\nComponents: main\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/melo-archive-keyring.pgp\nEnabled: %s\n' \
+            "$REPO_URL" "$on" > pkgrepo/melo.sources
+          printf '[melo]\nname=melo\nbaseurl=%s/rpm\nenabled=%s\ngpgcheck=1\nrepo_gpgcheck=0\nmetadata_expire=6h\ngpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-melo\n' \
+            "$REPO_URL" "$one" > pkgrepo/melo-dnf.repo
+          printf '[melo]\nname=melo\nenabled=%s\nautorefresh=1\nbaseurl=%s/suse\ntype=rpm-md\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-melo\n' \
+            "$one" "$REPO_URL" > pkgrepo/melo-zypp.repo
           mkdir -p pkgroot/bin pkgroot/share/melo
           cp -r AppDir-lite/usr/bin/{melo,melo-qml,presets,fonts,ffmpeg} pkgroot/bin/
           cp -r AppDir-lite/usr/share/melo/. pkgroot/share/melo/
@@ -463,10 +491,10 @@ jobs:
           if [ "$KIND" = alpha ]; then export MELO_PKG_VERSION="$v"
           else export MELO_PKG_VERSION="$v+git$(date -u +%Y%m%d).${GITHUB_SHA::7}"; fi
           for p in rpm deb archlinux; do ./nfpm package -f packaging/nfpm.yaml -p $p -t .; done
-          mv melo-*.rpm melo-x86_64.rpm
-          mv melo_*.deb melo-amd64.deb
+          # deb and rpm keep nfpm's versioned names: deb-get reads the version from them
           mv melo-*.pkg.tar.zst melo-x86_64.pkg.tar.zst
-          du -m melo-x86_64.AppImage melo-lite-x86_64.AppImage melo-x86_64.rpm melo-amd64.deb melo-x86_64.pkg.tar.zst
+          du -m melo-x86_64.AppImage melo-lite-x86_64.AppImage melo-*.rpm melo_*.deb melo-x86_64.pkg.tar.zst
+          rm -rf "$RUNNER_TEMP/signing.asc" "$RUNNER_TEMP/gnupg"
 
       - name: Sources
         run: |
@@ -480,8 +508,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           files="melo-x86_64.AppImage melo-x86_64.AppImage.zsync
-                 melo-lite-x86_64.AppImage melo-lite-x86_64.AppImage.zsync melo-x86_64.rpm
-                 melo-amd64.deb melo-x86_64.pkg.tar.zst melo-sources.tar"
+                 melo-lite-x86_64.AppImage melo-lite-x86_64.AppImage.zsync
+                 $(echo melo-*.rpm melo_*.deb) melo-x86_64.pkg.tar.zst melo-sources.tar"
           if [ "$KIND" = alpha ]; then
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
               --title "Alpha ${GITHUB_REF_NAME#alpha-}" --notes "" $files
@@ -493,5 +521,10 @@ jobs:
             else
               gh release create nightly --prerelease --verify-tag --title "Nightly" --notes "$notes"
             fi
+            # each nightly's deb and rpm have new names: upload, then remove the previous ones
+            old=$(gh release view nightly --json assets -q '.assets[].name' | grep -E '\.(deb|rpm)$' || true)
             gh release upload nightly $files --clobber
+            for a in $old; do
+              case " $(echo $files) " in *" $a "*) ;; *) gh release delete-asset nightly "$a" -y ;; esac
+            done
           fi
