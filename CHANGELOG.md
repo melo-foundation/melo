@@ -1,5 +1,9 @@
 # Changelog
 
+## Alpha 3.1
+
+- Fixed blurry artwork in Now Playing
+
 ## Alpha 3
 
 ### Added

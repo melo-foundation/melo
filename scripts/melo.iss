@@ -2,7 +2,7 @@
 ; Built in CI: iscc /O<outdir> scripts/melo.iss (dist/ prepared by the deploy step)
 [Setup]
 AppName=melo
-AppVersion=0.3.0
+AppVersion=0.3.1
 AppPublisher=melo
 DefaultDirName={autopf}\melo
 DisableProgramGroupPage=yes
