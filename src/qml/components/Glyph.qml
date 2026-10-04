@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Shapes
+import QtQuick.Window
 
 // The drawing of an icon, on its own: the paths of a named glyph at a size
 // in a colour. Icon draws itself with one, and its halo draws copies of one
@@ -29,41 +30,86 @@ Item {
     readonly property real fit: ink > inkSw ? (inkFill * vb - inkSw) / (ink - inkSw) : 1
     readonly property real sw: swRaw / fit
     readonly property real k: size / vb * fit
+    // A glyph of only horizontal and vertical lines is drawn on the pixel grid at a
+    // whole-pixel width, or its lines come out different weights (a 2-unit line at
+    // 16 px is 1.33 px wide). Null when any path is not such a line.
+    readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+    readonly property int lineDev: spec.fill ? 0 : Math.max(1, Math.round(sw * k * dpr))
+    readonly property var hinted: hintPaths(p, k, size / 2 - vb / 2 * k, dpr, lineDev)
+    function hintPaths(paths, k, t, d, n) {
+        if (!paths || paths.length === 0) return null
+        // Rounded outward from the glyph's centre, so lines the same distance from it
+        // stay the same distance apart. A stroke's centre sits mid-pixel for an odd
+        // width and on a pixel edge otherwise; a fill's edges sit on pixel edges.
+        const c = size / 2 * d
+        const c0 = n % 2 ? Math.floor(c) + 0.5 : Math.round(c)
+        const snap = (v) => {
+            const off = (v * k + t) * d - c
+            return (c0 + Math.sign(off) * Math.round(Math.abs(off))) / d
+        }
+        const out = []
+        for (const path of paths) {
+            const tok = path.match(/[A-Za-z]|-?\d*\.?\d+(?:e-?\d+)?/g)
+            if (!tok) return null
+            let cmd = "", x = 0, y = 0, sx = 0, sy = 0, s = ""
+            for (let i = 0; i < tok.length;) {
+                if (/[A-Za-z]/.test(tok[i])) cmd = tok[i++]
+                if (cmd === "Z") {
+                    if (i < tok.length && !/[A-Za-z]/.test(tok[i])) return null
+                    s += "Z"; x = sx; y = sy; continue
+                }
+                let nx = x, ny = y
+                if (cmd === "M" || cmd === "L") { nx = +tok[i++]; ny = +tok[i++] }
+                else if (cmd === "H") nx = +tok[i++]
+                else if (cmd === "V") ny = +tok[i++]
+                else return null
+                if (isNaN(nx) || isNaN(ny)) return null
+                if (cmd === "L" && nx !== x && ny !== y) return null   // diagonal
+                s += (cmd === "M" ? "M" : "L") + snap(nx) + " " + snap(ny)
+                if (cmd === "M") { sx = nx; sy = ny; cmd = "L" }
+                x = nx; y = ny
+            }
+            out.push(s)
+        }
+        return out
+    }
+    readonly property var drawn: hinted ?? p
+    readonly property real drawnSw: hinted ? lineDev / dpr : sw
     Shape {
         anchors.fill: parent
         preferredRendererType: Shape.CurveRenderer
         // scaling is about (0,0), so a glyph fitted smaller than its box would
         // sit in the top-left corner of it; put its centre back in the middle
-        transform: [ Scale { xScale: g.k; yScale: g.k },
-                     Translate { x: g.size / 2 - g.vb / 2 * g.k
-                                 y: g.size / 2 - g.vb / 2 * g.k } ]
+        transform: [ Scale { xScale: g.hinted ? 1 : g.k; yScale: g.hinted ? 1 : g.k },
+                     Translate { x: g.hinted ? 0 : g.size / 2 - g.vb / 2 * g.k
+                                 y: g.hinted ? 0 : g.size / 2 - g.vb / 2 * g.k } ]
 
-        ShapePath { strokeColor: g.strokeC; strokeWidth: g.sw; fillColor: g.fillC
+        ShapePath { strokeColor: g.strokeC; strokeWidth: g.drawnSw; fillColor: g.fillC
                     capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin
-                    PathSvg { path: g.p.length > 0 ? g.p[0] : "" } }
-        ShapePath { strokeColor: g.strokeC; strokeWidth: g.sw; fillColor: g.fillC
+                    PathSvg { path: g.drawn.length > 0 ? g.drawn[0] : "" } }
+        ShapePath { strokeColor: g.strokeC; strokeWidth: g.drawnSw; fillColor: g.fillC
                     capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin
-                    PathSvg { path: g.p.length > 1 ? g.p[1] : "" } }
-        ShapePath { strokeColor: g.strokeC; strokeWidth: g.sw; fillColor: g.fillC
+                    PathSvg { path: g.drawn.length > 1 ? g.drawn[1] : "" } }
+        ShapePath { strokeColor: g.strokeC; strokeWidth: g.drawnSw; fillColor: g.fillC
                     capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin
-                    PathSvg { path: g.p.length > 2 ? g.p[2] : "" } }
-        ShapePath { strokeColor: g.strokeC; strokeWidth: g.sw; fillColor: g.fillC
+                    PathSvg { path: g.drawn.length > 2 ? g.drawn[2] : "" } }
+        ShapePath { strokeColor: g.strokeC; strokeWidth: g.drawnSw; fillColor: g.fillC
                     capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin
-                    PathSvg { path: g.p.length > 3 ? g.p[3] : "" } }
-        ShapePath { strokeColor: g.strokeC; strokeWidth: g.sw; fillColor: g.fillC
+                    PathSvg { path: g.drawn.length > 3 ? g.drawn[3] : "" } }
+        ShapePath { strokeColor: g.strokeC; strokeWidth: g.drawnSw; fillColor: g.fillC
                     capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin
-                    PathSvg { path: g.p.length > 4 ? g.p[4] : "" } }
-        ShapePath { strokeColor: g.strokeC; strokeWidth: g.sw; fillColor: g.fillC
+                    PathSvg { path: g.drawn.length > 4 ? g.drawn[4] : "" } }
+        ShapePath { strokeColor: g.strokeC; strokeWidth: g.drawnSw; fillColor: g.fillC
                     capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin
-                    PathSvg { path: g.p.length > 5 ? g.p[5] : "" } }
-        ShapePath { strokeColor: g.strokeC; strokeWidth: g.sw; fillColor: g.fillC
+                    PathSvg { path: g.drawn.length > 5 ? g.drawn[5] : "" } }
+        ShapePath { strokeColor: g.strokeC; strokeWidth: g.drawnSw; fillColor: g.fillC
                     capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin
-                    PathSvg { path: g.p.length > 6 ? g.p[6] : "" } }
-        ShapePath { strokeColor: g.strokeC; strokeWidth: g.sw; fillColor: g.fillC
+                    PathSvg { path: g.drawn.length > 6 ? g.drawn[6] : "" } }
+        ShapePath { strokeColor: g.strokeC; strokeWidth: g.drawnSw; fillColor: g.fillC
                     capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin
-                    PathSvg { path: g.p.length > 7 ? g.p[7] : "" } }
-        ShapePath { strokeColor: g.strokeC; strokeWidth: g.sw; fillColor: g.fillC
+                    PathSvg { path: g.drawn.length > 7 ? g.drawn[7] : "" } }
+        ShapePath { strokeColor: g.strokeC; strokeWidth: g.drawnSw; fillColor: g.fillC
                     capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin
-                    PathSvg { path: g.p.length > 8 ? g.p[8] : "" } }
+                    PathSvg { path: g.drawn.length > 8 ? g.drawn[8] : "" } }
     }
 }
