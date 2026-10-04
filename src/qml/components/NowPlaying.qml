@@ -18,7 +18,24 @@ Item {
 
     readonly property var track: PlayerState.currentTrack
     readonly property string vid: track ? (track.id || "") : ""
-    readonly property string art: track ? (track.thumbnail || "") : ""
+    // The page shows its art full width, so it asks YouTube for the 1280 version
+    // rather than the card's 360 one; the next size down when a video has none.
+    readonly property string thumb: track ? (track.thumbnail || "") : ""
+    readonly property var artSizes: {
+        const m = /ytimg\.com\/vi(?:_webp)?\/([^\/]+)\//.exec(thumb)
+        return m ? ["https://i.ytimg.com/vi/" + m[1] + "/maxresdefault.jpg",
+                    "https://i.ytimg.com/vi/" + m[1] + "/hq720.jpg", thumb]
+                 : [thumb]
+    }
+    property int artTry: 0
+    onArtSizesChanged: artTry = 0
+    readonly property string art: artSizes[Math.min(artTry, artSizes.length - 1)]
+    Image {   // only to learn that a size is missing; the pages load the same URL
+        visible: false
+        asynchronous: true
+        source: pane.art
+        onStatusChanged: if (status === Image.Error && pane.artTry < pane.artSizes.length - 1) pane.artTry++
+    }
     readonly property string title: track ? (track.title || "") : ""
     readonly property string channel: track ? (track.channel || "") : ""
     readonly property var info: PlayerState.trackInfo
