@@ -196,15 +196,14 @@ signals:
 void meloExtraStartup(QQmlApplicationEngine& qml, QString& qmlDir, AudioEngine& audio);
 #endif
 
-// QML dir: env override -> beside the executable (packaged/portable layout)
-// -> the dev tree path compiled in at build time. The packaged exe MUST NOT
-// rely on MELO_DEV_QML_DIR — that's the build machine's path. Needs the app
-// object: the splash (Splash.h) and the window both call it.
+// QML dir: $MELO_QML_DIR, else melo-qml beside the executable, else the
+// MELO_DEV_QML_DIR compiled in, which is the build machine's path and wrong
+// for a packaged melo. Needs the app object: the splash and the window call it.
 static QString meloQmlDir() {
     QString qmlDir = qEnvironmentVariable("MELO_QML_DIR");
     if (!qmlDir.isEmpty()) return qmlDir;
-    // NB: "melo-qml", NOT "qml" — windeployqt owns appdir/qml (Qt's own
-    // QML modules), and copying into it nested our UI at qml/qml/
+    // "melo-qml": windeployqt fills appdir/qml with Qt's own QML modules, and
+    // copying into it would nest melo's UI at qml/qml/
     const QString local = QCoreApplication::applicationDirPath() + "/melo-qml";
     qmlDir = QFileInfo::exists(local + "/Main.qml") ? local
                                                     : QStringLiteral(MELO_DEV_QML_DIR);
@@ -339,9 +338,8 @@ int main(int argc, char** argv) {
     // GStreamer plugin, ~2 s.
     gst_init(&argc, &argv);
 
-    // Lite AppImage runs on the SYSTEM GStreamer — probe every element the
-    // pipelines need and report what's missing instead of failing silently
-    // (an unbuildable pipeline just logs to stderr and plays nothing).
+    // Report every element the pipelines need that the system GStreamer lacks:
+    // an unbuildable pipeline only logs to stderr and plays nothing.
     const auto haveGstElement = [](const char* name) {
         if (GstElementFactory* f = gst_element_factory_find(name)) {
             gst_object_unref(f);

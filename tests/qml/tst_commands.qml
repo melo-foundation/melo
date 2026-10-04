@@ -125,7 +125,7 @@ Item {
 
         // Plugin ⚙ page: hijack is a setting, not a list-row. toggleGroup
         // is the show/hide command; other plugins with no such command get
-        // no toggle. Off restores compact.
+        // no toggle. Off gives the gesture back to toggleCompact.
         function test_playerbar_hijack_is_toggleGroup_only() {
             const winamp = { id: "winamp", commands: [
                 { id: "toggleGroup", label: "Show / hide Winamp" },

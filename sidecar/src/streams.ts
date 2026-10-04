@@ -693,8 +693,8 @@ async function resolveWithClient(
   videoId: string, client: string | null, cookies: string[], haveIdentity: boolean,
   pot: PoToken | null,
 ): Promise<CachedStream> {
-  // Only the fields read below: the whole `-j` record runs past 10 MB on a long
-  // video with many caption tracks (10.9 MB for yFBDm8S_jAg), and the run is killed.
+  // Only the fields read below: the whole `-j` record of a long video with many
+  // caption tracks passes the 10 MB maxBuffer, and the run is killed.
   const { stdout } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
      ...YTDLP_COMMON, "-f", "bestaudio/best",
      "-O", "%(.{url,http_headers,title,channel,uploader,duration,thumbnail})j",

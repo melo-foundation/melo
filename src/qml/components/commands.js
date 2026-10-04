@@ -14,8 +14,8 @@ var GESTURE_DEFAULTS = {
     "titleBar.doubleClick": "toggleMaximize",
 }
 
-// The command's other gesture goes: back to its default owner, or unbound when
-// the command was that owner.
+// Binds the gesture to the command. A gesture the command held before goes back
+// to its default owner, or is unbound when the command is its default owner.
 function applyGesture(gestures, gestureId, commandId) {
     const out = {}
     for (const k in gestures) out[k] = gestures[k]

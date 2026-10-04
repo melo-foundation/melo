@@ -4345,6 +4345,6 @@ Window {
         }
     }
 
-    // while recording, Escape cancels the recording
+    // off while recording, so Escape reaches the recorder and cancels it
     Shortcut { sequence: "Escape"; enabled: win.recordingAction === ""; onActivated: win.visible = false }
 }

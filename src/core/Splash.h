@@ -127,8 +127,9 @@ public:
         window_->setGeometry(QRect(QPoint(0, 0), kSplashSize));
         if (!control_.initialize()) return false;
         QRhi* rhi = control_.rhi();
-        // a software renderer draws the fills on the CPU, where melo needs it.
-        // OpenGL reports no device type, only the renderer's name.
+        // Refuse a software renderer, so the splash keeps its still: it would draw
+        // the fills on the CPU that melo's own startup needs. OpenGL reports no
+        // device type, only the renderer's name.
         const QRhiDriverInfo info = rhi->driverInfo();
         static const char* const cpu[] = {"llvmpipe", "softpipe", "swiftshader", "software rasterizer",
                                           "basic render"};

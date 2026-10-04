@@ -70,7 +70,6 @@ describe("the shortcut tables", () => {
     }
   });
 
-  // Q was already the queue's key; the others have none
   it("gives the queue Q and the rest no default key", () => {
     expect(SC.DEFAULTS.toggleQueue).toBe("KeyQ");
     for (const id of added.filter((id) => id !== "toggleQueue")) expect(SC.DEFAULTS[id], id).toBe("");

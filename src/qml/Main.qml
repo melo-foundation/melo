@@ -268,8 +268,8 @@ Window {
         trackLayout = mode
         Settings.uiSet("library-layout", mode)
     }
-    // Read from the file before this loads (SettingsStore::loadLocal), or from
-    // the sidecar when there is no file yet
+    // Settings is read from the file before this loads (SettingsStore::loadLocal)
+    // and applied in Component.onCompleted; with no file, the sidecar sends it later
     Connections {
         target: Settings
         function onLoadedChanged() { root.applySavedSettings() }
@@ -302,8 +302,8 @@ Window {
         const place = () => {
             if (px !== -99999 && py !== -99999) WindowCtl.applyMainPosition(px, py)
             WindowCtl.watchMainGeometry()
-            // reveal content only after the KWin position move — else the
-            // window shows at KWin's DEFAULT placement for a frame before
+            // reveal content only after the KWin position move, or the
+            // window shows at KWin's default placement for a frame before
             // it jumps to the saved position
             root.ready = true
         }
@@ -313,7 +313,7 @@ Window {
         // apply the saved EQ to the pipeline (window not needed)
         const eq = Settings.uiGet("eqConfig", null)
         if (eq) Player.applyEqConfig(eq)
-        // restore volume into melo's OWN state rather than leaving it to
+        // restore volume into melo's own state rather than leaving it to
         // PulseAudio stream-restore, or PlayerState boots at 1.0 and the
         // first wheel step jumps to ~100%. Stored on the cubic scale as
         // volumeUi; an old linear "volume" save is converted once

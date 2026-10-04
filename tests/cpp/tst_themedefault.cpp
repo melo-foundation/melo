@@ -21,7 +21,8 @@ private slots:
         QCOMPARE(store.matchingPreset(QStringLiteral("transparency")), QStringLiteral("bi-tr-off"));
     }
 
-    // Picking a colour names it, as the onboarding and settings rows show it
+    // An applied palette preset is the one matched: the onboarding and settings
+    // rows show the match as the picked colour
     void aPickedColourIsTheOneMatched() {
         qputenv("MELO_CONFIG_DIR", dir_.path().toLocal8Bit());
         SidecarService sidecar;

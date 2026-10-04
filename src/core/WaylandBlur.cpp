@@ -206,8 +206,9 @@ void WaylandBlur::setBlur(QWindow* w, bool on, const QRegion& region, bool follo
     if (!w) return;
     track(w);
     State& st = states_[w];
-    // Already on the surface. Re-sending makes the window draw a frame, and the
-    // hidden window drawing on every step of the other's resize makes it jitter.
+    // Already on the surface. Re-sending makes the window draw a frame, and a
+    // hidden window drawing on every step of another window's resize makes
+    // that resize jitter.
     if (st.applied && st.blurOn == on && st.followShape == followShape && st.blurRegion == region)
         return;
     st.blurOn = on;
