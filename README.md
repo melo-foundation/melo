@@ -25,7 +25,7 @@
 > melo is in alpha.
 
 <p align="center">
-  <img src=".github/screenshots/now-playing.webp" alt="melo's Now playing page">
+  <img src=".github/screenshots/demo.webp" alt="Searching, playing, Now playing, the visualiser and the mini player">
 </p>
 <p align="center">
   <img src=".github/screenshots/row.webp" alt="Home in the Royale theme, the library, search, and a classic theme">
