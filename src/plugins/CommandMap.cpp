@@ -26,8 +26,6 @@ QString CommandMap::commandForGesture(const QString& gestureId) const {
     return gestureToCommand_.value(gestureId);
 }
 
-void CommandMap::setCompactActive(bool on) { compactActive_ = on; }
-
 bool CommandMap::invoke(const QString& commandId) {
     if (commandId.isEmpty())
         return false;
@@ -42,8 +40,6 @@ bool CommandMap::invoke(const QString& commandId) {
 }
 
 bool CommandMap::invokeGesture(const QString& gestureId) {
-    if (gestureId == QLatin1String("compact.escape") && !compactActive_)
-        return false;
     return invoke(commandForGesture(gestureId));
 }
 

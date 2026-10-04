@@ -1095,7 +1095,6 @@ Window {
             onEqToggle: CommandMap.invoke("toggleEq")
             onDragStarted: root.holdFadeForDrag()
         }
-        Shortcut { sequence: "Escape"; enabled: root.miniPlayer; onActivated: CommandMap.invokeGesture("compact.escape") }
     }
 
     // Popup-as-subsurface of the bar is WORSE than the toplevel popup: Qt
@@ -2543,8 +2542,6 @@ Window {
         sc = SC.merged(Settings.uiGet("shortcuts", null))
         const next = []
         for (const id in sc) {
-            if (id === "bgPresetNext" || id === "bgPresetPrev")
-                continue
             const seq = SC.toQt(sc[id])
             CommandMap.setKey(id, seq)
             if (seq) next.push(id)
@@ -2584,11 +2581,8 @@ Window {
         }
         CommandMap.setGesture("playerBar.doubleClick",
             bound("playerBar.doubleClick", "toggleCompact"))
-        CommandMap.setGesture("compact.escape",
-            bound("compact.escape", "toggleCompact"))
         CommandMap.setGesture("titleBar.doubleClick",
             bound("titleBar.doubleClick", "toggleMaximize"))
-        CommandMap.setCompactActive(root.miniPlayer)
         CommandMap.setTyping(root.typing)
     }
     Connections {   // shortcut edits in the settings window apply live
@@ -2602,7 +2596,6 @@ Window {
                                    && activeFocusItem !== contentItem
                                    && (activeFocusItem.cursorPosition !== undefined
                                        || activeFocusItem.activeFocusOnTab === true)
-    onMiniPlayerChanged: CommandMap.setCompactActive(root.miniPlayer)
     onTypingChanged: CommandMap.setTyping(root.typing)
     onActiveChanged: if (MELO_FOCUS_DEBUG)
         console.log("[focus-debug] root.active", active)
@@ -2720,11 +2713,6 @@ Window {
             }
         }
     }
-    // bgPresetNext/Prev are listed in shortcuts.js but not bound: they would
-    // eat [ and ] as no-ops
-    // Q toggles the queue panel
-    Shortcut { enabled: !root.typing; sequence: "Q"
-               onActivated: PlayerState.showPanel = !PlayerState.showPanel }
 
     // ---------- frameless window resize ----------
     // freeze tick UI + hold the hover fade the instant OUR handle is pressed

@@ -270,8 +270,6 @@ MeloWindow {
                                     act: () => obw.setGestures(CMD.applyGesture(obw.gestures, gid, "toggleCompact")) }))
                                 acts.push({ label: "None",
                                             act: () => obw.setGestures(CMD.clearOccupants(obw.gestures, "toggleCompact")) })
-                                acts.push({ label: "Default",
-                                            act: () => obw.setGestures(CMD.defaultGestures(obw.gestures, "toggleCompact")) })
                                 const p = miniHead.mapToItem(null, 0, miniHead.height + 2)
                                 obMenu.openAt(miniHead.Window.window, p.x, p.y, acts, miniHead)
                             }

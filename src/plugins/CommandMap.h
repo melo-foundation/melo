@@ -17,7 +17,6 @@ public:
     explicit CommandMap(QObject* parent = nullptr);
     Q_INVOKABLE void setGesture(const QString& gestureId, const QString& commandId);
     Q_INVOKABLE QString commandForGesture(const QString& gestureId) const;
-    Q_INVOKABLE void setCompactActive(bool on);
     Q_INVOKABLE bool invoke(const QString& commandId);
     Q_INVOKABLE bool invokeGesture(const QString& gestureId);
     Q_INVOKABLE void setKey(const QString& commandId, const QString& qtSequence);
@@ -37,7 +36,6 @@ private:
     bool effectivelyTyping() const;
     QHash<QString, QString> gestureToCommand_;
     QHash<QString, QShortcut*> shortcuts_;
-    bool compactActive_ = false;
     bool typing_ = false;
     bool capturing_ = false;
     bool haveFocusObject_ = false;

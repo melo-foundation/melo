@@ -70,10 +70,10 @@ describe("the shortcut tables", () => {
     }
   });
 
-  // An empty default is intended, as for toggleCompact and toggleMaximize:
-  // inventing a shortcut takes a key away from the user.
-  it("gives them no default key", () => {
-    for (const id of added) expect(SC.DEFAULTS[id], id).toBe("");
+  // Q was already the queue's key; the others have none
+  it("gives the queue Q and the rest no default key", () => {
+    expect(SC.DEFAULTS.toggleQueue).toBe("KeyQ");
+    for (const id of added.filter((id) => id !== "toggleQueue")) expect(SC.DEFAULTS[id], id).toBe("");
   });
 
   it("does not add a second id for search, which is already a command", () => {

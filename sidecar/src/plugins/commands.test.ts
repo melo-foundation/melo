@@ -43,9 +43,17 @@ describe("validateCommands", () => {
   it("exports the exact gesture catalog", () => {
     expect(GESTURE_IDS).toEqual([
       "playerBar.doubleClick",
-      "compact.escape",
       "titleBar.doubleClick",
     ]);
+  });
+  it("loads a manifest naming the retired Escape gesture with no default", () => {
+    const r = validateCommands([{ id: "toggleGroup", label: "G", default: "compact.escape" }]);
+    expect(r.error).toBeNull();
+    expect(r.commands[0].default).toBeUndefined();
+  });
+  it("keeps plugins off Q", () => {
+    const w = commandLoadWarnings("p", [{ id: "a", label: "A", default: "KeyQ" }], new Set());
+    expect(w).toHaveLength(1);
   });
   it("rejects duplicate command ids", () => {
     const r = validateCommands([

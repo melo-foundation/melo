@@ -13,17 +13,12 @@ var DEFAULTS = {
     prevTrackAlt: "Backspace",
     deleteTrack: "shift+Delete",
     addToLibrary: "KeyL",
-    bgPresetNext: "BracketRight",
-    bgPresetPrev: "BracketLeft",
-    // gesture-bound by default (double-click, Escape); no key unless the
-    // user records one, so an empty default is the binding, not a hole
+    // gesture-bound by default (double-click); no key unless the user records one
     toggleCompact: "",
     toggleMaximize: "",
-    // The chrome buttons. Empty for the same reason as the two above: a
-    // default key here would take one away from the user. They are commands so
-    // a plugin can take them over (InterceptMap.offer() lives in the command
-    // switch), which also makes them bindable.
-    toggleQueue: "",
+    // The chrome buttons are commands so a plugin can take them over
+    // (InterceptMap.offer() lives in the command switch).
+    toggleQueue: "KeyQ",
     toggleEq: "",
     toggleVisualizer: "",
     openSettings: "",
@@ -32,7 +27,6 @@ var DEFAULTS = {
 
 var ORDER = ["toggleSearch", "playPause", "rewind", "forward", "nextTrack",
              "prevTrack", "prevTrackAlt", "deleteTrack", "addToLibrary",
-             "bgPresetNext", "bgPresetPrev",
              "toggleCompact", "toggleMaximize",
              "toggleQueue", "toggleEq", "toggleVisualizer",
              "openSettings", "togglePin"]
@@ -47,8 +41,6 @@ var LABELS = {
     prevTrackAlt: "Previous track (alt)",
     deleteTrack: "Delete library track",
     addToLibrary: "Add to library",
-    bgPresetNext: "Next BG preset",
-    bgPresetPrev: "Prev BG preset",
     toggleCompact: "Mini player",
     toggleMaximize: "Maximize / restore",
     toggleQueue: "Queue panel",
@@ -58,12 +50,33 @@ var LABELS = {
     togglePin: "Always on top",
 }
 
+// Stored for a key the user cleared, so the default does not come back
+var NONE = "none"
+
 function merged(saved) {
     const out = {}
-    for (const k in DEFAULTS) out[k] = (saved && saved[k]) ? saved[k] : DEFAULTS[k]
+    for (const k in DEFAULTS) {
+        const v = saved && saved[k]
+        out[k] = v === NONE ? "" : (v ? v : DEFAULTS[k])
+    }
     if (saved)
         for (const k in saved)
-            if (!(k in DEFAULTS) && saved[k]) out[k] = saved[k]
+            if (!(k in DEFAULTS) && saved[k] && saved[k] !== NONE) out[k] = saved[k]
+    return out
+}
+
+// The stored map after binding `seq` to `action`: a key held by another command
+// moves here and leaves that command empty. `seq` "" clears the action.
+function rebind(saved, current, action, seq) {
+    const out = {}
+    for (const k in saved) out[k] = saved[k]
+    if (seq)
+        for (const k in current)
+            if (k !== action && current[k] === seq)
+                out[k] = k in DEFAULTS ? NONE : ""
+    if (!seq) out[action] = action in DEFAULTS ? NONE : ""
+    else out[action] = seq
+    for (const k in out) if (out[k] === "") delete out[k]
     return out
 }
 

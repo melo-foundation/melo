@@ -362,7 +362,7 @@ A `ui` plugin declares commands in its manifest:
 
 Each entry needs `id` (a lowercase letter, then letters or digits) and
 `label`. `default` is optional: a catalog gesture id (`playerBar.doubleClick`,
-`compact.escape`, `titleBar.doubleClick`) or a `KeyboardEvent.code` key string
+`titleBar.doubleClick`) or a `KeyboardEvent.code` key string
 (`Space`, `ctrl+KeyL`). A default containing `.` that is not a catalog gesture
 is a manifest error. A key default that another command already holds loads
 with the warning `<pluginId>.<id>: default key already taken` and is cleared.
@@ -383,10 +383,9 @@ commands through `action` settings rows.
 
 A gesture has one occupant across melo and every plugin: binding
 `playerBar.doubleClick` to `my-plugin.toggleGroup` takes it from whatever held
-it. Defaults: `playerBar.doubleClick` and `compact.escape` run
-`toggleCompact`; `titleBar.doubleClick` runs `toggleMaximize`.
-`compact.escape` fires only in compact mode, so Escape still leaves compact
-after you take `playerBar.doubleClick`.
+it, and a command holds one gesture. Defaults: `playerBar.doubleClick` runs
+`toggleCompact`; `titleBar.doubleClick` runs `toggleMaximize`. A manifest default
+of `compact.escape` loads as no default.
 
 Keys fire while any melo window, yours included, has focus. A key with no
 modifier does not fire while a text field has focus.

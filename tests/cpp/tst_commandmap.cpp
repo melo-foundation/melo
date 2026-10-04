@@ -34,19 +34,6 @@ private slots:
         QCOMPARE(m.commandForGesture(QStringLiteral("playerBar.doubleClick")),
                  QStringLiteral("winamp.toggleGroup"));
     }
-    void compactEscapeDoesNothingWhenFull() {
-        CommandMap m;
-        m.setGesture(QStringLiteral("compact.escape"),
-                     QStringLiteral("toggleCompact"));
-        m.setCompactActive(false);
-        QString got;
-        QObject::connect(&m, &CommandMap::invoked, [&](const QString& id) { got = id; });
-        QVERIFY(!m.invokeGesture(QStringLiteral("compact.escape")));
-        QVERIFY(got.isEmpty());
-        m.setCompactActive(true);
-        QVERIFY(m.invokeGesture(QStringLiteral("compact.escape")));
-        QCOMPARE(got, QStringLiteral("toggleCompact"));
-    }
     void pluginIdSplitsOnFirstDot() {
         CommandMap m;
         QString plug, cmd;

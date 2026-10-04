@@ -49,6 +49,31 @@ Item {
             compare(empty.hasOwnProperty("winamp.toggleGroup"), false)
         }
 
+        function test_queue_has_q() {
+            const m = SC.merged(null)
+            compare(m.toggleQueue, "KeyQ")
+            compare(SC.ORDER.indexOf("bgPresetNext"), -1)
+            compare(SC.ORDER.indexOf("bgPresetPrev"), -1)
+        }
+
+        function test_clear_keeps_the_default_away() {
+            const saved = SC.rebind({}, SC.merged(null), "playPause", "")
+            compare(saved.playPause, SC.NONE)
+            compare(SC.merged(saved).playPause, "")
+            compare(SC.merged(SC.rebind(saved, SC.merged(saved), "playPause", "Space")).playPause, "Space")
+        }
+
+        function test_a_taken_key_moves() {
+            const saved = SC.rebind({}, SC.merged(null), "nextTrack", "Space")
+            const m = SC.merged(saved)
+            compare(m.nextTrack, "Space")
+            compare(m.playPause, "")
+            const p = SC.rebind({ "winamp.toggleGroup": "KeyW" },
+                                SC.merged({ "winamp.toggleGroup": "KeyW" }), "playPause", "KeyW")
+            compare(p.hasOwnProperty("winamp.toggleGroup"), false)
+            compare(SC.merged(p).playPause, "KeyW")
+        }
+
         function test_compact_maximize_listed() {
             compare(SC.DEFAULTS.toggleCompact, "")
             compare(SC.DEFAULTS.toggleMaximize, "")
@@ -73,6 +98,7 @@ Item {
             compare(SC.fromKeyEvent({ key: Qt.Key_BraceRight, modifiers: Qt.ShiftModifier }),
                     "shift+BracketRight")
             compare(SC.fromKeyEvent({ key: Qt.Key_N, modifiers: 0 }), "KeyN")
+            compare(SC.fromKeyEvent({ key: Qt.Key_Escape, modifiers: 0 }), null)
             // bare modifier press records nothing
             compare(SC.fromKeyEvent({ key: Qt.Key_Shift, modifiers: Qt.ShiftModifier }), null)
         }

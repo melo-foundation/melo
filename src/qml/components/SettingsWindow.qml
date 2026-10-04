@@ -569,16 +569,8 @@ Window {
         requestActivate()
     }
     function setShortcut(action, seq) {
-        const m = {}
-        for (const k in shortcuts) m[k] = shortcuts[k]
-        // Plugin full ids are unknown to SC.DEFAULTS; still persist them.
-        // Empty plugin keys are deleted (not stored as "") so merge does not
-        // treat a hole as a saved binding.
-        if (seq || (SC.DEFAULTS[action] !== undefined))
-            m[action] = seq
-        else
-            delete m[action]
-        shortcuts = m
+        const m = SC.rebind(Settings.uiGet("shortcuts", null) || {}, shortcuts, action, seq)
+        shortcuts = SC.merged(m)
         Settings.uiSet("shortcuts", m)   // Main re-merges on Settings.changed
         recordingAction = ""
     }
@@ -1303,6 +1295,11 @@ Window {
                         visible: srow.seq !== srow.defSeq
                         label: "Reset"
                         onClicked: win.setShortcut(srow.actionId, srow.defSeq)
+                    }
+                    SBtn {
+                        visible: srow.seq !== ""
+                        label: "Clear"
+                        onClicked: win.setShortcut(srow.actionId, "")
                     }
                     SelectHead {   // gesture picker (catalog ids + clear/default)
                         id: gMa
@@ -4348,5 +4345,6 @@ Window {
         }
     }
 
-    Shortcut { sequence: "Escape"; onActivated: win.visible = false }
+    // while recording, Escape cancels the recording
+    Shortcut { sequence: "Escape"; enabled: win.recordingAction === ""; onActivated: win.visible = false }
 }

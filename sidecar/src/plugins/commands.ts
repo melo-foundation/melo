@@ -1,8 +1,9 @@
 export const GESTURE_IDS = [
   "playerBar.doubleClick",
-  "compact.escape",
   "titleBar.doubleClick",
 ] as const;
+// A manifest default naming a retired gesture loads as no default, not an error.
+const RETIRED_GESTURES = new Set(["compact.escape"]);
 export type GestureId = typeof GESTURE_IDS[number];
 
 export interface CommandDecl {
@@ -22,8 +23,7 @@ export const BUILTIN_KEY_DEFAULTS: Record<string, string> = {
   deleteTrack: "shift+Delete",
   addToLibrary: "KeyL",
   uiLock: "ctrl+shift+KeyL",
-  bgPresetNext: "BracketRight",
-  bgPresetPrev: "BracketLeft",
+  toggleQueue: "KeyQ",
 };
 
 const GESTURE_SET = new Set<string>(GESTURE_IDS);
@@ -50,11 +50,12 @@ export function validateCommands(raw: unknown):
     if (command.default !== undefined && typeof command.default !== "string")
       return { commands: [], error: `command ${command.id}: default must be a string` };
     if (typeof command.default === "string" && command.default.includes(".")
-        && !GESTURE_SET.has(command.default))
+        && !GESTURE_SET.has(command.default) && !RETIRED_GESTURES.has(command.default))
       return { commands: [], error: `command ${command.id}: unknown gesture: ${command.default}` };
 
     const out: CommandDecl = { id: command.id, label: command.label };
-    if (typeof command.default === "string") out.default = command.default;
+    if (typeof command.default === "string" && !RETIRED_GESTURES.has(command.default))
+      out.default = command.default;
     commands.push(out);
     ids.add(command.id);
   }

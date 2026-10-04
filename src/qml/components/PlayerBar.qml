@@ -253,7 +253,11 @@ Rectangle {
             }
         }
         onDoubleClicked: {
-            if (typeof CommandMap !== "undefined" && CommandMap)
+            if (typeof CommandMap === "undefined" || !CommandMap) return
+            // the mini bar has no title bar, so a mini player on the title bar comes back here
+            if (bar.mini && CommandMap.commandForGesture("titleBar.doubleClick") === "toggleCompact")
+                CommandMap.invoke("toggleCompact")
+            else
                 CommandMap.invokeGesture("playerBar.doubleClick")
         }
         // wheel passes through every child (none accept it) and lands here

@@ -1,42 +1,40 @@
 // Gesture catalog for the Shortcuts tab. Ids and labels match sidecar
-// GESTURE_IDS. Occupancy writes go through applyGesture so one
-// command taking playerBar.doubleClick cannot drag compact.escape with it.
+// GESTURE_IDS. A command holds at most one gesture, so its row shows what is bound.
 .pragma library
 
-var GESTURES = ["playerBar.doubleClick", "compact.escape", "titleBar.doubleClick"]
+var GESTURES = ["playerBar.doubleClick", "titleBar.doubleClick"]
 
 var LABELS = {
     "playerBar.doubleClick": "Player bar double-click",
-    "compact.escape": "Escape in mini player",
     "titleBar.doubleClick": "Title bar double-click",
 }
 
 var GESTURE_DEFAULTS = {
     "playerBar.doubleClick": "toggleCompact",
-    "compact.escape": "toggleCompact",
     "titleBar.doubleClick": "toggleMaximize",
 }
 
+// The command's other gesture goes: back to its default owner, or unbound when
+// the command was that owner.
 function applyGesture(gestures, gestureId, commandId) {
     const out = {}
-    for (const k in gestures) if (gestures[k] !== commandId) out[k] = gestures[k]
-    if (commandId) out[gestureId] = commandId
-    else delete out[gestureId]
+    for (const k in gestures) out[k] = gestures[k]
+    if (!commandId) { delete out[gestureId]; return out }
+    for (let i = 0; i < GESTURES.length; i++) {
+        const gid = GESTURES[i]
+        if (gid === gestureId || occupant(out, gid) !== commandId) continue
+        if (GESTURE_DEFAULTS[gid] === commandId) out[gid] = NONE
+        else delete out[gid]
+    }
+    out[gestureId] = commandId
     return out
 }
 
-// Write-once: sequential applyGesture for the same command strips earlier
-// keys. Default on toggleCompact must keep playerBar.doubleClick AND
-// compact.escape.
 function defaultGestures(gestures, commandId) {
-    const out = {}
-    for (const k in gestures) out[k] = gestures[k]
-    for (let i = 0; i < GESTURES.length; i++) {
-        const gid = GESTURES[i]
-        if (GESTURE_DEFAULTS[gid] === commandId)
-            out[gid] = commandId
-    }
-    return out
+    for (let i = 0; i < GESTURES.length; i++)
+        if (GESTURE_DEFAULTS[GESTURES[i]] === commandId)
+            return applyGesture(gestures, GESTURES[i], commandId)
+    return gestures
 }
 
 // NONE is stored, not absent. A missing key means "nobody has said anything
@@ -62,7 +60,7 @@ function clearOccupants(gestures, commandId) {
     return out
 }
 
-// The first gesture a command holds, by its label; "\u2014" when it holds none.
+// The gesture a command holds, by its label; "\u2014" when it holds none.
 function gestureLabel(gestures, commandId) {
     for (let i = 0; i < GESTURES.length; i++)
         if (occupant(gestures, GESTURES[i]) === commandId) return LABELS[GESTURES[i]]
