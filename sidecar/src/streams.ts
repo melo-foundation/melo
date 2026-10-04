@@ -693,12 +693,12 @@ async function resolveWithClient(
   videoId: string, client: string | null, cookies: string[], haveIdentity: boolean,
   pot: PoToken | null,
 ): Promise<CachedStream> {
+  // Only the fields read below: the whole `-j` record runs past 10 MB on a long
+  // video with many caption tracks (10.9 MB for yFBDm8S_jAg), and the run is killed.
   const { stdout } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
-     ...YTDLP_COMMON, "-f", "bestaudio/best", "-j",
+     ...YTDLP_COMMON, "-f", "bestaudio/best",
+     "-O", "%(.{url,http_headers,title,channel,uploader,duration,thumbnail})j",
      `https://www.youtube.com/watch?v=${videoId}`],
-    // maxBuffer as in every sibling call: `-j` output with a large caption
-    // list exceeds the 1MB default and the run is killed. This
-    // fallback runs only after the fast path already failed.
     { timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
   );
   const data = JSON.parse(stdout);
