@@ -2,6 +2,7 @@ import { ScrollReveal } from "./ScrollReveal";
 
 const RELEASES_URL = "https://github.com/melo-foundation/melo/releases";
 const GITHUB_URL = "https://github.com/melo-foundation/melo";
+const PACKAGES_URL = "https://melo-foundation.github.io/packages";
 
 const platforms = [
   {
@@ -83,7 +84,8 @@ export function DownloadSection() {
         <ScrollReveal>
         <div className="download__source">
           <p>
-            <a href={`${RELEASES_URL}/latest`} target="_blank" rel="noopener noreferrer">Other formats</a> (lite AppImage, deb, rpm, Arch) or{" "}
+            <a href={`${RELEASES_URL}/latest`} target="_blank" rel="noopener noreferrer">Other formats</a> (lite AppImage, deb, rpm, Arch),{" "}
+            <a href={PACKAGES_URL} target="_blank" rel="noopener noreferrer">package repositories</a> (apt, dnf, zypper, pacman) or{" "}
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">build from source</a>
           </p>
           <code className="download__snippet">
