@@ -6,6 +6,7 @@ import Melo 1.0
 import "components"
 import "components/skeletonmodel.js" as SkeletonModel
 import "components/shortcuts.js" as SC
+import "components/videowanted.js" as VideoWanted
 import "views"
 import "."
 
@@ -70,7 +71,9 @@ Window {
     // notifying dependency is evaluated once, before Settings has loaded.
     property bool gridSnap: false
     function readGridSnap() { gridSnap = Settings.uiGet("gridSnap", false) === true }
-    Connections { target: Settings; function onChanged() { root.readGridSnap() } }
+    property string videoFit: "fill"
+    function readVideoFit() { videoFit = String(Settings.uiGet("videoFit", "fill")) }
+    Connections { target: Settings; function onChanged() { root.readGridSnap(); root.readVideoFit() } }
     function snapGrain(d) {
         const n = Math.round(d * 120); let a = n, b = 120
         while (b) { const t = a % b; a = b; b = t }
@@ -289,6 +292,10 @@ Window {
         root.trackLayout = Settings.uiGet("library-layout", "grid")
         root.refreshShortcuts()
         root.miniPanelH = Number(Settings.uiGet("miniPanelHeight", 400))
+        root.miniPopupVideo = Settings.uiGet("miniPopupVideo", false) === true
+        if (npLoader.item) npLoader.item.showVideo = Settings.uiGet("npVideo", false) === true
+        root.readVideoFit()
+        PlayerState.videoWanted = root.videoWanted
         // restore last window size (saved on resize, debounced)
         const w = Settings.uiGet("windowW", 0), h = Settings.uiGet("windowH", 0)
         if (w >= root.minimumWidth && h >= root.minimumHeight) {
@@ -615,6 +622,13 @@ Window {
     property bool miniQueueShown: false
     // the popup region hosts EITHER the queue or the mini visualizer
     property bool miniVisWanted: false
+    property bool miniPopupVideo: false
+    // the saved choice stays; without video support the popup shows the visualizer
+    readonly property bool popupVideoMode: miniPopupVideo && PlayerState.videoSupported
+    readonly property bool videoWanted: VideoWanted.wanted(PlayerState.view, root.miniPlayer,
+        npLoader.item ? npLoader.item.showVideo : false,
+        root.miniVisWanted, root.miniQueueShown, root.popupVideoMode)
+    onVideoWantedChanged: PlayerState.videoWanted = videoWanted
     // the popup renders inside MAIN, so main must be at least as wide as
     // the bar; asserted at cheap moments (popup open, bar-resize end)
     function ensureMainWideEnough() {
@@ -940,6 +954,55 @@ Window {
             // the appearance window-border outline on the visualizer card
             borderRole: Theme.windowBorder ? "windowBorder" : ""
             borderWidth: Theme.windowBorder ? Theme.windowBorderWidth : 0
+            Image {   // under the video, for stills and the first beat
+                anchors.fill: parent
+                anchors.margins: Theme.windowRadius
+                source: PlayerState.trackThumbnail
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                opacity: 1 - popupVideo.opacity
+                visible: root.popupVideoMode && opacity > 0.01
+            }
+            Skeleton {
+                anchors.fill: parent
+                anchors.margins: Theme.windowRadius
+                radius: Theme.windowRadius
+                shimmer: true
+                opacity: 0.6
+                visible: root.popupVideoMode && (PlayerState.videoPending || PlayerState.loading) && !PlayerState.hasVideo
+            }
+            VideoSurface {
+                id: popupVideo
+                anchors.fill: parent
+                anchors.margins: Theme.windowRadius
+                running: root.popupVideoMode && root.miniVisWanted && root.miniQueueShown
+                         && PlayerState.hasVideo
+                frozen: root.resizeFreeze || !PlayerState.isPlaying
+                fit: root.videoFit
+                opacity: root.popupVideoMode && hasFrame && PlayerState.hasVideo ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 300 } }
+                visible: opacity > 0.01
+                TapHandler {
+                    acceptedButtons: Qt.RightButton
+                    enabled: popupVideo.opacity > 0.5
+                    onTapped: (ev) => {
+                        const g = popupVideo.mapToItem(null, ev.position.x, ev.position.y)
+                        root.openVideoMenu(g.x, g.y, root)
+                    }
+                }
+            }
+            PopupModeToggle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                // the gear's inset: the card's corner, then the gap
+                anchors.margins: Math.max(1, Theme.windowRadius) + Theme.gap(10)
+                z: 10
+                video: root.miniPopupVideo
+                visible: PlayerState.videoSupported
+                opacity: overlayHover.hovered ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+                onPicked: (v) => { root.miniPopupVideo = v; Settings.uiSet("miniPopupVideo", v) }
+            }
         }
     }
 
@@ -1151,6 +1214,7 @@ Window {
         onQueueToggle: CommandMap.invoke("toggleQueue")
         onEqToggle: CommandMap.invoke("toggleEq")
         onDragStarted: root.holdFadeForDrag()
+        onNeutralClick: if (PlayerState.view === 5 && npLoader.item && npLoader.item.videoShown) npLoader.item.toggleOverlay()
     }
 
     // The arranger, over the bar while arranging. Built on first use, since Qt
@@ -1618,20 +1682,21 @@ Window {
                     active: MELO_HAS_GL
                     sourceComponent: Visualizer {
                         id: viz
-                        parent: root.miniVisWanted && root.miniQueueShown ? miniVisSlot : vizSlot
+                        parent: root.miniVisWanted && root.miniQueueShown && !root.popupVideoMode
+                                ? miniVisSlot : vizSlot
                         anchors.fill: parent
-                        // inset inside the rounded card so its square corners
-                        // clear the card's rounded corners (max(1) keeps a
-                        // 1px top gap in the mini slot)
-                        anchors.margins: parent === miniVisSlot
-                            ? Math.max(1, Theme.windowRadius) : 0
                         // ...unless a plugin occupies the slot. Bound means
                         // INSTEAD OF, not on top of — two visualisers drawing
                         // the same audio in the same rectangle is the failure
                         // mode a slot exists to avoid.
                         visible: !root.vizSlotFilled
                                  && ((PlayerState.view === 4 && !root.miniPlayer)
-                                     || (root.miniVisWanted && root.miniQueueShown))
+                                     || (root.miniVisWanted && root.miniQueueShown && !root.popupVideoMode))
+                        // inset inside the rounded card so its square corners
+                        // clear the card's rounded corners (max(1) keeps a
+                        // 1px top gap in the mini slot)
+                        anchors.margins: parent === miniVisSlot
+                            ? Math.max(1, Theme.windowRadius) : 0
                         // visualizerBg "transparent": glass shows through
                         opacity: Theme.ts.visualizerBg === "transparent" ? Theme.opacityScale : 1
                         // click-to-preset: left = next (or a RANDOM preset with
@@ -1817,7 +1882,8 @@ Window {
                     anchors.fill: visible ? parent : undefined
                     visible: PlayerState.view === 5
                     sourceComponent: NowPlaying { anchors.fill: parent
-                                                 visible: PlayerState.view === 5 }
+                                                 visible: PlayerState.view === 5
+                                                 videoMenu: (sx, sy) => root.openVideoMenu(sx, sy, root) }
                 }
 
                 PlaylistView {
@@ -2258,6 +2324,20 @@ Window {
                 acts.push({ label: "Add to Library & Download", act: () => Library.addTrack(t, true) })
         }
         return acts
+    }
+
+    // Quality and fit, on the picture itself. Flat, with a check on the
+    // current value: the menu has no submenus of its own.
+    function openVideoMenu(sx, sy, host) {
+        const q = Number(Settings.uiGet("videoQuality", 720))
+        const f = String(Settings.uiGet("videoFit", "fill"))
+        const acts = []
+        for (const h of [360, 480, 720, 1080])
+            acts.push({ label: h + "p", check: q === h, act: () => Settings.uiSet("videoQuality", h) })
+        const fits = [["fill", "Fill"], ["fit", "Fit"], ["stretch", "Stretch"]]
+        fits.forEach(([v, label], i) =>
+            acts.push({ label: label, check: f === v, rule: i === 0, act: () => Settings.uiSet("videoFit", v) }))
+        contextMenu.open(sx, sy, acts, host)
     }
 
     // The player bar's own menu: the playing track's entries, then the bar's.

@@ -22,6 +22,7 @@ import { relayUrl } from "./stream-relay";
 import { looksStale, ytdlp, ytdlpChannel } from "./ytdlp";
 import { notify } from "./rpc";
 import { mintPoToken, poTokenSession, type PoToken } from "./potoken";
+import { isStillAtHeight, isStillFormat, pickVideoFormat, codecOf, videoCacheKey, type VideoCodec } from "./video-formats";
 
 /** True only for googlevideo CDN URLs that 403 a plain GET. */
 export function needsStreamRelay(url: string): boolean {
@@ -689,6 +690,51 @@ export function invalidateStreamCache(videoId: string): void {
   if (streamCache.delete(videoId)) console.error(`[streams] dropped dead URL for ${videoId}`);
 }
 
+export interface VideoStreamResult {
+  ok: true; videoId: string; url: string; width: number; height: number; fps: number; codec: VideoCodec; still: boolean;
+}
+
+interface CachedVideo {
+  videoId: string;
+  raw: string;
+  headers?: Record<string, string>;
+  width: number; height: number; fps: number; codec: VideoCodec; still: boolean;
+  expiresAt: number;
+}
+// Keyed per video and cap: a 720p entry must not answer a 1080p request.
+const videoCache = new Map<string, CachedVideo>();
+
+export function invalidateVideoCache(videoId: string): void {
+  for (const k of [...videoCache.keys()])
+    if (k.startsWith(`${videoId}:`)) videoCache.delete(k);
+}
+
+/** @internal test seams */
+export function videoCacheHas(videoId: string, maxHeight: number): boolean {
+  return videoCache.has(videoCacheKey(videoId, maxHeight));
+}
+export function primeVideoCacheForTest(videoId: string, maxHeight: number, raw: string): void {
+  videoCache.set(videoCacheKey(videoId, maxHeight), {
+    videoId, raw, width: 0, height: 0, fps: 0, codec: "vp9", still: false, expiresAt: cacheExpiryMs(raw),
+  });
+}
+export function streamCacheHas(videoId: string): boolean { return streamCache.has(videoId); }
+export function primeStreamCacheForTest(videoId: string, raw: string): void {
+  streamCache.set(videoId, { videoId, raw, title: "", channel: "", duration: 0, thumbnail: "",
+                             expiresAt: cacheExpiryMs(raw) });
+}
+
+async function toVideoResult(c: CachedVideo): Promise<VideoStreamResult> {
+  return {
+    ok: true,
+    videoId: c.videoId,
+    url: needsStreamRelay(c.raw)
+      ? await relayUrl(c.raw, c.headers, () => invalidateVideoCache(c.videoId))
+      : c.raw,
+    width: c.width, height: c.height, fps: c.fps, codec: c.codec, still: c.still,
+  };
+}
+
 async function resolveWithClient(
   videoId: string, client: string | null, cookies: string[], haveIdentity: boolean,
   pot: PoToken | null,
@@ -843,6 +889,93 @@ export async function fetchStreamUrl(videoId: string): Promise<StreamResult | St
     const clean = ytdlpReason(msg);
     maybeReportStale(msg);
     return { ok: false, error: clean || "Failed to get stream" };
+  }
+}
+
+async function innertubeVideo(
+  videoId: string, maxHeight: number, codecs: VideoCodec[],
+): Promise<CachedVideo | null> {
+  const decline = (why: string) => {
+    console.error(`[video] innertube declined ${videoId}: ${why}`);
+    return null;
+  };
+  const pot = await poTokenSession();
+  if (!pot) return decline("no PO token session");
+  const yt = await getSession();
+  const info = await yt.getBasicInfo(videoId, { client: "YTMUSIC" });
+  if (info.playability_status?.status !== "OK")
+    return decline(`playability ${info.playability_status?.status ?? "unknown"}`);
+  const formats = (info.streaming_data?.adaptive_formats ?? []) as any[];
+  const pick = pickVideoFormat(formats, maxHeight, codecs);
+  if (!pick) return decline("no video-only format under the cap");
+  const deciphered = await (pick as any).decipher(yt.session.player);
+  if (typeof deciphered !== "string" || !deciphered.startsWith("http"))
+    return decline("decipher produced no url");
+  const url = withVideoPot(deciphered, await pot.mint(videoId));
+  if (!(await tailIsReadable(url))) return decline("url walled");
+  return {
+    videoId, raw: url, headers: undefined,
+    width: pick.width ?? 0, height: pick.height ?? 0, fps: pick.fps ?? 0,
+    codec: codecOf(pick.mime_type)!, still: isStillAtHeight(formats, pick.height ?? 0),
+    expiresAt: cacheExpiryMs(url),
+  };
+}
+
+async function ytdlpVideo(
+  videoId: string, maxHeight: number, codecs: VideoCodec[],
+): Promise<CachedVideo | null> {
+  const cookies = await cookieArgs();
+  const haveIdentity = cookiesCarryIdentity(cookies);
+  const pot = await mintPoToken(videoId);
+  const format = codecs
+    .map((c) => `bv[height<=${maxHeight}][vcodec~='^${({ av1: "av01", vp9: "vp0?9", h264: "avc1" })[c]}']`)
+    .join("/");
+  for (const client of STREAM_CLIENTS) {
+    try {
+      const { stdout } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
+        ...YTDLP_COMMON,
+        "-f", format,
+        "-O", "%(.{url,http_headers,width,height,fps,vcodec,vbr,tbr})j",
+        `https://www.youtube.com/watch?v=${videoId}`],
+        { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
+      const data = JSON.parse(stdout);
+      const raw = typeof data.url === "string" ? data.url : "";
+      if (!raw) continue;
+      const headers = ytdlpHttpHeaders(data);
+      if (!(await tailIsReadable(raw, headers))) continue;
+      const codec = codecOf(`codecs="${String(data.vcodec ?? "")}"`) ?? "vp9";
+      const kbps = Number(data.vbr ?? data.tbr ?? 0);
+      return {
+        videoId, raw, headers,
+        width: Number(data.width ?? 0), height: Number(data.height ?? 0), fps: Number(data.fps ?? 0),
+        codec, still: isStillFormat({ width: data.width, height: data.height, bitrate: kbps * 1000 }),
+        expiresAt: cacheExpiryMs(raw),
+      };
+    } catch (e: any) {
+      console.error(`[video] yt-dlp ${client ?? "default"} failed: ${ytdlpReason(e?.stderr || String(e))}`);
+    }
+  }
+  return null;
+}
+
+export async function fetchVideoStreamUrl(
+  videoId: string, maxHeight: number, codecs: VideoCodec[],
+): Promise<VideoStreamResult | StreamError> {
+  const key = videoCacheKey(videoId, maxHeight);
+  const hit = videoCache.get(key);
+  if (hit && Date.now() < hit.expiresAt) return toVideoResult(hit);
+  try {
+    let found: CachedVideo | null = null;
+    if (FAST_STREAMS) {
+      try { found = await innertubeVideo(videoId, maxHeight, codecs); }
+      catch (e) { console.error(`[video] innertube failed: ${String(e).split("\n")[0]}`); }
+    }
+    if (!found) found = await ytdlpVideo(videoId, maxHeight, codecs);
+    if (!found) return { ok: false, error: "No video for this track" };
+    videoCache.set(key, found);
+    return toVideoResult(found);
+  } catch (err: any) {
+    return { ok: false, error: ytdlpReason(err?.stderr || String(err)) || "Failed to get video" };
   }
 }
 

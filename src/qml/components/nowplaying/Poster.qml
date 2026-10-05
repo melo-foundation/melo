@@ -1,8 +1,10 @@
 import QtQuick
 import QtQuick.Effects
 import QtQuick.Shapes
+import Melo 1.0
 import ".."
 import "../.."
+import "../overlay.js" as Overlay
 
 // Poster: artwork fills the page, title across the bottom. Drag, scroll and
 // the page picker all drive one `phase`, which morphs the poster into the sleeve
@@ -67,6 +69,41 @@ Item {
     // stacks: record up top, everything it has to say underneath. Same number the bar rearranges
     // on, so the whole window changes shape in one move.
     readonly property bool stacked: width < GridUi.narrowW
+    readonly property Item videoItem: videoSurf
+    // 1 while the picture shows; artwork, glass and scrim follow it
+    property real videoIn: videoSurf.hasFrame && s.np.showVideo && PlayerState.hasVideo
+                           && (s.shaderOk || s.p < 0.5) ? 1 : 0
+    Behavior on videoIn { enabled: s.settled; NumberAnimation { duration: 300 } }
+    // A picture already in hand when the page appears shows at once: no fade
+    // for the first 80 ms.
+    property bool settled: false
+    Timer { id: settleTimer; interval: 80; onTriggered: s.settled = true }
+    onVisibleChanged: { settled = false; if (visible) settleTimer.restart() }
+    Component.onCompleted: {
+        readVideoFit()
+        if (visible) settleTimer.restart()   // built visible: no change to catch
+    }
+    // Over live video on the poster face, the words, pills and cursor hide while
+    // the app is idle. A click on neutral space toggles them; that hide holds
+    // until the next key or press.
+    property bool overlayForced: false
+    readonly property bool clearNow: Overlay.clear(s.videoIn > 0.99, s.p < 0.5 && PlayerState.videoWanted,
+                                                   UiActivity.idle, s.overlayForced)
+    // read before the press wakes the clock: the fade has moved by the release
+    property bool clearAtPress: false
+    Connections {
+        target: UiActivity
+        function onInputWoke() { s.clearAtPress = s.clearNow; s.overlayForced = false }
+    }
+    function toggleOverlay() {
+        const hidden = s.clearAtPress
+        s.overlayForced = Overlay.afterClick(hidden)
+        if (hidden) UiActivity.wake()
+    }
+    property real videoClear: s.clearNow ? 1 : 0
+    Behavior on videoClear { NumberAnimation { duration: 400 } }
+    readonly property bool hideCursor: s.visible && s.videoClear > 0.99 && videoHover.hovered
+    onHideCursorChanged: UiActivity.setWindowCursorHidden(s.Window.window, hideCursor)
     readonly property real pageX: GridUi.padLeft + 34    // the page's inset, in a poster's wider band
     readonly property real sleeveX: stacked ? (width - rigW) / 2 : pageX
     // the album sits on the middle of the page, with room kept below it for
@@ -75,6 +112,61 @@ Item {
         ? GridUi.padTop + 18
         : Math.max(GridUi.padTop + 14,
                    Math.min((height - sleeveW) / 2, height - sleeveW - 150))
+
+    // ---- the video: the poster itself, and a blurred ground off it ------
+    // On the poster the picture is full bleed. Off it the artwork takes the
+    // sleeve and the cover, and the picture stays as the page's ground,
+    // blurred. Without shaders there is no blur, so it stays a poster only.
+    property string videoFit: "fill"
+    // the poster title reads the picture only where it stands on it, not on a letterbox bar
+    readonly property bool titleOnPicture: {
+        const r = videoSurf.contentRect
+        return poster.x >= r.x && poster.y >= r.y
+            && poster.x + poster.width * poster.k <= r.x + r.width
+            && poster.y + poster.height * poster.k <= r.y + r.height
+    }
+    function readVideoFit() { videoFit = String(Settings.uiGet("videoFit", "fill")) }
+    Connections { target: Settings; function onChanged() { s.readVideoFit() } }
+    VideoSurface {
+        id: videoSurf
+        anchors.fill: parent
+        fit: s.videoFit
+        fillMix: Math.min(1, s.p * 2)   // zooms to fill by halfway to the record: the ground always fills
+        running: s.np.showVideo && PlayerState.hasVideo && s.visible && PlayerState.videoWanted
+        frozen: Player.uiFrozen
+        opacity: s.videoIn
+        visible: videoSurf.opacity > 0.01
+        layer.enabled: s.shaderOk && visible
+        // HueLum turns this layer on for its backdrop; without shaders it must stay plain
+        layer.effect: s.shaderOk ? groundBlur : null
+        Component {
+            id: groundBlur
+            MultiEffect { blurEnabled: true; blur: s.p; blurMax: 64; autoPaddingEnabled: false }
+        }
+        HoverHandler { id: videoHover }
+        TapHandler {
+            acceptedButtons: Qt.LeftButton
+            gesturePolicy: TapHandler.ReleaseWithinBounds
+            enabled: s.videoIn > 0.5 && s.p < 0.5
+            onTapped: s.toggleOverlay()
+        }
+        TapHandler {
+            acceptedButtons: Qt.RightButton
+            enabled: s.videoIn > 0.5 && s.p < 0.5 && s.np.videoMenu !== null
+            onTapped: (ev) => {
+                const g = s.mapToItem(null, ev.position.x, ev.position.y)
+                s.np.videoMenu(g.x, g.y)
+            }
+        }
+    }
+    // Off the poster the page's own colour (the window's where the page is clear)
+    // covers the blurred picture at up to 75%, so the words keep their contrast.
+    Rectangle {
+        anchors.fill: parent
+        color: Qt.alpha(Theme.page.a > 0.05 ? Theme.page : Theme.window, 1)
+        opacity: s.p * 0.75 * s.videoIn
+        visible: opacity > 0.01
+    }
 
     // ---- the record, out from behind the sleeve -------------------------
     // Starts inside the sleeve, hidden by the cover, and slides right; nothing fades.
@@ -485,7 +577,8 @@ Item {
         // title, which is a function of the same phase and nothing else.
         // The words toggle eases at its source instead (see Classic).
         radius: Theme.radiusLg * s.q
-        color: Theme.card
+        // Over the live video the box is glass until it becomes a sleeve.
+        color: Qt.alpha(Theme.card, Theme.card.a * (1 - s.videoIn * (1 - s.p)))
         clip: true
         // Under the picture, not instead of it: the art arrives a beat after
         // the track does, and a flat panel in that gap is the page looking
@@ -502,8 +595,7 @@ Item {
             source: s.np.art
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
-            opacity: status === Image.Ready ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 180 } }
+            opacity: status !== Image.Ready ? 0 : 1 - s.videoIn * (1 - s.p)
         }
         // ---- sleeve chrome: only while it is a sleeve --------------------
         Item {
@@ -609,8 +701,9 @@ Item {
         // page; reading it there maps them outside its texture, the shader
         // clamps, and an adaptive ink or halo samples the poster's picture.
         property bool onArt: false
-        readonly property Item wordBackdrop: onArt && artImg.status === Image.Ready
-                                             ? artImg : Theme.backdrop
+        readonly property Item wordBackdrop: !onArt ? Theme.backdrop
+                                             : s.videoIn > 0.5 ? (s.titleOnPicture ? videoSurf : Theme.backdrop)
+                                             : artImg.status === Image.Ready ? artImg : Theme.backdrop
         readonly property real k: s.curPx / px
         // Where this block's TITLE sits, not where its box does. The copies
         // carry different things above the title (the poster has a meta line),
@@ -713,7 +806,7 @@ Item {
         showMeta: true
         x: s.headX
         y: s.anchorY - titleTop * k
-        opacity: 1 - s.swap01
+        opacity: (1 - s.swap01) * (1 - s.videoClear)
     }
     TypeBlock {
         id: record
@@ -758,6 +851,29 @@ Item {
         visible: opacity > 0.01 && width > 150 && height > 80
 
         NpToggle { id: sideToggle; np: s.np }
+        SelectTab {
+            id: sideVideo
+            x: sideToggle.width + Theme.gap(10)
+            y: (sideToggle.height - height) / 2   // centred, as NpToggle's segs
+            height: line ? sideToggle.height : sideToggle.height - 8
+            style: Theme.toggles === "segment" ? "pill" : Theme.toggles
+            active: s.np.showVideo
+            loading: s.np.showVideo && (PlayerState.videoPending || PlayerState.loading) && !PlayerState.hasVideo
+            hover: sideVideoMa.containsMouse; pressed: sideVideoMa.pressed
+            label: "Video"
+            fontSize: 11
+            weight: Theme.weightMedium
+            width: implicitWidth
+            opacity: s.np.showVideo && !PlayerState.hasVideo && !PlayerState.videoPending && !PlayerState.loading ? 0.45 : 1
+            visible: PlayerState.videoSupported
+            MouseArea {
+                id: sideVideoMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: s.np.showVideo = !s.np.showVideo
+            }
+        }
         Item {
             y: sideToggle.height + 20
             width: parent.width
@@ -853,11 +969,12 @@ Item {
         style: Theme.toggles === "segment" ? "pill" : Theme.toggles
         active: s.np.showWords
         hover: wordsMa.containsMouse; pressed: wordsMa.pressed
-        label: s.np.loading ? "Lyrics…" : (s.np.noLyrics ? "No lyrics" : "Lyrics")
+        loading: s.np.loading
+        label: s.np.noLyrics ? "No lyrics" : "Lyrics"
         fontSize: 11
         weight: Theme.weightMedium
         width: implicitWidth
-        opacity: s.atEnds * (s.np.noLyrics ? 0.45 : 1)
+        opacity: s.atEnds * (s.np.noLyrics ? 0.45 : 1) * (1 - s.videoClear)
         visible: opacity > 0.01 && s.np.vid.length > 0
         MouseArea {
             id: wordsMa
@@ -866,6 +983,30 @@ Item {
             cursorShape: Qt.PointingHandCursor
             enabled: !s.np.noLyrics
             onClicked: s.np.showWords = !s.np.showWords
+        }
+    }
+
+    SelectTab {   // video on or off, beside the words
+        id: videoBtn
+        x: wordsBtn.visible ? wordsBtn.x + wordsBtn.width + Theme.gap(6) : s.pageX
+        y: 26
+        height: 30
+        style: Theme.toggles === "segment" ? "pill" : Theme.toggles
+        active: s.np.showVideo
+        loading: s.np.showVideo && (PlayerState.videoPending || PlayerState.loading) && !PlayerState.hasVideo
+        hover: videoMa.containsMouse; pressed: videoMa.pressed
+        label: "Video"
+        fontSize: 11
+        weight: Theme.weightMedium
+        width: implicitWidth
+        opacity: s.atEnds * (s.np.showVideo && !PlayerState.hasVideo && !PlayerState.videoPending && !PlayerState.loading ? 0.45 : 1) * (1 - s.videoClear)
+        visible: opacity > 0.01 && s.np.vid.length > 0 && PlayerState.videoSupported
+        MouseArea {
+            id: videoMa
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: s.np.showVideo = !s.np.showVideo
         }
     }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { needsStreamRelay, ytdlpReason } from "./streams";
+import { fetchVideoStreamUrl, needsStreamRelay, ytdlpReason } from "./streams";
+import { invalidateStreamCache, invalidateVideoCache, primeVideoCacheForTest, primeStreamCacheForTest, videoCacheHas, streamCacheHas } from "./streams";
 
 describe("needsStreamRelay", () => {
   it("is true for googlevideo CDN hosts", () => {
@@ -33,5 +34,31 @@ describe("ytdlpReason", () => {
   it("says the disk is full when yt-dlp could not unpack itself", () => {
     expect(ytdlpReason("[PYI-4672:ERROR] Failed to extract Cryptodome/Cipher/_ARC4.abi3.so: decompression resulted in return code -1!\n"))
       .toMatch(/^yt-dlp could not unpack into .+: the disk is full$/);
+  });
+});
+
+describe("video cache", () => {
+  it("is keyed per video and cap, and a video 403 leaves the audio entry alone", () => {
+    primeStreamCacheForTest("vid1", "https://rr1.googlevideo.com/a?expire=9999999999&clen=10");
+    primeVideoCacheForTest("vid1", 720, "https://rr1.googlevideo.com/v?expire=9999999999&clen=10");
+    primeVideoCacheForTest("vid1", 1080, "https://rr1.googlevideo.com/w?expire=9999999999&clen=10");
+    expect(videoCacheHas("vid1", 720)).toBe(true);
+    expect(videoCacheHas("vid1", 1080)).toBe(true);
+    invalidateVideoCache("vid1");
+    expect(videoCacheHas("vid1", 720)).toBe(false);
+    expect(videoCacheHas("vid1", 1080)).toBe(false);
+    expect(streamCacheHas("vid1")).toBe(true);
+    invalidateStreamCache("vid1");
+    expect(streamCacheHas("vid1")).toBe(false);
+  });
+});
+
+describe("fetchVideoStreamUrl", () => {
+  it("names the video it resolved", async () => {
+    primeVideoCacheForTest("vid2", 720, "https://example.com/v?expire=9999999999&clen=10");
+    const r = await fetchVideoStreamUrl("vid2", 720, ["vp9"]);
+    expect(r.ok).toBe(true);
+    expect((r as { videoId?: string }).videoId).toBe("vid2");
+    invalidateVideoCache("vid2");
   });
 });

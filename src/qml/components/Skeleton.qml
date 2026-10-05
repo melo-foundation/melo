@@ -50,13 +50,14 @@ Item {
 
     // the skeleton role: its colour, and the sheen a step lighter at the
     // same alpha
-    readonly property color base: Theme.skeleton
-    readonly property color hi: {
+    property color base: Theme.skeleton
+    property color hi: {
         const l = Qt.lighter(Qt.rgba(base.r, base.g, base.b, 1), 1.45)
         return Qt.rgba(l.r, l.g, l.b, Math.min(1, base.a * 1.15))
     }
-    // only a role that would blend gets a Surface built
-    readonly property bool styled: Theme.skeletonStyled
+    // only a role that would blend gets a Surface built; `plain` never builds one
+    property bool plain: false
+    readonly property bool styled: !plain && Theme.skeletonStyled
     property real sheenPos: -0.3
     function cl(p) { return Math.max(0, Math.min(1, p)) }
 

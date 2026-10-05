@@ -1766,6 +1766,21 @@ Window {
                               onToggled: (v) => { win.cfOnSkip = v; Settings.uiSet("crossfadeOnSkip", v) } }
                 }
                 SRow {
+                    name: "Video quality"
+                    // SSelect matches on strings; the setting is stored as a number
+                    SSelect { value: String(Settings.uiGet("videoQuality", 720))
+                              options: [{ value: "360", label: "360p" }, { value: "480", label: "480p" },
+                                        { value: "720", label: "720p" }, { value: "1080", label: "1080p" }]
+                              onPicked: (v) => { value = v; Settings.uiSet("videoQuality", Number(v)) } }
+                }
+                SRow {
+                    name: "Video fit"
+                    SSelect { value: String(Settings.uiGet("videoFit", "fill"))
+                              options: [{ value: "fill", label: "Fill" }, { value: "fit", label: "Fit" },
+                                        { value: "stretch", label: "Stretch" }]
+                              onPicked: (v) => { value = v; Settings.uiSet("videoFit", v) } }
+                }
+                SRow {
                     name: "Skip silence"
                     SToggle { checked: Settings.silenceSkip
                               onToggled: (v) => Settings.silenceSkip = v }

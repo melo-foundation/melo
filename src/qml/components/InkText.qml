@@ -25,7 +25,8 @@ Text {
     // With a twin the paint stands down but the layout stays (opacity would take the
     // twin with it). A theme's own ink key, named from a bar row, has no Theme
     // property and is resolved through Theme.inkColour.
-    color: twin ? "transparent" : (Theme[ink] !== undefined ? Theme[ink] : Theme.inkColour(ink))
+    readonly property color resolved: Theme[ink] !== undefined ? Theme[ink] : Theme.inkColour(ink)
+    color: twin ? "transparent" : resolved
     // Qt's 1px style would draw in styleColor regardless of a transparent
     // fill, and would stack under a real halo
     Binding { target: root; property: "style"; value: Text.Normal; when: root.twin || root.haloOn }

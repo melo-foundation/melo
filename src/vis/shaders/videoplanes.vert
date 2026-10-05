@@ -1,0 +1,14 @@
+#version 440
+// One picture quad; the planes are sampled at the same normalised coordinate.
+layout(location = 0) in vec2 qt_Vertex;
+layout(location = 1) in vec2 qt_MultiTexCoord0;
+layout(location = 0) out vec2 vTex;
+layout(std140, binding = 0) uniform buf {
+    mat4 qt_Matrix;
+    mat4 colorMatrix;
+    float qt_Opacity;
+};
+void main() {
+    vTex = qt_MultiTexCoord0;
+    gl_Position = qt_Matrix * vec4(qt_Vertex, 0.0, 1.0);
+}

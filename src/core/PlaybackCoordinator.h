@@ -151,6 +151,8 @@ private:
     void appendRadioTrackThen(std::function<void(bool)> cont);
     void startWatchtime(const QString& videoId, double duration);
     void flushWatchtime();
+    void onVideoWantedChanged();
+    void requestVideo(const Track& t, bool incoming);   // yt/getVideoStream, then attach
 
     AudioEngine* engine_;
     SidecarService* sidecar_;
@@ -170,6 +172,10 @@ private:
     // prefetch
     QJsonObject prefetched_;      // {videoId, url, title, channel, duration, thumbnail, skipStart, skipEnd}
     bool prefetching_ = false;
+    QJsonObject videoPrefetched_;   // {videoId, url, still}
+    bool videoPrefetching_ = false;
+    quint64 videoRequestSeq_ = 0;   // the latest current-track video request
+    QTimer videoGraceTimer_;   // unwanted decks are dropped when it fires
 
     // Paged mix continuation. The queue is topped up from the SAME list source
     // the view paged through, well before playback reaches the end — otherwise

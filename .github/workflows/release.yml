@@ -358,7 +358,33 @@ jobs:
           cp "node-v$NODE_VERSION-linux-x64/bin/node" "node-v$NODE_VERSION-linux-x64/LICENSE" node-official/
           strip node-official/node
 
-      # Full: Node, an audio-only set of GStreamer plugins, and TLS for them
+      # AV1 for the full AppImage: dav1ddec is in gst-plugins-rs, which 22.04 does
+      # not package. dav1d is linked in static, so the plugin needs only GStreamer.
+      - name: dav1d plugin
+        env:
+          DAV1D_VERSION: 1.5.1
+          DAV1D_SHA256: 401813f1f89fa8fd4295805aa5284d9aed9bc7fc1fdbe554af4292f64cbabe21
+          GST_RS_VERSION: 0.13.6
+          GST_RS_COMMIT: a9f6a26907f735b528f74e3f91df4e7a9f3aa469
+        run: |
+          sudo apt-get install -y --no-install-recommends meson nasm
+          curl -fsSLo dav1d.tar.xz "https://downloads.videolan.org/pub/videolan/dav1d/$DAV1D_VERSION/dav1d-$DAV1D_VERSION.tar.xz"
+          echo "$DAV1D_SHA256  dav1d.tar.xz" | sha256sum -c --quiet
+          tar xJf dav1d.tar.xz
+          meson setup dav1d-build "dav1d-$DAV1D_VERSION" --buildtype=release --default-library=static \
+            -Db_pie=true -Denable_tools=false -Denable_tests=false --prefix="$PWD/dav1d-out" --libdir=lib
+          ninja -C dav1d-build install
+          git clone -q --depth 1 --branch "$GST_RS_VERSION" https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs.git gst-rs
+          test "$(git -C gst-rs rev-parse HEAD)" = "$GST_RS_COMMIT"
+          PKG_CONFIG_PATH="$PWD/dav1d-out/lib/pkgconfig" cargo build --locked --release \
+            --manifest-path gst-rs/Cargo.toml -p gst-plugin-dav1d
+          mkdir -p dav1d-plugin
+          strip -o dav1d-plugin/libgstdav1d.so gst-rs/target/release/libgstdav1d.so
+          cp "dav1d-$DAV1D_VERSION/COPYING" dav1d-plugin/dav1d-COPYING
+          cp gst-rs/LICENSE-MIT dav1d-plugin/gst-plugin-dav1d-LICENSE
+
+      # Full: Node, GStreamer plugins for audio, VP9 and AV1 video, and TLS for them.
+      # No aom: melo picks AV1 first when it can decode it, and aom is slow.
       - name: Full AppImage
         run: |
           export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/icu-out/lib:${LD_LIBRARY_PATH:-}"
@@ -367,12 +393,15 @@ jobs:
           for p in coreelements app playback typefindfunctions audioconvert \
                    audioresample volume autodetect audiomixer equalizer \
                    audioparsers ogg vorbis opus opusparse faad mpg123 flac \
-                   wavparse isomp4 matroska id3demux soup pulseaudio alsa; do
+                   wavparse isomp4 matroska id3demux soup pulseaudio alsa \
+                   vpx videoconvert videoparsersbad audiofx; do
             cp "$GST/libgst$p.so" AppDir/usr/lib/gstreamer-1.0/
           done
+          cp dav1d-plugin/libgstdav1d.so AppDir/usr/lib/gstreamer-1.0/
           cp /usr/lib/x86_64-linux-gnu/gio/modules/libgiognutls.so AppDir/usr/lib/gio/modules/
           cp node-official/node AppDir/usr/bin/node
           cp node-official/LICENSE AppDir/usr/share/melo/node-LICENSE
+          cp dav1d-plugin/*-COPYING dav1d-plugin/*-LICENSE AppDir/usr/share/melo/
           AppDir/usr/bin/node -e '
             const segs=[...new Intl.Segmenter("th",{granularity:"word"}).segment("สวัสดีครับ")];
             if (segs.length < 2) throw new Error("Thai segmentation broken");

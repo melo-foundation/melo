@@ -11,6 +11,7 @@ import * as wt from "../watchtime";
 import * as gc from "../guest-cookies";
 import { detectSilence, getCachedSilence, forgetSilence } from "../silence";
 import { updateNow } from "../ytdlp";
+import { parseCodecs } from "../video-formats";
 import { LOCALES, REGIONS } from "../locales";
 import * as plug from "../plugins/manager";
 import { pluginSettings, setPluginSetting } from "../plugins/settings-store";
@@ -80,6 +81,8 @@ export function registerHandlers(): void {
   method("yt/getNext", ({ videoId }) => it.fetchNext(videoId, ...ck()));
   method("yt/nextContinuation", ({ token }) => it.fetchNextContinuation(token, ...ck()));
   method("yt/getStream", ({ videoId }) => st.fetchStreamUrl(videoId));
+  method("yt/getVideoStream", ({ videoId, maxHeight, codecs }) =>
+    st.fetchVideoStreamUrl(videoId, Number(maxHeight) || 720, parseCodecs(codecs)));
   method("lyrics/get", ({ videoId, artist, title, album, duration }) =>
     ly.getLyrics({ videoId, artist, title, album, duration,
                    allowAuto: loadSettings().lyricsAutoCaptions === true }));

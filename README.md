@@ -61,6 +61,8 @@ Requires Qt 6.5 or newer with Qt Shader Tools, GStreamer 1.0 with the base,
 good and bad plugins, GLEW, Wayland client headers, fontconfig, curl, git,
 Node.js and pnpm.
 
+GPU video drawing needs Qt 6.6 or newer and the Qt private headers.
+
 Fedora 43 and newer:
 
 ```

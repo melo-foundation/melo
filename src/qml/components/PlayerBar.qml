@@ -126,6 +126,7 @@ Rectangle {
     signal eqToggle()
     signal visToggle()
     signal dragStarted()
+    signal neutralClick()
     property bool visActive: false
     // false: the vis button is not drawn (WindowCtl.canPlaceWindows)
     property bool visAllowed: true
@@ -229,6 +230,8 @@ Rectangle {
                              + " appActive=" + (typeof WindowCtl !== "undefined" ? WindowCtl.appActive : "?"))
         }
         onClicked: (m) => {
+            // a press that moved the window is not a click
+            if (m.button === Qt.LeftButton && !moveStarted) { bar.neutralClick(); return }
             if (m.button !== Qt.RightButton || !bar.barMenu) return
             const p = barBody.mapToItem(null, m.x, m.y)
             bar.barMenu(p.x, p.y, bar.Window.window)

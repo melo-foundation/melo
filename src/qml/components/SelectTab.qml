@@ -15,6 +15,7 @@ Surface {
     property int weight: Theme.weightBase
     // a chip standing in for one still loading: no fill
     property bool blank: false
+    property bool loading: false
     property real textOpacity: 1
     readonly property bool line: style === "underline"
     readonly property bool pill: style === "pill"
@@ -29,6 +30,19 @@ Surface {
         : (pill ? "button" : "")
     borderWidth: button && !blank ? 1 : 0
     borderRole: hover && !active ? "borderStrong" : "border"
+    // The app's loading sweep on the pill itself; the words stay readable.
+    Skeleton {
+        objectName: "loading"
+        anchors.fill: parent
+        radius: tab.radius
+        shimmer: true
+        plain: true
+        // the pill's own ink: a band at 0.45 sweeping over a face that is
+        // otherwise the pill's; pulse and still keep a faint ground
+        base: Qt.alpha(txt.resolved, sweeping ? 0 : 0.18)
+        hi: Qt.alpha(txt.resolved, 0.45)
+        visible: tab.loading
+    }
     InkText {
         id: txt
         anchors.centerIn: parent

@@ -7,6 +7,7 @@
 #include "AudioEngine.h"
 #include "PcmQueue.h"
 #include "PlayerState.h"
+#include "VideoDeck.h"
 
 // AudioEngine builds a real GStreamer pipeline. MELO_FAKE_SINK swaps the audio
 // sink for a fakesink, so the engine IS constructible headlessly and its EQ
@@ -52,6 +53,34 @@ class TestAudioEngine : public QObject {
         if (error) g_error_free(error);
         return ok ? path : QString();
     }
+
+    static bool have(const char* f) {
+        GstElementFactory* e = gst_element_factory_find(f);
+        if (e) gst_object_unref(e);
+        return e != nullptr;
+    }
+
+    // 10 s of the moving-ball pattern at 25 fps
+    QString makeVideoFixture() {
+        if (!videoDir_) videoDir_ = std::make_unique<QTemporaryDir>();
+        const QString path = videoDir_->filePath(QStringLiteral("clip.webm"));
+        if (QFile::exists(path)) return path;
+        GError* err = nullptr;
+        GstElement* p = gst_parse_launch(QStringLiteral(
+            "videotestsrc num-buffers=250 pattern=ball ! video/x-raw,width=160,height=90,framerate=25/1 "
+            "! vp8enc deadline=1 ! webmmux ! filesink location=\"%1\"").arg(path).toUtf8().constData(), &err);
+        if (!p || err) { if (err) g_error_free(err); return {}; }
+        gst_element_set_state(p, GST_STATE_PLAYING);
+        GstBus* bus = gst_element_get_bus(p);
+        GstMessage* m = gst_bus_timed_pop_filtered(bus, 20 * GST_SECOND,
+            GstMessageType(GST_MESSAGE_EOS | GST_MESSAGE_ERROR));
+        const bool ok = m && GST_MESSAGE_TYPE(m) == GST_MESSAGE_EOS;
+        if (m) gst_message_unref(m);
+        gst_object_unref(bus);
+        gst_element_set_state(p, GST_STATE_NULL); gst_object_unref(p);
+        return ok ? path : QString();
+    }
+    std::unique_ptr<QTemporaryDir> videoDir_;
 
 private slots:
     void initTestCase() {
@@ -259,6 +288,166 @@ private slots:
         // silently clamps and the top of the slider does nothing.
         QVERIFY(dbToLinearGain(12.0) <= G_PARAM_SPEC_DOUBLE(ps)->maximum);
         gst_object_unref(vol);
+    }
+
+    // Frames are picked for what is heard: the mixer position less the output lead.
+    void theVideoTrailsTheMixerByTheOutputLead() {
+        AudioEngine e(queue_);
+        const double out = e.outputLatencySeconds();
+        QVERIFY2(out >= 0.04 - 1e-9 && out <= 0.3, qPrintable(QString::number(out)));
+        QCOMPARE(e.videoLeadSeconds(), out);
+        e.setVideoSyncMs(100);
+        QVERIFY(std::abs(e.videoLeadSeconds() - (out + 0.1)) < 1e-9);
+        QVERIFY(std::abs(e.videoPositionFor(10.0) - (10.0 - out - 0.1)) < 1e-9);
+        QCOMPARE(e.videoPositionFor(0.05), 0.0);
+        e.setVideoSyncMs(-500);
+        QVERIFY(e.videoLeadSeconds() < 0);
+        QVERIFY(e.videoPositionFor(0.0) >= 0.0);
+        QVERIFY(std::abs(e.videoPositionFor(10.0) - (10.0 - out + 0.5)) < 1e-9);
+    }
+
+    // Video decks are made only while wanted, outlive "unwanted" until dropped,
+    // and bind to the deck that owns the position: the incoming one during a fade.
+    void videoDecksFollowWantedAndTheFade() {
+        AudioEngine e(queue_);
+        QCOMPARE(e.hasVideoDeck(), false);
+        e.attachVideo(QStringLiteral("file:///nonexistent.webm"), false, QString());
+        QCOMPARE(e.hasVideoDeck(), false);          // nothing to bind to: no current deck
+        e.setVideoWanted(true);
+        e.loadTrack(QStringLiteral("file:///nonexistent-audio.opus"));
+        e.attachVideo(QStringLiteral("file:///nonexistent.webm"), false, QString());
+        QCOMPARE(e.hasVideoDeck(), true);
+        e.attachVideo(QStringLiteral("file:///nonexistent-next.webm"), true, QString());   // prerolled, pending
+        e.crossfadeTo(QStringLiteral("file:///nonexistent-next.opus"), 4.0);    // a fade: the pending deck becomes incoming
+        QCOMPARE(e.hasVideoDeck(), true);
+        e.dropVideoDecksIfUnwanted();
+        QCOMPARE(e.hasVideoDeck(), true);           // still wanted: kept
+        e.setVideoWanted(false);
+        QCOMPARE(e.hasVideoDeck(), true);           // kept through the grace period
+        e.dropVideoDecksIfUnwanted();
+        QCOMPARE(e.hasVideoDeck(), false);
+        e.attachVideo(QStringLiteral("file:///x.webm"), false, QString());
+        QCOMPARE(e.hasVideoDeck(), false);          // not wanted: ignored
+        VideoDeck::joinAllTeardowns();
+    }
+
+    // A prerolled deck for one track must never become another track's picture.
+    void aPendingDeckForAnotherTrackIsDropped() {
+        AudioEngine e(queue_);
+        e.setVideoWanted(true);
+        e.loadTrack(QStringLiteral("file:///nonexistent-a.opus"), QStringLiteral("A"));
+        e.attachVideo(QStringLiteral("file:///nonexistent-b.webm"), true, QStringLiteral("B"));
+        e.loadTrack(QStringLiteral("file:///nonexistent-c.opus"), QStringLiteral("C"));
+        QCOMPARE(e.hasVideoDeck(), false);          // B's deck did not bind to C
+        e.attachVideo(QStringLiteral("file:///nonexistent-d.webm"), true, QStringLiteral("D"));
+        e.loadTrack(QStringLiteral("file:///nonexistent-d.opus"), QStringLiteral("D"));
+        QCOMPARE(e.hasVideoDeck(), true);           // the matching one does
+        VideoDeck::joinAllTeardowns();
+    }
+
+    // A current-track attach for a track that is not playing is refused.
+    void anAttachForAnotherTrackIsRefused() {
+        AudioEngine e(queue_);
+        e.setVideoWanted(true);
+        e.loadTrack(QStringLiteral("file:///nonexistent-a.opus"), QStringLiteral("A"));
+        e.attachVideo(QStringLiteral("file:///nonexistent-b.webm"), false, QStringLiteral("B"));
+        QCOMPARE(e.hasVideoDeck(), false);
+        e.attachVideo(QStringLiteral("file:///nonexistent-a.webm"), false, QStringLiteral("A"));
+        QCOMPARE(e.hasVideoDeck(), true);
+        QCOMPARE(e.videoView().trackId, QStringLiteral("A"));
+        VideoDeck::joinAllTeardowns();
+    }
+
+    // Mid-fade the outgoing video never plays on its own under the next track.
+    void theOutgoingVideoNeverPlaysUnderTheNextTrack() {
+        AudioEngine e(queue_);
+        e.setVideoWanted(true);
+        e.loadTrack(QStringLiteral("file:///nonexistent-a.opus"), QStringLiteral("A"));
+        e.attachVideo(QStringLiteral("file:///nonexistent-x.webm"), false, QStringLiteral("A"));
+        e.crossfadeTo(QStringLiteral("file:///nonexistent-b.opus"), 4.0, QStringLiteral("B"));
+        const VideoView v = e.videoView();
+        QVERIFY(v.main == nullptr);
+        QCOMPARE(v.trackId, QStringLiteral("B"));
+        e.finishFadeNow();
+        QCOMPARE(e.hasVideoDeck(), false);
+        VideoDeck::joinAllTeardowns();
+    }
+
+    // With real frames: a prerolled deck dissolves from the outgoing picture;
+    // a deck attached mid-fade shows alone, never over the outgoing one.
+    void theOutgoingPictureShowsOnlyUnderAPrerolledDeck() {
+        if (!have("vp8enc") || !have("webmmux") || !have("vp8dec") || !have("videotestsrc"))
+            QSKIP("vp8enc/webmmux/vp8dec missing: cannot make a test clip");
+        const QString audio = makeSeekFixture();
+        const QString video = QUrl::fromLocalFile(makeVideoFixture()).toString();
+        QVERIFY(!audio.isEmpty() && !video.isEmpty());
+
+        AudioEngine e(queue_);
+        e.setVideoWanted(true);
+        e.loadTrack(audio, QStringLiteral("A"));
+        e.attachVideo(video, false, QStringLiteral("A"));
+        QTRY_VERIFY_WITH_TIMEOUT(e.videoView().main != nullptr, 5000);
+        QCOMPARE(e.videoView().trackId, QStringLiteral("A"));
+
+        // prerolled for B: the dissolve carries both pictures
+        e.attachVideo(video, true, QStringLiteral("B"));
+        QTest::qWait(500);
+        e.crossfadeTo(audio, 4.0, QStringLiteral("B"));
+        QTRY_VERIFY_WITH_TIMEOUT(e.videoView().incoming != nullptr, 5000);
+        VideoView v = e.videoView();
+        QVERIFY(v.main != nullptr);
+        QCOMPARE(v.trackId, QStringLiteral("B"));
+        e.finishFadeNow();
+        QTRY_VERIFY_WITH_TIMEOUT(e.videoView().main != nullptr, 5000);
+
+        // nothing prerolled for C: empty, then C's own picture alone
+        e.crossfadeTo(audio, 4.0, QStringLiteral("C"));
+        v = e.videoView();
+        QVERIFY(v.main == nullptr);
+        QCOMPARE(v.trackId, QStringLiteral("C"));
+        e.attachVideo(video, false, QStringLiteral("C"));
+        QTRY_VERIFY_WITH_TIMEOUT(e.videoView().main != nullptr, 5000);
+        for (int i = 0; i < 10; ++i) {
+            v = e.videoView();
+            QVERIFY(v.incoming == nullptr);
+            QCOMPARE(v.mix, 0.0);
+            QTest::qWait(50);
+        }
+        VideoDeck::joinAllTeardowns();
+    }
+
+    // The view carries the decoder's planes; the hold keeps one across a
+    // re-attach; a build without the planar material asks for RGBA instead.
+    void theViewCarriesPlanarFramesAndTheRgbaSwitchWorks() {
+        if (!have("vp8enc") || !have("webmmux") || !have("vp8dec") || !have("videotestsrc"))
+            QSKIP("vp8enc/webmmux/vp8dec missing: cannot make a test clip");
+        const QString audio = makeSeekFixture();
+        const QString video = QUrl::fromLocalFile(makeVideoFixture()).toString();
+        QVERIFY(!audio.isEmpty() && !video.isEmpty());
+
+        AudioEngine e(queue_);
+        QVERIFY(e.videoPlanar());
+        e.setVideoWanted(true);
+        e.loadTrack(audio, QStringLiteral("A"));
+        e.attachVideo(video, false, QStringLiteral("A"));
+        QTRY_VERIFY_WITH_TIMEOUT(e.videoView().main != nullptr, 5000);
+        const auto px = e.videoView().main;
+        QVERIFY(px->format != VideoFormat::RGBA);   // NV12 or I420, as the decoder hands it over
+        QVERIFY(px->planeCount >= 2);
+        QCOMPARE(px->planes[1].width, (px->width + 1) / 2);
+        const auto twin = rgbaOf(px);
+        QVERIFY(twin && twin->planes[0].stride == 640);
+        e.attachVideo(video, false, QStringLiteral("A"));   // same track again: the held frame shows meanwhile
+        QVERIFY(e.videoView().main != nullptr);
+
+        AudioEngine r(queue_);
+        r.setVideoPlanar(false);
+        r.setVideoWanted(true);
+        r.loadTrack(audio, QStringLiteral("B"));
+        r.attachVideo(video, false, QStringLiteral("B"));
+        QTRY_VERIFY_WITH_TIMEOUT(r.videoView().main != nullptr, 5000);
+        QVERIFY(r.videoView().main->format == VideoFormat::RGBA);
+        VideoDeck::joinAllTeardowns();
     }
 };
 QTEST_MAIN(TestAudioEngine)

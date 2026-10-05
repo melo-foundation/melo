@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "AudioEngine.h"
+#include "VideoDeck.h"
 #include "MeloUi.h"
 #include "PcmQueue.h"
 #include "PlaybackCoordinator.h"
@@ -548,6 +549,27 @@ private slots:
         coord_->togglePlay();
         QVERIFY(offeredPause);
         QVERIFY(state_.isPlaying());   // builtin did not run
+    }
+    // A skip that crossfades while the next stream resolves drops the outgoing
+    // track's video at the press.
+    void aCrossfadingSkipDropsTheOutgoingVideo() {
+        seedQueue(3, 0);
+        settings_->setCrossfadeSeconds(2.0);
+        settings_->uiSet(QStringLiteral("crossfadeOnSkip"), true);
+        engine_->setVideoWanted(true);
+        engine_->loadTrack(QStringLiteral("file:///nonexistent-t0.opus"), QStringLiteral("t0"));
+        engine_->attachVideo(QStringLiteral("http://127.0.0.1:9/t0.webm"), false, QStringLiteral("t0"));   // fails later, not at once
+        QVERIFY(engine_->hasVideoDeck());
+        state_.setIsPlaying(true);
+        manualNext();
+        QCOMPARE(queue_.currentIndex(), 1);
+        QCOMPARE(engine_->hasVideoDeck(), false);
+        settings_->setCrossfadeSeconds(0);
+        settings_->uiSet(QStringLiteral("crossfadeOnSkip"), false);
+        engine_->setVideoWanted(false);
+        engine_->stop();
+        state_.setIsPlaying(false);
+        VideoDeck::joinAllTeardowns();
     }
 };
 QTEST_MAIN(TestAdvancePolicy)

@@ -45,6 +45,7 @@ Item {
             label: "Lyrics"
             mode: 1
             dead: root.np ? root.np.noLyrics === true : false
+            loading: root.np ? root.np.loading === true : false
         }
     }
 }

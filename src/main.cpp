@@ -31,6 +31,7 @@
 #include <windows.h>
 #endif
 
+#include "VideoSurface.h"
 #include "VisualizerItem.h"
 #include "SpectrumSource.h"
 #include "BackgroundItem.h"
@@ -40,6 +41,7 @@
 #include "AudioEngine.h"
 #include "PcmQueue.h"
 #include "SourceDeck.h"
+#include "VideoDeck.h"
 #include "SidecarService.h"
 #include "StableQmlDir.h"
 #include "Splash.h"
@@ -64,6 +66,7 @@
 #include "BarButtons.h"
 #include "PluginFills.h"
 #include "PortalDialog.h"
+#include "UiActivity.h"
 #include <memory>
 #include <utility>
 #include <vector>
@@ -411,13 +414,23 @@ int main(int argc, char** argv) {
     // the workers' gst frees would race Qt shutdown and corrupt the heap
     // (intermittent exit SIGABRT).
     struct DeckTeardownJoiner {
-        ~DeckTeardownJoiner() { SourceDeck::joinAllTeardowns(); }
+        ~DeckTeardownJoiner() {
+            SourceDeck::joinAllTeardowns();
+            VideoDeck::joinAllTeardowns();
+        }
     } deckTeardownJoiner;
 
     // --- object graph ---
     PcmQueue pcmQueue;
     AudioEngine engine(pcmQueue);
+#ifndef MELO_VIDEO_PLANES
+    engine.setVideoPlanar(false);   // no planar material in this build: videoconvert makes RGBA
+#endif
     VisualizerItem::setPcmQueue(&pcmQueue);
+    VideoSurface::setSource(&engine);
+    // queued: videoChanged can fire inside videoView(), which the fetch calls
+    QObject::connect(&engine, &AudioEngine::videoChanged, &engine,
+                     &VideoSurface::notifyTrackChange, Qt::QueuedConnection);
 
     SidecarService sidecar;
     PlayerState playerState;
@@ -455,6 +468,7 @@ int main(int argc, char** argv) {
     // 1.0` too. Each type refuses a foreign engine at componentComplete, checked
     // against meloOwnEngine(); see MeloEngineOnly.h.
     qmlRegisterType<VisualizerItem>("Melo", 1, 0, "Visualizer");
+    qmlRegisterType<VideoSurface>("Melo", 1, 0, "VideoSurface");
     qmlRegisterType<BackgroundItem>("Melo", 1, 0, "BackgroundItem");
     qmlRegisterType<ParticlesItem>("Melo", 1, 0, "ParticlesItem");
     qmlRegisterType<BlendItem>("Melo", 1, 0, "BlendRect");
@@ -474,6 +488,7 @@ int main(int argc, char** argv) {
         return !interceptMap.occupant(a).isEmpty();
     });
 
+    UiActivity uiActivity;   // declared before the engine: bindings read it until teardown
     QQmlApplicationEngine qml;
     meloOwnEngine() = &qml;   // the one engine Melo 1.0 types may live in
 
@@ -519,6 +534,7 @@ int main(int argc, char** argv) {
     SpectrumSource spectrum;
     qml.rootContext()->setContextProperty("Spectrum", &spectrum);
     BackgroundItem::setSpectrum(&spectrum);
+    qml.rootContext()->setContextProperty("UiActivity", &uiActivity);
     // false when this machine can't do OpenGL 3.3 (Windows VMs/RDP): the UI
     // runs on D3D11/WARP and QML disables projectM gracefully
     qml.rootContext()->setContextProperty("MELO_HAS_GL", hasGL);

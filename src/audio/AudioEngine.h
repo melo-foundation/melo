@@ -1,9 +1,12 @@
 #pragma once
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
+#include "VideoFrameSource.h"
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <memory>
@@ -11,6 +14,7 @@
 
 class PcmQueue;
 class SourceDeck;
+class VideoDeck;
 
 // GStreamer's `volume` takes a linear multiplier (1.0 = unity) and Winamp's
 // preamp is dB, so dB is stored and converted only at the property. Amplitude
@@ -27,7 +31,7 @@ inline double dbToLinearGain(double db) { return std::pow(10.0, db / 20.0); }
 // way master volume is downstream of balance. audiopanorama is optional.
 // Tracks play on SourceDeck bins feeding the mixer; two live decks during crossfade.
 // Emits position/duration/EOS so PlaybackCoordinator owns all sequencing policy.
-class AudioEngine : public QObject {
+class AudioEngine : public QObject, public VideoFrameSource {
     Q_OBJECT
 public:
     explicit AudioEngine(PcmQueue& vizQueue, QObject* parent = nullptr);
@@ -38,9 +42,9 @@ public:
     // control); internal seeks (silence skipStart) pass false and seek the
     // incoming deck without disturbing the fade envelope.
     void seekTo(double seconds, bool cutFade = true);
-    void loadTrack(const QString& pathOrUri);
+    void loadTrack(const QString& pathOrUri, const QString& trackId = {});
     // Crossfade: new deck fades in over `seconds` while current fades out.
-    void crossfadeTo(const QString& pathOrUri, double seconds);
+    void crossfadeTo(const QString& pathOrUri, double seconds, const QString& trackId = {});
     void stop();                          // tear down all decks
 
     void setPaused(bool paused);
@@ -71,10 +75,36 @@ public:
     void setSinkMuted(bool muted);        // remnant-tail mute across hard cuts
     double duration() const;              // current-track seconds (or -1)
 
+    // ---- video: decks are made only while a surface wants them --------------
+    void setVideoWanted(bool on);   // false keeps the decks until dropVideoDecksIfUnwanted()
+    void dropVideoDecksIfUnwanted();
+    bool videoWanted() const { return videoWanted_; }
+    QStringList videoCodecs() const { return videoCodecs_; }
+    // Decks hand over NV12/I420 by default; false asks videoconvert
+    // for RGBA, for a build without the planar material.
+    void setVideoPlanar(bool on) { videoPlanar_ = on; }
+    bool videoPlanar() const { return videoPlanar_; }
+    // incoming = prerolled for the next track; trackId empty = unknown, binds to whatever plays
+    void attachVideo(const QString& url, bool incoming, const QString& trackId);
+    void discardPendingVideo();
+    void dropVideoDecks();
+    bool hasVideoDeck() const;
+    bool hasVideoFrame();   // drops a failed deck, hence not const
+    double fadeProgress() const { return fadeTimer_.isActive() || fadeFrozen_ ? std::min(fadePos_, 1.0) : 0.0; }
+    VideoView videoView() override;
+    // What is heard trails the mixer by the audio queue, the sink buffer and the
+    // device: frames are picked that much earlier (120 ms on pulsesink).
+    double outputLatencySeconds() const;
+    // Hidden ui key videoSyncMs; positive shows the picture later.
+    void setVideoSyncMs(int ms) { videoSyncMs_ = ms; }
+    double videoLeadSeconds() const { return outputLatencySeconds() + videoSyncMs_ / 1000.0; }
+    double videoPositionFor(double audioSeconds) const;   // never below 0
+
 signals:
     void positionTick(double seconds, double duration);   // ~4 Hz while playing
     void trackEnded();                                     // current deck hit EOS
     void pipelineError(const QString& message);
+    void videoChanged();   // a deck appeared, got its first frame, or went away
 
 private:
     static GstFlowReturn onNewSample(GstAppSink* sink, gpointer user);
@@ -108,4 +138,27 @@ private:
     std::array<double, 10> eqBands_ = {0,0,0,0,0,0,0,0,0,0};
     double preampDb_ = 0.0;     // dB; converted to a linear factor at the element
     double balance_ = 0.0;
+
+    std::unique_ptr<VideoDeck> makeVideoDeck(const QString& url);
+    void dropFailedVideoDecks();
+    std::unique_ptr<VideoDeck> videoCurrent_;    // bound to current_
+    std::unique_ptr<VideoDeck> videoIncoming_;   // bound to incoming_
+    std::unique_ptr<VideoDeck> videoPending_;    // prerolled, bound by the next loadTrack/crossfadeTo
+    std::shared_ptr<const VideoPixels> lastMainPixels_;   // shown while a re-attached deck has no frame yet
+    // The track each audio deck, the pending video deck and the hold belong to (empty: unknown);
+    // a video deck binds only to its own track's audio deck.
+    QString currentTrack_, incomingTrack_, videoPendingTrack_, lastMainTrack_;
+    bool dissolveOutgoing_ = false;   // the outgoing picture may show under the incoming one this fade
+    void promoteIncoming();   // the incoming deck and its video become current at a fade's end
+    void clearHold() { lastMainPixels_.reset(); lastMainTrack_.clear(); }
+    bool videoWanted_ = false;
+    bool videoPlanar_ = true;
+    QStringList videoCodecs_;
+    struct OutputLead { double queue = 0, sink = 0, device = 0; };   // seconds
+    OutputLead outputLeadParts() const;
+    void logOutputLeadOnce();
+    GstElement* audioQueue_  = nullptr;
+    GstElement* audibleSink_ = nullptr;   // pulsesink, fakesink or autoaudiosink
+    int videoSyncMs_ = 0;
+    bool outputLeadLogged_ = false;
 };

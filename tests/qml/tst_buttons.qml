@@ -51,6 +51,16 @@ Item {
         function labelOffset(btn) { return find(btn, "btnLabel").anchors.horizontalCenterOffset }
 
         // ---- the size ----
+        function test_a_loading_tab_shows_the_sweep() {
+            const sweep = find(tab, "loading")
+            verify(sweep !== null)
+            tab.loading = true
+            verify(sweep.visible)
+            fuzzyCompare(sweep.hi.a, 0.45, 0.02)
+            tab.loading = false
+            verify(!sweep.visible)
+        }
+
         function test_a_button_is_the_height_the_theme_gives_buttons() {
             compare(plain.height, Theme.btnH)
             compare(Theme.btnH, 22)     // the default

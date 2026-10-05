@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(melo VERSION 0.3.2 LANGUAGES C CXX)   # C: generated wayland protocol code
+project(melo VERSION 0.3.1 LANGUAGES C CXX)   # C: generated wayland protocol code
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,6 +23,26 @@ if(NOT TARGET Qt6::QuickPrivate)
     message(WARNING "Qt6::QuickPrivate not found -- building without the "
                     "child-window stacking fix; scrolling will be slower. "
                     "Install the Qt Quick private headers to enable it.")
+endif()
+# The RHI (rhi/qrhi.h, video planes) and the per-window wl_surface (native
+# blur) need Qt6::GuiPrivate. Debian/Ubuntu ship its config in qt6-base-dev
+# and the headers in qt6-base-private-dev, so the target can name a missing
+# directory and fail only at generate time: judge the headers directly.
+find_package(Qt6 COMPONENTS GuiPrivate QUIET)
+set(MELO_GUI_PRIVATE_USABLE OFF)
+if(TARGET Qt6::GuiPrivate)
+    set(MELO_GUI_PRIVATE_USABLE ON)
+    get_target_property(_melo_qtgp_inc Qt6::GuiPrivate INTERFACE_INCLUDE_DIRECTORIES)
+    foreach(_melo_d IN LISTS _melo_qtgp_inc)
+        # generator expressions are not ours to resolve; only judge plain paths
+        if(NOT _melo_d MATCHES "\\$<" AND NOT EXISTS "${_melo_d}")
+            set(MELO_GUI_PRIVATE_USABLE OFF)
+            message(STATUS "melo: Qt6::GuiPrivate is declared but ${_melo_d} is missing "
+                           "— install the Qt 6 private headers (Debian/Ubuntu: "
+                           "qt6-base-private-dev, Fedora: qt6-qtbase-private-devel) "
+                           "for native blur and GPU video planes; falling back")
+        endif()
+    endforeach()
 endif()
 find_package(ZLIB REQUIRED)
 qt_standard_project_setup()
@@ -66,33 +86,12 @@ if(UNIX AND NOT APPLE)
     endif()
 
     pkg_check_modules(GST REQUIRED IMPORTED_TARGET
-        gstreamer-1.0 gstreamer-app-1.0 gstreamer-audio-1.0)
+        gstreamer-1.0 gstreamer-app-1.0 gstreamer-audio-1.0 gstreamer-video-1.0)
     set(MELO_GST_LIB PkgConfig::GST)
 
     # Blur spoken natively (protocols/, src/core/WaylandBlur.h): ext-background-
-    # effect-v1, and KWin's blur/contrast for KWin 6.6 and older.
-    # Needs QtGui private headers for the per-window wl_surface; falls back to
-    # KF6 WindowSystem without them. The component must be requested: installed
-    # headers alone do not create the target.
-    find_package(Qt6 COMPONENTS GuiPrivate QUIET)
-    # Debian/Ubuntu ship the GuiPrivate config in qt6-base-dev and the headers
-    # in qt6-base-private-dev, so the target can point at a missing directory
-    # and CMake fails only at generate time. Check the headers directly.
-    set(MELO_GUI_PRIVATE_USABLE OFF)
-    if(TARGET Qt6::GuiPrivate)
-        set(MELO_GUI_PRIVATE_USABLE ON)
-        get_target_property(_melo_qtgp_inc Qt6::GuiPrivate INTERFACE_INCLUDE_DIRECTORIES)
-        foreach(_melo_d IN LISTS _melo_qtgp_inc)
-            # generator expressions are not ours to resolve; only judge plain paths
-            if(NOT _melo_d MATCHES "\\$<" AND NOT EXISTS "${_melo_d}")
-                set(MELO_GUI_PRIVATE_USABLE OFF)
-                message(STATUS "melo: Qt6::GuiPrivate is declared but ${_melo_d} is missing "
-                               "— install the Qt 6 private headers (Debian/Ubuntu: "
-                               "qt6-base-private-dev, Fedora: qt6-qtbase-private-devel) "
-                               "for native blur; falling back to KF6")
-            endif()
-        endforeach()
-    endif()
+    # effect-v1, and KWin's blur/contrast for KWin 6.6 and older. Needs the
+    # QtGui private headers; falls back to KF6 WindowSystem without them.
     if(MELO_GUI_PRIVATE_USABLE)
         set(MELO_NATIVE_BLUR ON)
         pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
@@ -155,7 +154,7 @@ if(WIN32)
     find_package(PkgConfig)                              # vcpkg also ships .pc for gstreamer
     if(PkgConfig_FOUND)
         pkg_check_modules(GST REQUIRED IMPORTED_TARGET
-            gstreamer-1.0 gstreamer-app-1.0 gstreamer-audio-1.0 gstreamer-pbutils-1.0)
+            gstreamer-1.0 gstreamer-app-1.0 gstreamer-audio-1.0 gstreamer-pbutils-1.0 gstreamer-video-1.0)
         set(MELO_GST_LIB PkgConfig::GST)
     endif()
     # projectM4 + its playlist are SEPARATE CMake packages; targets are
@@ -175,8 +174,10 @@ qt_add_executable(melo
     src/main.cpp
     src/audio/AudioEngine.cpp
     src/audio/SourceDeck.cpp
+    src/audio/VideoDeck.cpp
     src/vis/ProjectMWrapper.cpp
     src/vis/VisualizerItem.cpp
+    src/vis/VideoSurface.cpp
     src/vis/SpectrumSource.cpp
     src/vis/BackgroundItem.cpp
     src/vis/ParticlesItem.cpp
@@ -192,6 +193,7 @@ qt_add_executable(melo
     src/core/JsonRowModel.h
     src/core/MprisService.cpp
     src/core/PortalDialog.cpp
+    src/core/UiActivity.cpp
     ${MELO_WINDOWCTL}
     src/core/WindowController.h
     src/core/PinMode.h
@@ -350,6 +352,17 @@ if(MELO_X11)
     target_sources(melo PRIVATE src/core/X11Effects.cpp)
     target_compile_definitions(melo PRIVATE MELO_X11)
     target_link_libraries(melo PRIVATE PkgConfig::XCB)
+endif()
+if(MELO_GUI_PRIVATE_USABLE AND Qt6_VERSION VERSION_GREATER_EQUAL 6.6)
+    # Video planes: the decoder's NV12/I420 go up as R8/RG8 textures and a
+    # fragment shader converts (src/vis/VideoPlanes.cpp). Needs the public RHI, 6.6.
+    set(MELO_VIDEO_PLANES ON)
+    message(STATUS "melo: video planes ON (GPU YUV)")
+    target_sources(melo PRIVATE src/vis/VideoPlanes.cpp src/vis/VideoPlanes.h src/vis/VideoColorMatrix.h)
+    target_compile_definitions(melo PRIVATE MELO_VIDEO_PLANES)
+    target_link_libraries(melo PRIVATE Qt6::GuiPrivate)
+else()
+    message(STATUS "melo: video planes OFF (RGBA conversion)")
 endif()
 if(MELO_NATIVE_BLUR)
     target_sources(melo PRIVATE src/core/WaylandBlur.cpp ${MELO_WL_SOURCES})
@@ -535,13 +548,32 @@ if(MELO_QSB)
             COMMENT "qsb windowshape.${stage}")
         list(APPEND MELO_BLEND_QSB ${CMAKE_CURRENT_BINARY_DIR}/windowshape.${stage}.qsb)
     endforeach()
-    set_source_files_properties(${MELO_BLEND_QSB} PROPERTIES GENERATED TRUE)
+    # The video planes' material, same resource prefix; the vertex stage needs -b,
+    # the batchable variant the scene graph requires.
+    set(MELO_VIDEO_QSB "")
+    if(MELO_VIDEO_PLANES)
+        foreach(vs videoplanes.vert videoplanes_nv12.frag videoplanes_i420.frag)
+            set(_b "")
+            if(vs MATCHES "\\.vert$")
+                set(_b "-b")
+            endif()
+            add_custom_command(
+                OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${vs}.qsb
+                COMMAND ${MELO_QSB} ${_b} --glsl "300es,120,150" --hlsl 50 --msl 12
+                        -o ${CMAKE_CURRENT_BINARY_DIR}/${vs}.qsb
+                        ${CMAKE_CURRENT_SOURCE_DIR}/src/vis/shaders/${vs}
+                DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/vis/shaders/${vs}
+                COMMENT "qsb ${vs}")
+            list(APPEND MELO_VIDEO_QSB ${CMAKE_CURRENT_BINARY_DIR}/${vs}.qsb)
+        endforeach()
+    endif()
+    set_source_files_properties(${MELO_BLEND_QSB} ${MELO_VIDEO_QSB} PROPERTIES GENERATED TRUE)
     qt_add_resources(melo "melo_blend_shaders"
         PREFIX "/melo/shaders"
         BASE ${CMAKE_CURRENT_BINARY_DIR}
-        FILES ${MELO_BLEND_QSB})
+        FILES ${MELO_BLEND_QSB} ${MELO_VIDEO_QSB})
 
-    add_custom_target(melo_shaders DEPENDS ${MELO_SHADER_QSB} ${MELO_HUELUM_SRC}.qsb ${MELO_HALO_QSB} ${MELO_BLEND_QSB})
+    add_custom_target(melo_shaders DEPENDS ${MELO_SHADER_QSB} ${MELO_HUELUM_SRC}.qsb ${MELO_HALO_QSB} ${MELO_BLEND_QSB} ${MELO_VIDEO_QSB})
     add_dependencies(melo melo_shaders)
 endif()
 
@@ -788,6 +820,27 @@ if(Qt6Test_FOUND)
         target_link_libraries(tst_framehold PRIVATE Qt6::Gui Qt6::Quick Qt6::Test)
         add_test(NAME framehold COMMAND tst_framehold)
         set_tests_properties(framehold PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        add_executable(tst_videosurface tests/cpp/tst_videosurface.cpp src/vis/VideoSurface.cpp src/vis/VideoSurface.h)
+        target_include_directories(tst_videosurface PRIVATE src/vis src/audio)
+        target_compile_definitions(tst_videosurface PRIVATE MELO_VIDEOSURFACE_TEST)
+        target_link_libraries(tst_videosurface PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)
+        add_test(NAME videosurface COMMAND tst_videosurface)
+        set_tests_properties(videosurface PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        if(MELO_VIDEO_PLANES)
+            # The planar material on the GPU. Not offscreen (no materials there);
+            # like blendmodes it opens a window and skips when none is exposed.
+            add_executable(tst_videoplanes tests/cpp/tst_videoplanes.cpp
+                src/vis/VideoSurface.cpp src/vis/VideoPlanes.cpp)
+            target_include_directories(tst_videoplanes PRIVATE src/vis src/audio)
+            target_compile_definitions(tst_videoplanes PRIVATE MELO_VIDEO_PLANES)
+            target_link_libraries(tst_videoplanes PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::GuiPrivate Qt6::Test)
+            qt_add_resources(tst_videoplanes "tst_video_shaders"
+                PREFIX "/melo/shaders"
+                BASE ${CMAKE_CURRENT_BINARY_DIR}
+                FILES ${MELO_VIDEO_QSB})
+            add_dependencies(tst_videoplanes melo_shaders)
+            add_test(NAME videoplanes COMMAND tst_videoplanes)
+        endif()
 
         add_executable(tst_visualizer
             tests/cpp/tst_visualizer.cpp
@@ -851,6 +904,7 @@ if(Qt6Test_FOUND)
         tests/cpp/tst_audioengine.cpp
         src/audio/AudioEngine.cpp
         src/audio/SourceDeck.cpp
+        src/audio/VideoDeck.cpp
         src/vis/SpectrumSource.cpp
         src/core/PlayerState.h
         src/core/Track.h)
@@ -863,6 +917,31 @@ if(Qt6Test_FOUND)
     target_include_directories(tst_pcmqueue PRIVATE src/audio)
     target_link_libraries(tst_pcmqueue PRIVATE Qt6::Core Qt6::Test)
     add_test(NAME pcmqueue COMMAND tst_pcmqueue)
+
+    add_executable(tst_videoframes tests/cpp/tst_videoframes.cpp
+        src/audio/VideoFrame.h src/audio/VideoFrameRing.h src/audio/VideoCodecs.h src/vis/VideoColorMatrix.h)
+    target_include_directories(tst_videoframes PRIVATE src/audio src/vis)
+    target_link_libraries(tst_videoframes PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME videoframes COMMAND tst_videoframes)
+
+    add_executable(tst_videowanted tests/cpp/tst_videowanted.cpp src/core/VideoRequest.h src/core/PlayerState.h
+        src/core/Track.h)
+    target_include_directories(tst_videowanted PRIVATE src/core)
+    target_link_libraries(tst_videowanted PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME videowanted COMMAND tst_videowanted)
+
+    # The app-wide idle clock: silence is idle, any input wakes it.
+    add_executable(tst_uiactivity tests/cpp/tst_uiactivity.cpp src/core/UiActivity.cpp)
+    target_include_directories(tst_uiactivity PRIVATE src/core)
+    target_link_libraries(tst_uiactivity PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)
+    add_test(NAME uiactivity COMMAND tst_uiactivity)
+    set_tests_properties(uiactivity PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    add_executable(tst_videodeck tests/cpp/tst_videodeck.cpp src/audio/VideoDeck.cpp)
+    target_include_directories(tst_videodeck PRIVATE src/audio)
+    target_link_libraries(tst_videodeck PRIVATE Qt6::Core Qt6::Network Qt6::Test ${MELO_GST_LIB})
+    add_test(NAME videodeck COMMAND tst_videodeck)
 
     add_executable(tst_queuemodel tests/cpp/tst_queuemodel.cpp src/core/QueueModel.h src/core/Track.h)
     target_include_directories(tst_queuemodel PRIVATE src/core)
@@ -896,6 +975,7 @@ if(Qt6Test_FOUND)
         src/rpc/NodeBootstrap.cpp
         src/audio/AudioEngine.cpp
         src/audio/SourceDeck.cpp
+        src/audio/VideoDeck.cpp
         src/vis/SpectrumSource.cpp)
     target_include_directories(tst_eqsync PRIVATE src/plugins src/core src/rpc src/audio src/vis)
     target_compile_definitions(tst_eqsync PRIVATE
@@ -932,6 +1012,7 @@ if(Qt6Test_FOUND)
         src/rpc/NodeBootstrap.cpp
         src/audio/AudioEngine.cpp
         src/audio/SourceDeck.cpp
+        src/audio/VideoDeck.cpp
         src/vis/SpectrumSource.cpp)
     target_include_directories(tst_advancepolicy PRIVATE src/plugins src/core src/rpc src/audio src/vis)
     target_compile_definitions(tst_advancepolicy PRIVATE
@@ -972,6 +1053,7 @@ if(Qt6Test_FOUND)
         src/rpc/NodeBootstrap.cpp
         src/audio/AudioEngine.cpp
         src/audio/SourceDeck.cpp
+        src/audio/VideoDeck.cpp
         src/vis/SpectrumSource.cpp)
     target_include_directories(tst_windowshape PRIVATE
         src/plugins src/core src/rpc src/audio src/vis)
@@ -1015,6 +1097,7 @@ if(Qt6Test_FOUND)
         src/rpc/NodeBootstrap.cpp
         src/audio/AudioEngine.cpp
         src/audio/SourceDeck.cpp
+        src/audio/VideoDeck.cpp
         src/vis/SpectrumSource.cpp)
     target_include_directories(tst_windowsnap PRIVATE
         src/plugins src/core src/rpc src/audio src/vis)
@@ -1066,6 +1149,7 @@ if(Qt6Test_FOUND)
         src/rpc/NodeBootstrap.cpp
         src/audio/AudioEngine.cpp
         src/audio/SourceDeck.cpp
+        src/audio/VideoDeck.cpp
         src/vis/SpectrumSource.cpp)
     target_include_directories(tst_pluginwindowshub PRIVATE
         src/plugins src/core src/rpc src/audio src/vis)

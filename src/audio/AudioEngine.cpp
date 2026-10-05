@@ -2,8 +2,11 @@
 #include "SourceDeck.h"
 #include "PcmQueue.h"
 #include "SpectrumSource.h"
+#include "VideoCodecs.h"
+#include "VideoDeck.h"
 
 #include <gst/audio/streamvolume.h>
+#include <gst/base/gstbasesink.h>
 
 #include <QUrl>
 #include <algorithm>
@@ -13,6 +16,11 @@
 AudioEngine::AudioEngine(PcmQueue& vizQueue, QObject* parent)
     : QObject(parent), vizQueue_(vizQueue) {
     buildPipeline();
+    videoCodecs_ = videoCodecPreference([](const char* f) {
+        GstElementFactory* e = gst_element_factory_find(f);
+        if (e) gst_object_unref(e);
+        return e != nullptr;
+    });
 
     posTimer_.setInterval(250);
     connect(&posTimer_, &QTimer::timeout, this, [this] {
@@ -31,9 +39,14 @@ AudioEngine::AudioEngine(PcmQueue& vizQueue, QObject* parent)
 AudioEngine::~AudioEngine() {
     if (pipeline_) {
         gst_element_set_state(pipeline_, GST_STATE_NULL);
+        videoCurrent_.reset();
+        videoIncoming_.reset();
+        videoPending_.reset();
         current_.reset();
         incoming_.reset();
         retiring_.clear();
+        for (GstElement* e : {audioQueue_, audibleSink_, appsink_})
+            if (e) gst_object_unref(e);
         gst_object_unref(pipeline_);
     }
 }
@@ -64,7 +77,7 @@ void AudioEngine::buildPipeline() {
         g_clear_error(&err);
         return gst_parse_launch(QStringLiteral(
             "audiomixer name=mix ! volume name=preamp ! equalizer-10bands name=eq ! %2tee name=t "
-            "t. ! queue max-size-time=40000000 max-size-buffers=0 max-size-bytes=0 "
+            "t. ! queue name=aq max-size-time=40000000 max-size-buffers=0 max-size-bytes=0 "
             "   ! audioconvert ! %1 "
             "t. ! queue leaky=downstream max-size-time=200000000 "
             "   ! volume name=vizvol ! appsink name=viz")
@@ -92,11 +105,11 @@ void AudioEngine::buildPipeline() {
         std::fprintf(stderr, "[audio] pulsesink will not open a device — falling back to autoaudiosink\n");
 
     pipeline_ = (fakeSink || pulseUsable)
-        ? build(fakeSink ? "fakesink sync=true"
+        ? build(fakeSink ? "fakesink name=fsink sync=true"
                          : "pulsesink name=asink sync=false buffer-time=80000 latency-time=20000")
         : nullptr;
     // Fallback keeps a volume element in the audio branch (buffered but correct).
-    if (!pipeline_ && !fakeSink) pipeline_ = build("volume name=fbvol ! autoaudiosink");
+    if (!pipeline_ && !fakeSink) pipeline_ = build("volume name=fbvol ! autoaudiosink name=autosink");
     if (!pipeline_) {
         std::fprintf(stderr, "[audio] pipeline build failed: %s\n", err ? err->message : "?");
         return;
@@ -118,6 +131,10 @@ void AudioEngine::buildPipeline() {
     std::fprintf(stderr, "[audio] volume applies at: %s\n",
                  sinkVol_ ? GST_OBJECT_NAME(sinkVol_) : "NONE (fakesink test build)");
     appsink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "viz");
+    audioQueue_ = gst_bin_get_by_name(GST_BIN(pipeline_), "aq");
+    audibleSink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "asink");
+    if (!audibleSink_) audibleSink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "fsink");
+    if (!audibleSink_) audibleSink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "autosink");
 
     GstCaps* caps = gst_caps_from_string(
         "audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved");
@@ -214,11 +231,25 @@ std::unique_ptr<SourceDeck> AudioEngine::makeDeck(const QString& pathOrUri, bool
     return deck;
 }
 
-void AudioEngine::loadTrack(const QString& pathOrUri) {
+void AudioEngine::loadTrack(const QString& pathOrUri, const QString& trackId) {
     fadeTimer_.stop();
     incoming_.reset();
     retiring_.clear();      // hard cut: tear down everything old
     current_.reset();
+    currentTrack_ = trackId;
+    incomingTrack_.clear();
+    videoIncoming_.reset();
+    dissolveOutgoing_ = false;
+    clearHold();
+    if (videoPending_ && !videoPendingTrack_.isEmpty() && !trackId.isEmpty() && videoPendingTrack_ != trackId) {
+        std::fprintf(stderr, "[video] prerolled deck for %s dropped, loading %s\n",
+                     qPrintable(videoPendingTrack_), qPrintable(trackId));
+        videoPending_.reset();
+    }
+    videoCurrent_ = std::move(videoPending_);
+    videoPendingTrack_.clear();
+    if (videoCurrent_) videoCurrent_->start();
+    emit videoChanged();
     // A pipeline that posted ERROR is wedged — every later play would fail
     // (even local files). Full NULL reset clears it; decks are rebuilt anyway.
     if (pipelineErrored_) {
@@ -251,20 +282,33 @@ void AudioEngine::setSinkMuted(bool muted) {
     if (sinkVol_) g_object_set(sinkVol_, "mute", muted ? TRUE : FALSE, nullptr);
 }
 
-void AudioEngine::crossfadeTo(const QString& pathOrUri, double seconds) {
+void AudioEngine::crossfadeTo(const QString& pathOrUri, double seconds, const QString& trackId) {
     // From pause it is a hard cut. There is nothing playing to fade out, and
     // the fade path never sets the pipeline playing: it would mark the engine
     // unpaused over a paused pipeline, silence that play cannot undo.
-    if (!current_ || seconds <= 0 || pipelineErrored_ || paused_) { loadTrack(pathOrUri); return; }
+    if (!current_ || seconds <= 0 || pipelineErrored_ || paused_) { loadTrack(pathOrUri, trackId); return; }
     // A previous fade still running: finish it instantly.
     if (incoming_) {
         fadeTimer_.stop();
         incoming_->setVolume(1.0);
         retiring_.clear();
         retiring_.push_back(std::move(current_));
-        current_ = std::move(incoming_);
+        promoteIncoming();
     }
+    clearHold();
     incoming_ = makeDeck(pathOrUri, /*deferLink=*/true);   // don't stall the mixer while buffering
+    incomingTrack_ = trackId;
+    if (videoPending_ && !videoPendingTrack_.isEmpty() && !trackId.isEmpty() && videoPendingTrack_ != trackId) {
+        std::fprintf(stderr, "[video] prerolled deck for %s dropped, fading to %s\n",
+                     qPrintable(videoPendingTrack_), qPrintable(trackId));
+        videoPending_.reset();
+    }
+    videoIncoming_ = std::move(videoPending_);
+    videoPendingTrack_.clear();
+    // only a prerolled deck dissolves from the outgoing picture
+    dissolveOutgoing_ = videoIncoming_ && videoIncoming_->hasFrame();
+    if (videoIncoming_) videoIncoming_->start();
+    emit videoChanged();
     incoming_->setVolume(0.0);
     pendingIncomingSeek_ = -1;
     setSinkMuted(false);   // safety: never fade while the sink is muted
@@ -304,17 +348,30 @@ void AudioEngine::onFadeTick() {
         std::fprintf(stderr, "[xfade] fade complete\n");
         fadeTimer_.stop();
         retiring_.push_back(std::move(current_));
-        current_ = std::move(incoming_);
+        promoteIncoming();
+        emit videoChanged();
         // Teardown of the faded-out deck: safe now that its volume is 0.
         retiring_.clear();
     }
 }
 
+void AudioEngine::promoteIncoming() {
+    current_ = std::move(incoming_);
+    currentTrack_ = std::move(incomingTrack_);
+    incomingTrack_.clear();
+    videoCurrent_ = std::move(videoIncoming_);
+    dissolveOutgoing_ = false;
+    clearHold();
+}
+
 void AudioEngine::stop() {
+    dropVideoDecks();
     fadeTimer_.stop();
     incoming_.reset();
     retiring_.clear();
     current_.reset();
+    currentTrack_.clear();
+    incomingTrack_.clear();
     if (pipeline_) gst_element_set_state(pipeline_, GST_STATE_PAUSED);
 }
 
@@ -339,7 +396,8 @@ void AudioEngine::finishFadeNow() {
     if (current_) current_->setVolume(0.0);
     incoming_->setVolume(1.0);
     retiring_.push_back(std::move(current_));
-    current_ = std::move(incoming_);
+    promoteIncoming();
+    emit videoChanged();
     retiring_.clear();
     std::fprintf(stderr, "[xfade] fade cut short\n");
 }
@@ -352,6 +410,7 @@ void AudioEngine::seekTo(double seconds, bool cutFade) {
             // fade envelope alone; a deck still prerolling can't seek yet, so
             // park the position and apply it on its first buffer.
             if (!incoming_->seekTo(s)) pendingIncomingSeek_ = s;
+            if (videoIncoming_) videoIncoming_->seekTo(videoPositionFor(s));
             return;
         }
         // user scrub during a crossfade = they took control of the incoming
@@ -360,6 +419,150 @@ void AudioEngine::seekTo(double seconds, bool cutFade) {
         finishFadeNow();
     }
     if (current_) current_->seekTo(s);
+    if (videoCurrent_) videoCurrent_->seekTo(videoPositionFor(s));
+}
+
+std::unique_ptr<VideoDeck> AudioEngine::makeVideoDeck(const QString& url) {
+    QString uri = url;
+    if (!uri.contains("://")) uri = QUrl::fromLocalFile(url).toString();
+    auto deck = std::make_unique<VideoDeck>(uri.toStdString(),
+        videoPlanar_ ? VideoDeck::Output::Planar : VideoDeck::Output::Rgba);
+    deck->onFirstFrame([this] {
+        QMetaObject::invokeMethod(this, [this] { emit videoChanged(); }, Qt::QueuedConnection);
+    });
+    return deck;
+}
+
+void AudioEngine::dropVideoDecks() {
+    clearHold();
+    const bool had = videoCurrent_ || videoIncoming_ || videoPending_;
+    videoCurrent_.reset();
+    videoIncoming_.reset();
+    videoPending_.reset();
+    videoPendingTrack_.clear();
+    if (had) emit videoChanged();
+}
+
+// A video deck that errored is dropped; audio carries on without it.
+void AudioEngine::dropFailedVideoDecks() {
+    bool dropped = false;
+    for (auto* d : {&videoCurrent_, &videoIncoming_, &videoPending_}) {
+        if (*d && (*d)->failed()) {
+            d->reset();
+            std::fprintf(stderr, "[video] deck failed, dropping\n");
+            dropped = true;
+        }
+    }
+    if (dropped) emit videoChanged();
+}
+
+void AudioEngine::setVideoWanted(bool on) {
+    if (videoWanted_ == on) return;
+    videoWanted_ = on;
+    if (!on) clearHold();
+}
+
+void AudioEngine::dropVideoDecksIfUnwanted() {
+    if (!videoWanted_) dropVideoDecks();
+}
+
+void AudioEngine::attachVideo(const QString& url, bool incoming, const QString& trackId) {
+    if (!videoWanted_) return;
+    if (incoming) {
+        logOutputLeadOnce();
+        videoPending_ = makeVideoDeck(url);          // prerolls; bound at the next deck switch
+        videoPendingTrack_ = trackId;
+        return;
+    }
+    // "current" is whichever audio deck owns the position: the incoming one mid-fade
+    SourceDeck* audio = incoming_ ? incoming_.get() : current_.get();
+    if (!audio) return;
+    const QString& playing = incoming_ ? incomingTrack_ : currentTrack_;
+    if (!trackId.isEmpty() && trackId != playing) {
+        std::fprintf(stderr, "[video] attach for %s refused, playing %s\n",
+                     qPrintable(trackId), qPrintable(playing));
+        return;
+    }
+    logOutputLeadOnce();
+    auto deck = makeVideoDeck(url);
+    const double pos = audio->positionSeconds();
+    if (pos > 0.05) deck->seekTo(videoPositionFor(pos));
+    deck->start();
+    if (incoming_) videoIncoming_ = std::move(deck);
+    else videoCurrent_ = std::move(deck);
+    emit videoChanged();
+}
+
+void AudioEngine::discardPendingVideo() { videoPending_.reset(); videoPendingTrack_.clear(); }
+
+// the deck of the track that owns the position: the incoming one mid-fade
+bool AudioEngine::hasVideoDeck() const { return incoming_ ? bool(videoIncoming_) : bool(videoCurrent_); }
+
+bool AudioEngine::hasVideoFrame() {
+    dropFailedVideoDecks();
+    const VideoDeck* d = incoming_ ? videoIncoming_.get() : videoCurrent_.get();
+    return d && d->hasFrame();
+}
+
+AudioEngine::OutputLead AudioEngine::outputLeadParts() const {
+    OutputLead l;
+    if (audioQueue_) {
+        guint64 ns = 0;
+        g_object_get(audioQueue_, "max-size-time", &ns, nullptr);
+        l.queue = double(ns) / GST_SECOND;
+    }
+    // The sink's own buffer is its buffer-time; get_latency is the pipeline's, a fallback only.
+    if (audibleSink_ && g_object_class_find_property(G_OBJECT_GET_CLASS(audibleSink_), "buffer-time")) {
+        gint64 us = 0;
+        g_object_get(audibleSink_, "buffer-time", &us, nullptr);
+        l.sink = double(us) / 1e6;
+    } else if (audibleSink_ && GST_IS_BASE_SINK(audibleSink_)) {
+        l.sink = double(gst_base_sink_get_latency(GST_BASE_SINK(audibleSink_))) / GST_SECOND;
+    }
+    return l;   // device: pulsesink reports none
+}
+
+double AudioEngine::outputLatencySeconds() const {
+    const OutputLead l = outputLeadParts();
+    return l.queue + l.sink + l.device;
+}
+
+void AudioEngine::logOutputLeadOnce() {
+    if (outputLeadLogged_) return;
+    outputLeadLogged_ = true;
+    const OutputLead l = outputLeadParts();
+    std::fprintf(stderr, "[video] output lead: queue %d ms + sink %d ms + device %d ms (sync %+d ms)\n",
+                 int(std::lround(l.queue * 1000)), int(std::lround(l.sink * 1000)),
+                 int(std::lround(l.device * 1000)), videoSyncMs_);
+}
+
+double AudioEngine::videoPositionFor(double audioSeconds) const {
+    return std::max(0.0, audioSeconds - videoLeadSeconds());
+}
+
+VideoView AudioEngine::videoView() {
+    dropFailedVideoDecks();
+    VideoView v;
+    v.trackId = incoming_ ? incomingTrack_ : currentTrack_;
+    if (!videoCurrent_ && !videoIncoming_) { clearHold(); return v; }
+    // Mid-fade the picture is the incoming track's; the outgoing one shows only
+    // under it, and never again once the view has gone empty.
+    if (incoming_) {
+        if (videoIncoming_)
+            if (auto f = videoIncoming_->frameAt(videoPositionFor(incoming_->positionSeconds()))) v.incoming = f->px;
+        if (!v.incoming) { dissolveOutgoing_ = false; return v; }
+        if (dissolveOutgoing_ && videoCurrent_ && current_)
+            if (auto f = videoCurrent_->frameAt(videoPositionFor(current_->positionSeconds()))) v.main = f->px;
+        v.mix = fadeProgress();
+        if (!v.main) { v.main = v.incoming; v.incoming = nullptr; v.mix = 0; }
+        return v;
+    }
+    if (videoCurrent_ && current_)
+        if (auto f = videoCurrent_->frameAt(videoPositionFor(current_->positionSeconds()))) v.main = f->px;
+    // a re-attach holds the last picture of the same track until the new deck's first frame
+    if (v.main) { lastMainPixels_ = v.main; lastMainTrack_ = v.trackId; }
+    else if (lastMainTrack_ == v.trackId) v.main = lastMainPixels_;
+    return v;
 }
 
 void AudioEngine::setMasterVolume(double v) {
