@@ -8,14 +8,13 @@ import ".."
 // on every change, nothing on cancel; ctx.blend and ctx.adaptive say what this
 // entry may become. A window so it can own the entry's state and host popups,
 // which an overlay inside a modal cannot.
-Window {
+MeloWindow {
     id: picker
-    visible: false
-    color: "transparent"
     title: "melo colour"
-    flags: Qt.Window | Qt.FramelessWindowHint
+    heading: "Colour"
+    onCloseRequested: picker.reject()
     minimumWidth: Theme.sp(300)
-    minimumHeight: Math.round(titleBar.height + dialog.fullHeight)
+    minimumHeight: Math.round(chromeHeight + dialog.fullHeight)
 
     property real hue: 0          // 0..1
     property real sat: 1
@@ -616,14 +615,8 @@ Window {
     // fit would be read as someone dragging the frame.
     property real fitted: -1
     function fitHeight() {
-        fitted = Math.max(minimumHeight, Math.round(titleBar.height + dialog.fullHeight))
+        fitted = Math.max(minimumHeight, Math.round(chromeHeight + dialog.fullHeight))
         height = fitted
-    }
-    function applyGlass() {
-        if (typeof WindowCtl === "undefined") return   // a standalone test run
-        const on = Theme.glassBlur !== "off" && Theme.translucent("window")
-        WindowCtl.setBlurRadius(Theme.windowRadius)
-        WindowCtl.setBlurBehind(picker, on)
     }
     // Coalesced: a drag on the frame resizes per motion event, and the point
     // is the size it is let go at.
@@ -663,97 +656,41 @@ Window {
         function onVisibleChanged() { if (!picker.transientParent.visible) picker.reject() }
     }
 
-    Surface {
-        anchors.fill: parent
-        role: "window"
-        radius: Theme.windowRadius
-    }
-    Surface {   // the page below the title bar, as the main window's below its header
-        anchors.fill: parent
-        anchors.topMargin: titleBar.height
-        role: "page"
-        topLeftRadius: 0; topRightRadius: 0
-        bottomLeftRadius: Theme.windowRadius; bottomRightRadius: Theme.windowRadius
-        visible: Theme.hasPage
-    }
-    Surface {   // the window border, above the title bar, as in the other windows
-        anchors.fill: parent
-        role: ""
-        radius: Theme.windowRadius
-        borderRole: "windowBorder"
-        borderWidth: Theme.windowBorderWidth
-        visible: Theme.windowBorder
-        z: 1000
-    }
-    Surface {   // title bar
-        id: titleBar
-        width: parent.width
-        height: Theme.titleBarH
-        role: "title"
-        topLeftRadius: Theme.windowRadius
-        topRightRadius: Theme.windowRadius
-        MouseArea { anchors.fill: parent; onPressed: picker.startSystemMove() }
-        InkText {
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.verticalCenterOffset: (Theme.inset("title", "top") - Theme.inset("title", "bottom")) / 2
-            anchors.left: parent.left; anchors.leftMargin: Theme.inset("title", "left")
-            text: "Colour"
-            ink: "textOnTitle"
-            font { pixelSize: Theme.fs(12); family: Theme.fontFamily; weight: Theme.weightMedium }
-        }
-        Row {
-            id: modeRow
-            objectName: "pickerMode"
-            anchors.right: closeBtn.left; anchors.rightMargin: Theme.gap(6)
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.verticalCenterOffset: (Theme.inset("title", "top") - Theme.inset("title", "bottom")) / 2
-            spacing: Theme.gap(3)
-            // hidden where Simple could not edit the entry anyway
-            visible: picker.canDye
-            Repeater {
-                model: ["simple", "advanced"]
-                Surface {
-                    required property string modelData
-                    objectName: "pickerMode_" + modelData
-                    readonly property bool on: picker.advanced === (modelData === "advanced")
-                    width: Theme.ctl(52); height: Theme.ctl(16)
-                    radius: Theme.radiusSm
-                    role: on ? "accent" : Theme.faceOf("segment", mMa.containsMouse)
-                    Text {
-                        anchors.centerIn: parent
-                        text: parent.modelData
-                        color: parent.on ? Theme.onFill(parent.color) : Theme.textDim
-                        font { pixelSize: Theme.fs(9); family: Theme.fontFamily }
-                    }
-                    MouseArea { id: mMa; anchors.fill: parent; hoverEnabled: true
-                                onClicked: picker.setAdvanced(parent.modelData === "advanced") }
+    Row {
+        id: modeRow
+        objectName: "pickerMode"
+        parent: picker.titleTools
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Theme.gap(3)
+        // hidden where Simple could not edit the entry anyway
+        visible: picker.canDye
+        Repeater {
+            model: ["simple", "advanced"]
+            Surface {
+                required property string modelData
+                objectName: "pickerMode_" + modelData
+                readonly property bool on: picker.advanced === (modelData === "advanced")
+                width: Theme.ctl(52); height: Theme.ctl(16)
+                radius: Theme.radiusSm
+                role: on ? "accent" : Theme.faceOf("segment", mMa.containsMouse)
+                Text {
+                    anchors.centerIn: parent
+                    text: parent.modelData
+                    color: parent.on ? Theme.onFill(parent.color) : Theme.textDim
+                    font { pixelSize: Theme.fs(9); family: Theme.fontFamily }
                 }
+                MouseArea { id: mMa; anchors.fill: parent; hoverEnabled: true
+                            onClicked: picker.setAdvanced(parent.modelData === "advanced") }
             }
         }
-        Item {
-            id: closeBtn
-            anchors.right: parent.right; anchors.rightMargin: Theme.inset("title", "right")
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.verticalCenterOffset: (Theme.inset("title", "top") - Theme.inset("title", "bottom")) / 2
-            width: Theme.ctl(26); height: Theme.ctl(20)
-            IconButton {   // the same close as the main window's: its inks, its frame, its press
-                anchors.centerIn: parent; name: "close"; size: Theme.glyph(12)
-                ink: closeMa.containsMouse ? "closeHover" : "close"
-                face: "close"; framed: Theme.titleButtons === "button"
-                hovered: closeMa.containsMouse; pressed: closeMa.pressed
-                frameWidth: Theme.iconBtn; frameHeight: Math.min(Theme.iconBtn, Theme.ctl(20) + Theme.inset("title", "top") + Theme.inset("title", "bottom")) }
-            MouseArea { id: closeMa; anchors.fill: parent; hoverEnabled: true
-                        onClicked: picker.reject() }
-        }
     }
-
     // Everything below the title bar. Only a container: the picker's own
     // state is on the window, which is what a call site holds.
     Item {
         id: body
         objectName: "pickerBody"
-        anchors.left: parent.left; anchors.right: parent.right
-        anchors.top: titleBar.bottom; anchors.bottom: parent.bottom
+        parent: picker.body
+        anchors.fill: parent
 
     Item {
         id: dialog
@@ -1567,6 +1504,5 @@ Window {
         fillSelect.visible = false; fillSettings.visible = false; swatchShelf.visible = false
     }
 
-    Shortcut { sequence: "Escape"; enabled: picker.visible; onActivated: picker.reject() }
 }
 }

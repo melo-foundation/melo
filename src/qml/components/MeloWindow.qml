@@ -13,6 +13,10 @@ Window {
 
     property string heading: ""
     readonly property Item body: bodyItem
+    // a window's own controls in the title bar, left of the close
+    readonly property Item titleTools: titleToolsItem
+    // the frame and title bar around `body`, for a window that sizes to its content
+    readonly property real chromeHeight: titleBar.y + titleBar.height + titleGap + (shaped ? 0 : frB)
     // the close in the title bar and Escape; hides unless the window says otherwise
     signal closeRequested()
     onCloseRequested: visible = false
@@ -136,6 +140,14 @@ Window {
             font { pixelSize: Theme.fs(Theme.titleFontSize); family: Theme.fontFamily; weight: Theme.titleWeight }
         }
         Item {
+            id: titleToolsItem
+            anchors.right: closeItem.left; anchors.rightMargin: Theme.gap(6)
+            anchors.top: parent.top; anchors.bottom: parent.bottom
+            anchors.topMargin: Theme.inset("title", "top"); anchors.bottomMargin: Theme.inset("title", "bottom")
+            width: childrenRect.width
+        }
+        Item {
+            id: closeItem
             anchors.right: parent.right
             anchors.rightMargin: Theme.inset("title", "right") + win.cutTitleR - (Theme.borderTitle ? 0 : win.frR)
             // on whole pixels, as the main window's buttons are
