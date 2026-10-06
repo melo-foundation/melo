@@ -902,34 +902,23 @@ function parseLockupVideo(lvm: any): SearchResult | null {
     || lvm.contentImage?.collectionThumbnailViewModel?.primaryThumbnail?.thumbnailViewModel;
   const thumbnail = pickThumb(thumbVm?.image?.sources);
 
+  return { id: lvm.contentId, title, channel, duration: lockupDuration(thumbVm), thumbnail, views, age };
+}
+
+/** A lockup's length from its thumbnail badge, in either of YouTube's two forms. */
+function lockupDuration(thumbVm: any): number {
   let duration = 0;
-  const overlays = thumbVm?.overlays;
-  if (Array.isArray(overlays)) {
-    for (const o of overlays) {
-      // Old format: thumbnailOverlayBadgeViewModel.thumbnailBadges
-      const badges = o?.thumbnailOverlayBadgeViewModel?.thumbnailBadges;
-      if (Array.isArray(badges)) {
-        for (const b of badges) {
-          const text = b?.thumbnailBadgeViewModel?.text || "";
-          if (text && text.includes(":")) {
-            duration = parseDuration(text);
-          }
-        }
-      }
-      // New format: thumbnailBottomOverlayViewModel.badges
-      const bottomBadges = o?.thumbnailBottomOverlayViewModel?.badges;
-      if (Array.isArray(bottomBadges)) {
-        for (const b of bottomBadges) {
-          const text = b?.thumbnailBadgeViewModel?.text || "";
-          if (text && text.includes(":")) {
-            duration = parseDuration(text);
-          }
-        }
-      }
+  for (const o of Array.isArray(thumbVm?.overlays) ? thumbVm.overlays : []) {
+    const badges = [
+      ...(o?.thumbnailOverlayBadgeViewModel?.thumbnailBadges ?? []),
+      ...(o?.thumbnailBottomOverlayViewModel?.badges ?? []),
+    ];
+    for (const b of badges) {
+      const text = b?.thumbnailBadgeViewModel?.text || "";
+      if (text.includes(":")) duration = parseDuration(text);
     }
   }
-
-  return { id: lvm.contentId, title, channel, duration, thumbnail, views, age };
+  return duration;
 }
 
 function parseLockupPlaylist(lvm: any): SearchPlaylistResult | null {
@@ -1154,25 +1143,7 @@ function parseNextItem(item: any): SearchResult | null {
     const thumbVm = lvm.contentImage?.thumbnailViewModel
       || lvm.contentImage?.collectionThumbnailViewModel?.primaryThumbnail?.thumbnailViewModel;
     const thumbnail = pickThumb(thumbVm?.image?.sources);
-
-    // Duration from overlay badge
-    let duration = 0;
-    const overlays = thumbVm?.overlays;
-    if (Array.isArray(overlays)) {
-      for (const o of overlays) {
-        const badges = o?.thumbnailOverlayBadgeViewModel?.thumbnailBadges;
-        if (Array.isArray(badges)) {
-          for (const b of badges) {
-            const text = b?.thumbnailBadgeViewModel?.text || "";
-            if (text && text.includes(":")) {
-              duration = parseDuration(text);
-            }
-          }
-        }
-      }
-    }
-
-    return { id: lvm.contentId, title, channel, duration, thumbnail };
+    return { id: lvm.contentId, title, channel, duration: lockupDuration(thumbVm), thumbnail };
   }
 
   // Old format: compactVideoRenderer

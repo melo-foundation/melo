@@ -56,6 +56,28 @@ const response = {
 };
 
 describe("parseNextResponse", () => {
+  // A related item as /next sends it since 2026: the length sits in the thumbnail's
+  // bottom overlay; the older thumbnailOverlayBadgeViewModel form still occurs.
+  const lockup = (id: string, overlay: object) => ({
+    lockupViewModel: {
+      contentId: id,
+      contentType: "LOCKUP_CONTENT_TYPE_VIDEO",
+      metadata: { lockupMetadataViewModel: { title: { content: "Song " + id } } },
+      contentImage: { thumbnailViewModel: { image: { sources: [] }, overlays: [overlay] } },
+    },
+  });
+  const related = (items: object[]) => ({
+    contents: { twoColumnWatchNextResults: { secondaryResults: { secondaryResults: { results: items } } } },
+  });
+
+  it("reads a suggestion's length from either badge form", () => {
+    const r = parseNextResponse(related([
+      lockup("a", { thumbnailBottomOverlayViewModel: { badges: [{ thumbnailBadgeViewModel: { text: "4:30" } }] } }),
+      lockup("b", { thumbnailOverlayBadgeViewModel: { thumbnailBadges: [{ thumbnailBadgeViewModel: { text: "1:02:03" } }] } }),
+    ]));
+    expect(r.suggestions.map((s) => s.duration)).toEqual([270, 3723]);
+  });
+
   it("keeps the continuation token the related list ends on", () => {
     expect(parseNextResponse(response).continuation).toBe("TOKEN");
   });
