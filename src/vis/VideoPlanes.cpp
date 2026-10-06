@@ -15,8 +15,7 @@ public:
     explicit UploadTextures(QQuickWindow* w) : window_(w) {}
 
     bool update(const VideoPixels& px, QRhi* rhi, QRhiResourceUpdateBatch* batch) override {
-        count_ = px.planeCount;
-        for (int p = 0; p < count_; ++p) {
+        for (int p = 0; p < px.planeCount; ++p) {
             const VideoPlane& pl = px.planes[p];
             const QRhiTexture::Format fmt =
                 (px.format == VideoFormat::NV12 && p == 1) ? QRhiTexture::RG8 : QRhiTexture::R8;
@@ -41,12 +40,11 @@ public:
         return true;
     }
 
-    QSGTexture* plane(int i) const override { return i >= 0 && i < count_ ? tex_[i].get() : nullptr; }
+    QSGTexture* plane(int i) const override { return i >= 0 && i < 3 ? tex_[i].get() : nullptr; }
 
 private:
     QQuickWindow* window_;
     std::unique_ptr<QSGTexture> tex_[3];
-    int count_ = 0;
 };
 
 }  // namespace
@@ -78,7 +76,7 @@ public:
     // The upload happens once a frame, where the render state hands out the update batch.
     bool updateUniformData(RenderState& state, QSGMaterial* newMat, QSGMaterial*) override {
         auto* m = static_cast<VideoPlanesMaterial*>(newMat);
-        if (m->frame_ && m->uploaded_ != m->serial_) {
+        if (m->uploaded_ != m->serial_) {
             if (!m->textures_) m->textures_ = makeUploadTextures(m->window_);
             if (m->textures_->update(*m->frame_, state.rhi(), state.resourceUpdateBatch()))
                 m->uploaded_ = m->serial_;
@@ -88,12 +86,10 @@ public:
         Q_ASSERT(buf->size() >= 132);
         if (state.isMatrixDirty())
             std::memcpy(buf->data(), state.combinedMatrix().constData(), 64);
-        if (m->frame_) {
-            // videoColorMatrix is row-major; QMatrix4x4(const float*) reads row-major and
-            // constData() is column-major, the layout a GLSL mat4 uniform takes.
-            const QMatrix4x4 cm(videoColorMatrix(m->frame_->color).data());
-            std::memcpy(buf->data() + 64, cm.constData(), 64);
-        }
+        // videoColorMatrix is row-major; QMatrix4x4(const float*) reads row-major and
+        // constData() is column-major, the layout a GLSL mat4 uniform takes.
+        const QMatrix4x4 cm(videoColorMatrix(m->frame_->color).data());
+        std::memcpy(buf->data() + 64, cm.constData(), 64);
         if (state.isOpacityDirty()) {
             const float o = state.opacity();
             std::memcpy(buf->data() + 128, &o, 4);

@@ -44,14 +44,15 @@ private slots:
         VideoFrameRing r;
         r.push(f(0.00)); r.push(f(0.04)); r.push(f(0.08)); r.push(f(0.12));
         r.take(0.09);
-        QCOMPARE(r.size(), std::size_t(1));          // only 0.12 left
+        QVERIFY(!r.take(0.09));                        // 0.08 is gone
         QCOMPARE(r.take(0.20)->pts, 0.12);
     }
     void nothingQualifiesMeansNoFrameAndNothingLost() {
         VideoFrameRing r;
         r.push(f(0.50)); r.push(f(0.54));
         QVERIFY(!r.take(0.10));
-        QCOMPARE(r.size(), std::size_t(2));
+        QCOMPARE(r.take(0.50)->pts, 0.50);
+        QCOMPARE(*r.newestPts(), 0.54);
     }
     void aSeekDropsEveryOlderGeneration() {
         VideoFrameRing r;
@@ -66,16 +67,8 @@ private slots:
     void aFullRingDropsItsOldest() {
         VideoFrameRing r(3);
         r.push(f(0.0)); r.push(f(0.1)); r.push(f(0.2)); r.push(f(0.3));
-        QCOMPARE(r.size(), std::size_t(3));
         QVERIFY(!r.take(0.05));                        // 0.0 is gone; 0.1 is past 0.05+lead
         QCOMPARE(r.take(0.10)->pts, 0.1);
-    }
-    void clearEmptiesIt() {
-        VideoFrameRing r;
-        r.push(f(0.0));
-        r.clear();
-        QCOMPARE(r.size(), std::size_t(0));
-        QVERIFY(!r.take(1.0));
     }
     void newestPtsIsTheLastPushed() {
         VideoFrameRing r;

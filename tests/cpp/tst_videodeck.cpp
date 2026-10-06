@@ -175,10 +175,10 @@ private slots:
     void aSeekBumpsTheGenerationAndLandsNearTheTarget() {
         VideoDeck deck(QUrl::fromLocalFile(webm_).toString().toStdString());
         deck.start();
-        QTRY_VERIFY_WITH_TIMEOUT(deck.frameAt(0.2).has_value(), 5000);
-        const uint64_t g0 = deck.generation();
+        std::optional<VideoFrame> f0;
+        QTRY_VERIFY_WITH_TIMEOUT((f0 = deck.frameAt(0.2)).has_value(), 5000);
+        const uint64_t g0 = f0->gen;
         QVERIFY(deck.seekTo(2.0));
-        QCOMPARE(deck.generation(), g0 + 1);
         std::optional<VideoFrame> f;
         QTRY_VERIFY_WITH_TIMEOUT((f = deck.frameAt(2.1)) && f->gen == g0 + 1, 5000);
         QVERIFY(f->pts >= 1.9 && f->pts <= 2.12);
@@ -244,11 +244,11 @@ private slots:
     void jumpsWhenFarBehind() {
         VideoDeck deck(QUrl::fromLocalFile(webm_).toString().toStdString());
         deck.start();
-        QTRY_VERIFY_WITH_TIMEOUT(deck.frameAt(0.3).has_value(), 5000);
-        const uint64_t g0 = deck.generation();
         std::optional<VideoFrame> f;
+        QTRY_VERIFY_WITH_TIMEOUT((f = deck.frameAt(0.3)).has_value(), 5000);
+        const uint64_t g0 = f->gen;
         QTRY_VERIFY_WITH_TIMEOUT((f = deck.frameAt(2.5)) && qAbs(f->pts - 2.5) <= 0.2, 5000);
-        QCOMPARE(deck.generation(), g0 + 1);
+        QCOMPARE(f->gen, g0 + 1);
     }
 
     // YouTube's MP4 is fragmented: the seek lands through a range request and the call returns at once.

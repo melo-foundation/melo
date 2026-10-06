@@ -69,10 +69,8 @@ Item {
     // stacks: record up top, everything it has to say underneath. Same number the bar rearranges
     // on, so the whole window changes shape in one move.
     readonly property bool stacked: width < GridUi.narrowW
-    readonly property Item videoItem: videoSurf
     // 1 while the picture shows; artwork, glass and scrim follow it
-    property real videoIn: videoSurf.hasFrame && s.np.showVideo && PlayerState.hasVideo
-                           && (s.shaderOk || s.p < 0.5) ? 1 : 0
+    property real videoIn: videoSurf.hasFrame && (s.shaderOk || s.p < 0.5) ? 1 : 0
     Behavior on videoIn { enabled: s.settled; NumberAnimation { duration: 300 } }
     // A picture already in hand when the page appears shows at once: no fade
     // for the first 80 ms.

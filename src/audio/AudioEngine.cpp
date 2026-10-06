@@ -239,7 +239,6 @@ void AudioEngine::loadTrack(const QString& pathOrUri, const QString& trackId) {
     currentTrack_ = trackId;
     incomingTrack_.clear();
     videoIncoming_.reset();
-    dissolveOutgoing_ = false;
     clearHold();
     if (videoPending_ && !videoPendingTrack_.isEmpty() && !trackId.isEmpty() && videoPendingTrack_ != trackId) {
         std::fprintf(stderr, "[video] prerolled deck for %s dropped, loading %s\n",
@@ -295,7 +294,6 @@ void AudioEngine::crossfadeTo(const QString& pathOrUri, double seconds, const QS
         retiring_.push_back(std::move(current_));
         promoteIncoming();
     }
-    clearHold();
     incoming_ = makeDeck(pathOrUri, /*deferLink=*/true);   // don't stall the mixer while buffering
     incomingTrack_ = trackId;
     if (videoPending_ && !videoPendingTrack_.isEmpty() && !trackId.isEmpty() && videoPendingTrack_ != trackId) {
@@ -360,7 +358,6 @@ void AudioEngine::promoteIncoming() {
     currentTrack_ = std::move(incomingTrack_);
     incomingTrack_.clear();
     videoCurrent_ = std::move(videoIncoming_);
-    dissolveOutgoing_ = false;
     clearHold();
 }
 
@@ -457,7 +454,6 @@ void AudioEngine::dropFailedVideoDecks() {
 }
 
 void AudioEngine::setVideoWanted(bool on) {
-    if (videoWanted_ == on) return;
     videoWanted_ = on;
     if (!on) clearHold();
 }
@@ -498,12 +494,6 @@ void AudioEngine::discardPendingVideo() { videoPending_.reset(); videoPendingTra
 // the deck of the track that owns the position: the incoming one mid-fade
 bool AudioEngine::hasVideoDeck() const { return incoming_ ? bool(videoIncoming_) : bool(videoCurrent_); }
 
-bool AudioEngine::hasVideoFrame() {
-    dropFailedVideoDecks();
-    const VideoDeck* d = incoming_ ? videoIncoming_.get() : videoCurrent_.get();
-    return d && d->hasFrame();
-}
-
 AudioEngine::OutputLead AudioEngine::outputLeadParts() const {
     OutputLead l;
     if (audioQueue_) {
@@ -519,21 +509,20 @@ AudioEngine::OutputLead AudioEngine::outputLeadParts() const {
     } else if (audibleSink_ && GST_IS_BASE_SINK(audibleSink_)) {
         l.sink = double(gst_base_sink_get_latency(GST_BASE_SINK(audibleSink_))) / GST_SECOND;
     }
-    return l;   // device: pulsesink reports none
+    return l;
 }
 
 double AudioEngine::outputLatencySeconds() const {
     const OutputLead l = outputLeadParts();
-    return l.queue + l.sink + l.device;
+    return l.queue + l.sink;
 }
 
 void AudioEngine::logOutputLeadOnce() {
     if (outputLeadLogged_) return;
     outputLeadLogged_ = true;
     const OutputLead l = outputLeadParts();
-    std::fprintf(stderr, "[video] output lead: queue %d ms + sink %d ms + device %d ms (sync %+d ms)\n",
-                 int(std::lround(l.queue * 1000)), int(std::lround(l.sink * 1000)),
-                 int(std::lround(l.device * 1000)), videoSyncMs_);
+    std::fprintf(stderr, "[video] output lead: queue %d ms + sink %d ms (sync %+d ms)\n",
+                 int(std::lround(l.queue * 1000)), int(std::lround(l.sink * 1000)), videoSyncMs_);
 }
 
 double AudioEngine::videoPositionFor(double audioSeconds) const {

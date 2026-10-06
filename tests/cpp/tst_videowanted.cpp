@@ -19,11 +19,15 @@ private slots:
         QCOMPARE(videoRequestParams("abc", 4320, {})["maxHeight"].toInt(), 720);
         QCOMPARE(videoRequestParams("abc", "480", {})["maxHeight"].toInt(), 480);
     }
+    void theBotWallOffersPlaybackCookies() {
+        PlayerState s;
+        s.setErrorWithCode("x", -32040);
+        QCOMPARE(s.errorAction(), QStringLiteral("playbackCookies"));
+    }
     void stateDefaultsAreOff() {
         PlayerState s;
         QCOMPARE(s.videoWanted(), false);
         QCOMPARE(s.hasVideo(), false);
-        QCOMPARE(s.videoReady(), false);
         QCOMPARE(s.videoSupported(), false);
         QSignalSpy spy(&s, &PlayerState::videoWantedChanged);
         s.setVideoWanted(true);

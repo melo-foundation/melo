@@ -51,6 +51,7 @@ export interface SettingsV2 {
   cookieSource: CookieSource;
   browser: string;              // for --cookies-from-browser
   cookieProfile: string;        // active guest profile name
+  streamCookieSource: "same" | "browser";   // whose cookies resolve streams
   homeSource: "youtube" | "ytmusic";
   sendPlayback: boolean;        // report watch history to YT
   downloadPath: string;
@@ -84,6 +85,7 @@ export function defaultSettings(): SettingsV2 {
     cookieSource: "guest",
     browser: "firefox",
     cookieProfile: "Default",
+    streamCookieSource: "same",
     homeSource: "youtube",
     sendPlayback: true,
     downloadPath: join(musicDir(), "melo"),
@@ -156,7 +158,7 @@ export function autoTagEnabled(v: string | undefined): boolean {
 // The keys that pick which identity melo speaks as. A patch touching any must
 // drop the cookie caches: cachedVisitorData is one global sent on every
 // request, so a switch without a clear speaks as the old identity.
-const COOKIE_IDENTITY_KEYS = ["cookieSource", "cookieProfile", "browser"] as const;
+const COOKIE_IDENTITY_KEYS = ["cookieSource", "cookieProfile", "browser", "streamCookieSource"] as const;
 
 export function touchesCookieIdentity(patch: Partial<SettingsV2>): boolean {
   return COOKIE_IDENTITY_KEYS.some((k) => patch[k] !== undefined);

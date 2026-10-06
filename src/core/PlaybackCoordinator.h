@@ -172,7 +172,7 @@ private:
     // prefetch
     QJsonObject prefetched_;      // {videoId, url, title, channel, duration, thumbnail, skipStart, skipEnd}
     bool prefetching_ = false;
-    QJsonObject videoPrefetched_;   // {videoId, url, still}
+    QJsonObject videoPrefetched_;   // {videoId}
     bool videoPrefetching_ = false;
     quint64 videoRequestSeq_ = 0;   // the latest current-track video request
     QTimer videoGraceTimer_;   // unwanted decks are dropped when it fires

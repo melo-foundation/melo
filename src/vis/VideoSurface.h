@@ -3,7 +3,6 @@
 #include "VideoFrameSource.h"
 #include <QList>
 #include <QQuickItem>
-#include <QSize>
 #include <QTimer>
 
 // Draws the frame the engine selects for the audio position: NV12/I420 planes
@@ -14,7 +13,6 @@ class VideoSurface : public QQuickItem {
     Q_PROPERTY(bool running READ running WRITE setRunning NOTIFY runningChanged)
     Q_PROPERTY(bool frozen READ frozen WRITE setFrozen NOTIFY frozenChanged)
     Q_PROPERTY(bool hasFrame READ hasFrame NOTIFY hasFrameChanged)
-    Q_PROPERTY(QSize frameSize READ frameSize NOTIFY hasFrameChanged)
     Q_PROPERTY(QString fit READ fit WRITE setFit NOTIFY fitChanged)   // "fill", "fit" or "stretch"
     Q_PROPERTY(qreal fillMix READ fillMix WRITE setFillMix NOTIFY fillMixChanged)   // 0 = the fit setting, 1 = fill
     Q_PROPERTY(QRectF contentRect READ contentRect NOTIFY contentRectChanged)   // the drawn picture
@@ -36,7 +34,6 @@ public:
     bool frozen() const { return frozen_; }
     void setFrozen(bool on);
     bool hasFrame() const { return hasFrame_; }
-    QSize frameSize() const { return frameSize_; }
     QString fit() const { return fit_; }
     void setFit(const QString& fit);
     qreal fillMix() const { return fillMix_; }
@@ -67,7 +64,6 @@ private:
     bool frozen_ = false;
     bool hasFrame_ = false;
     bool dropNode_ = false;   // the next paint deletes the node
-    QSize frameSize_;
     QString fit_ = QStringLiteral("fill");
     qreal fillMix_ = 0;
     QRectF contentRect_;

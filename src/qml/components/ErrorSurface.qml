@@ -84,7 +84,9 @@ Item {
                 visible: surface.action.length > 0
                 pad: Theme.gap(16)
                 radius: Theme.radiusSm
-                label: surface.action === "signin" ? "Sign in" : "Retry"
+                label: surface.action === "signin" ? "Sign in"
+                     : surface.action === "playbackCookies" && Settings.streamCookieSource !== "browser"
+                       && Settings.cookieSource !== "browser" ? "Use browser cookies" : "Retry"
                 onClicked: surface.actionTriggered(surface.action)
             }
         }

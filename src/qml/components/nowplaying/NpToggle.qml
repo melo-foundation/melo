@@ -39,9 +39,8 @@ Item {
         x: root.segmented ? 4 : 0
         height: parent.height
         spacing: root.segmented ? 0 : Theme.gap(2)
-        Seg { id: infoTab; label: "Info"; mode: 0 }
+        Seg { label: "Info"; mode: 0 }
         Seg {
-            id: lyricsTab
             label: "Lyrics"
             mode: 1
             dead: root.np ? root.np.noLyrics === true : false

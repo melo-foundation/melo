@@ -979,7 +979,7 @@ Window {
                          && PlayerState.hasVideo
                 frozen: root.resizeFreeze || !PlayerState.isPlaying
                 fit: root.videoFit
-                opacity: root.popupVideoMode && hasFrame && PlayerState.hasVideo ? 1 : 0
+                opacity: hasFrame ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: 300 } }
                 visible: opacity > 0.01
                 TapHandler {
@@ -2384,12 +2384,12 @@ Window {
         // window that then looks like it is working.
         state_: sidecar.ready ? "" : "melo's backend is not running"
         onActionTriggered: (kind) => {
-            // Both actions are the one thing that fixes the case they appear
-            // for: the cookie source lives in Settings, and a transient
-            // network failure wants the same track asked for again.
+            // Each action fixes the error it appears on; a cookie switch or a retry
+            // plays the same track again.
             PlayerState.error = ""
             if (kind === "signin") root.settingsWindow().open()
-            else if (kind === "retry" && PlayerState.hasTrack)
+            if (kind === "playbackCookies") Settings.streamCookieSource = "browser"
+            if ((kind === "retry" || kind === "playbackCookies") && PlayerState.hasTrack)
                 Player.playTrackData(PlayerState.trackInfo)
         }
     }

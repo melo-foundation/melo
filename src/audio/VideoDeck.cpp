@@ -113,7 +113,6 @@ VideoDeck::VideoDeck(const std::string& uri, Output out) {
 
 VideoDeck::~VideoDeck() {
     { std::lock_guard<std::mutex> lk(live_->m); live_->self = nullptr; }
-    if (!pipeline_) return;
     GstElement* pipeline = pipeline_;
     GstBus* bus = bus_;
     pipeline_ = nullptr;
@@ -137,7 +136,6 @@ void VideoDeck::joinAllTeardowns() {
 }
 
 void VideoDeck::start() {
-    if (!pipeline_) return;
     {
         std::lock_guard<std::mutex> lk(shownMutex_);
         // the preroll shows on the first tick, not after PLAYING renders it,
@@ -150,7 +148,7 @@ void VideoDeck::start() {
 }
 
 bool VideoDeck::failed() {
-    if (failed_ || !bus_) return failed_;
+    if (failed_) return failed_;
     while (GstMessage* m = gst_bus_pop_filtered(bus_, GST_MESSAGE_ERROR)) {
         if (!failed_) {
             GError* err = nullptr;
@@ -217,7 +215,6 @@ void VideoDeck::seekWorker(GstElement* pipeline, gpointer user) {
 }
 
 bool VideoDeck::seekTo(double seconds) {
-    if (!pipeline_) return false;
     std::lock_guard<std::mutex> lk(shownMutex_);
     // A started deck that never showed holds its own preroll through the seek.
     if (!lastShown_.px && appsink_ && started_)
@@ -293,7 +290,7 @@ void VideoDeck::pullInto(double limit) {
 std::optional<VideoFrame> VideoDeck::frameAt(double position) {
     std::unique_lock<std::mutex> lk(shownMutex_);
     if (pendingSeek_ >= 0) {
-        if (!pipeline_ || !canSeek()) return std::nullopt;   // the pre-seek preroll must not show
+        if (!canSeek()) return std::nullopt;   // the pre-seek preroll must not show
         sendSeek(pendingSeek_);
         pendingSeek_ = -1;
     }

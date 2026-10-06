@@ -43,8 +43,6 @@ public:
 
     void bumpGeneration() { ++gen_; std::lock_guard<std::mutex> lk(m_); frames_.clear(); }
     uint64_t generation() const { return gen_.load(); }
-    void clear() { std::lock_guard<std::mutex> lk(m_); frames_.clear(); }
-    std::size_t size() const { std::lock_guard<std::mutex> lk(m_); return frames_.size(); }
 
 private:
     mutable std::mutex m_;

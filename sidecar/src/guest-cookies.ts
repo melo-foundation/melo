@@ -388,9 +388,9 @@ export function youtubeCookies<T extends { domain: string }>(cookies: T[]): T[] 
 }
 
 // Reads a browser's cookie store (live browser mode and new profile from a
-// browser). yt-dlp writes --cookies before it touches the URL, so a refusal on
-// that video exits 1 with the jar already on disk. Only a missing or empty jar
-// is a failure; then the exec error is thrown with its stderr.
+// browser). yt-dlp writes --cookies even when the URL fails; about:blank fails
+// before any request, so nothing is fetched with the browser's identity. Only
+// a missing or empty jar is a failure; then the exec error is thrown with its stderr.
 export async function dumpBrowserCookies(browser: string): Promise<GuestCookie[]> {
   // For the seconds this runs the file is the browser's whole cookie jar in
   // plain text: a 0700 folder with an unguessable name, removed at exit too
@@ -404,7 +404,7 @@ export async function dumpBrowserCookies(browser: string): Promise<GuestCookie[]
         "--cookies", file,
         "--skip-download",
         "--flat-playlist",
-        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "about:blank",
       ], { timeout: 15000 });
     } catch (e) {
       exitError = e;

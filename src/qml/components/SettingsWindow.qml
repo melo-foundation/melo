@@ -1863,6 +1863,13 @@ Window {
                                   if (e) Accounts.applyChoice(e, Settings)
                               } }
                 }
+                SRow {
+                    name: "Playback cookies"
+                    visible: Settings.cookieSource !== "browser"
+                    SSelect { value: Settings.streamCookieSource
+                              options: [{ value: "same", label: "Same" }, { value: "browser", label: "Browser" }]
+                              onPicked: (v) => Settings.streamCookieSource = v }
+                }
                 Item {   // profile management strip
                     visible: Settings.cookieSource === "guest"
                     width: col.width; height: 30

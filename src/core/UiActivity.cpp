@@ -1,7 +1,6 @@
 #include "UiActivity.h"
 #include <QCoreApplication>
 #include <QEvent>
-#include <QGuiApplication>
 #include <QMouseEvent>
 #include <QWindow>
 
@@ -20,7 +19,6 @@ void UiActivity::setIdleAfterMs(int ms) {
     if (ms == timer_.interval()) return;
     timer_.setInterval(ms);
     timer_.start();
-    emit idleAfterMsChanged();
 }
 
 void UiActivity::wake() {

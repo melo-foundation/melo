@@ -16,6 +16,8 @@ class SettingsStore : public QObject {
     // (meloConfigDir() in paths.h)
     Q_PROPERTY(QString dataDir READ dataDir CONSTANT)
     Q_PROPERTY(QString cookieSource READ cookieSource WRITE setCookieSource NOTIFY changed)
+    // "same" | "browser": whose cookies resolve streams
+    Q_PROPERTY(QString streamCookieSource READ streamCookieSource WRITE setStreamCookieSource NOTIFY changed)
     Q_PROPERTY(QString downloadPath READ downloadPath NOTIFY changed)
     Q_PROPERTY(int prefetchPercent READ prefetchPercent WRITE setPrefetchPercent NOTIFY changed)
     Q_PROPERTY(double crossfadeSeconds READ crossfadeSeconds WRITE setCrossfadeSeconds NOTIFY changed)
@@ -44,6 +46,10 @@ public:
     bool loaded() const { return loaded_; }
     QString dataDir() const;
     QString cookieSource() const { return s_["cookieSource"].toString(); }
+    QString streamCookieSource() const {
+        const QString v = s_["streamCookieSource"].toString();
+        return v.isEmpty() ? QStringLiteral("same") : v;
+    }
     QString downloadPath() const { return s_["downloadPath"].toString(); }
     int prefetchPercent() const { return s_["prefetchPercent"].toInt(50); }
     double crossfadeSeconds() const { return s_["crossfadeSeconds"].toDouble(); }
@@ -65,6 +71,7 @@ public:
     }
 
     void setCookieSource(const QString& v) { patch({{"cookieSource", v}}); }
+    void setStreamCookieSource(const QString& v) { patch({{"streamCookieSource", v}}); }
     void setCrossfadeSeconds(double v) { patch({{"crossfadeSeconds", v}}); }
     void setSilenceSkip(bool v) { patch({{"silenceSkip", v}}); }
     void setPrefetchPercent(int v) { patch({{"prefetchPercent", v}}); }

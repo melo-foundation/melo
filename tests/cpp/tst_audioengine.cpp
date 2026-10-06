@@ -426,7 +426,6 @@ private slots:
         QVERIFY(!audio.isEmpty() && !video.isEmpty());
 
         AudioEngine e(queue_);
-        QVERIFY(e.videoPlanar());
         e.setVideoWanted(true);
         e.loadTrack(audio, QStringLiteral("A"));
         e.attachVideo(video, false, QStringLiteral("A"));

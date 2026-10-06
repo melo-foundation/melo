@@ -9,6 +9,7 @@ describe("touchesCookieIdentity", () => {
     expect(touchesCookieIdentity({ cookieSource: "browser" })).toBe(true);
     expect(touchesCookieIdentity({ cookieProfile: "Jazz" })).toBe(true);
     expect(touchesCookieIdentity({ browser: "chromium" })).toBe(true);
+    expect(touchesCookieIdentity({ streamCookieSource: "browser" })).toBe(true);
   });
 
   it("is true when an identity key rides along with unrelated ones", () => {
@@ -38,6 +39,10 @@ describe("defaultSettings", () => {
 
   it("opens new installs on YouTube, not YouTube Music", () => {
     expect(defaultSettings().homeSource).toBe("youtube");
+  });
+
+  it("resolves streams with the main identity", () => {
+    expect(defaultSettings().streamCookieSource).toBe("same");
   });
 
   it("skips silence on new installs", () => {

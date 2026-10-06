@@ -47,9 +47,8 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
         videoPrefetched_ = {};
     });
     connect(engine_, &AudioEngine::videoChanged, this, [this] {
-        const bool ready = engine_->hasVideoFrame();   // drops a failed deck first
+        engine_->dropFailedVideoDecks();
         state_->setHasVideo(engine_->hasVideoDeck());
-        state_->setVideoReady(ready);
     });
     connect(engine_, &AudioEngine::pipelineError, this, [this](const QString& m) {
         state_->setError(m);
@@ -169,7 +168,6 @@ void PlaybackCoordinator::playTrack(const Track& t, int forceCrossfade, PlayInte
     silenceApplied_ = false;
     crossfadeTriggered_ = false;
     currentTrackId_ = t.id;
-    state_->setVideoReady(false);
     state_->setVideoPending(false);
     // a prerolled deck for another track must not become this one's picture
     const bool videoPrefetchedMatches = videoPrefetched_["videoId"].toString() == t.id;
@@ -199,7 +197,6 @@ void PlaybackCoordinator::playTrack(const Track& t, int forceCrossfade, PlayInte
         const QString url = pf["url"].toString();
         if (wantCrossfade) engine_->crossfadeTo(url, cfDur, t.id);
         else engine_->loadTrack(url, t.id);
-        state_->setHasVideo(engine_->hasVideoDeck());
         if (state_->videoWanted() && !engine_->hasVideoDeck()) requestVideo(t, false);
         // pre-seek past leading silence
         if (skipStart_ > 0) { engine_->seekTo(skipStart_, /*cutFade=*/false); silenceApplied_ = true; }
@@ -271,7 +268,6 @@ void PlaybackCoordinator::onStreamResolved(const Track& t, quint64 gen,
     const double cfDur = settings_->crossfadeSeconds();
     if (wantCrossfade) engine_->crossfadeTo(url, cfDur, t.id);   // the deck buffers fast; no preload step
     else engine_->loadTrack(url, t.id);
-    state_->setHasVideo(engine_->hasVideoDeck());
     if (state_->videoWanted() && !engine_->hasVideoDeck()) requestVideo(t, false);
     beginAudio(intent);
     crossfadeHandling_ = false;
@@ -989,7 +985,7 @@ void PlaybackCoordinator::requestVideo(const Track& t, bool incoming) {
     if (t.id.startsWith(QLatin1String("local-"))) return;
     const QString videoId = ytIdOf(t);
     const QString trackId = t.id;
-    if (videoId.isEmpty() || videoId.startsWith(QLatin1String("local-"))) return;
+    if (videoId.isEmpty()) return;
     if (incoming) {
         if (videoPrefetching_ || videoPrefetched_["videoId"].toString() == trackId) return;
         videoPrefetching_ = true;
@@ -1013,19 +1009,16 @@ void PlaybackCoordinator::requestVideo(const Track& t, bool incoming) {
         if (incoming) {
             videoPrefetching_ = false;
             if (!state_->videoWanted() || playGen_ != gen) return;
-            videoPrefetched_ = {{"videoId", trackId}, {"url", o["url"]},
-                                {"still", !o["ok"].toBool() || o["still"].toBool()}};
-            if (!videoPrefetched_["still"].toBool()) engine_->attachVideo(o["url"].toString(), true, trackId);
+            videoPrefetched_ = {{"videoId", trackId}};
+            if (o["ok"].toBool() && !o["still"].toBool()) engine_->attachVideo(o["url"].toString(), true, trackId);
             return;
         }
         if (!state_->videoWanted() || playGen_ != gen || currentTrackId_ != trackId) return;
         if (o["ok"].toBool() && !o["still"].toBool()) engine_->attachVideo(o["url"].toString(), false, trackId);
-        state_->setHasVideo(engine_->hasVideoDeck());
     });
-    connect(c, &RpcCall::failed, this, [this, incoming, gen, seq](int, const QString&) {
+    connect(c, &RpcCall::failed, this, [this, incoming, seq](int, const QString&) {
         if (!incoming && seq == videoRequestSeq_) state_->setVideoPending(false);
         if (incoming) videoPrefetching_ = false;
-        else if (playGen_ == gen) state_->setHasVideo(engine_->hasVideoDeck());
     });
 }
 

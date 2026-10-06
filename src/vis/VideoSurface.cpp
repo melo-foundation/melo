@@ -152,7 +152,7 @@ struct Node : QSGNode {
     Picture main{this};
     QSGOpacityNode* fade = nullptr;
     std::unique_ptr<Picture> incoming;   // lives under `fade`
-    VideoView held;   // the view last drawn; the Pictures pin the frames they show
+    QString heldTrack;   // the track of the view last drawn
 };
 }  // namespace
 
@@ -190,8 +190,7 @@ void VideoSurface::fetch() {
     }
     pending_ = std::move(next);
     const bool has = pending_.main != nullptr;
-    const QSize size = has ? QSize(pending_.main->width, pending_.main->height) : QSize();
-    if (has != hasFrame_ || size != frameSize_) { hasFrame_ = has; frameSize_ = size; emit hasFrameChanged(); }
+    if (has != hasFrame_) { hasFrame_ = has; emit hasFrameChanged(); }
     const bool changed = pending_.main != view_.main || pending_.incoming != view_.incoming
                       || pending_.mix != view_.mix;
     if (changed && isVisible()) update();
@@ -214,7 +213,7 @@ void VideoSurface::setRunning(bool on) {
 void VideoSurface::dropPicture() {
     pending_ = {};
     dropNode_ = true;
-    if (hasFrame_ || !frameSize_.isEmpty()) { hasFrame_ = false; frameSize_ = {}; emit hasFrameChanged(); }
+    if (hasFrame_) { hasFrame_ = false; emit hasFrameChanged(); }
     update();
 }
 
@@ -276,7 +275,7 @@ QSGNode* VideoSurface::updatePaintNode(QSGNode* old, UpdatePaintNodeData*) {
         view_ = {}; setContentRect({});
     }
     // a frozen picture of another track is never held
-    if (node && frozen_ && !pending_.trackId.isEmpty() && pending_.trackId != node->held.trackId) {
+    if (node && frozen_ && !pending_.trackId.isEmpty() && pending_.trackId != node->heldTrack) {
         delete node; node = nullptr;
         view_ = {}; setContentRect({});
     }
@@ -323,7 +322,7 @@ QSGNode* VideoSurface::updatePaintNode(QSGNode* old, UpdatePaintNodeData*) {
         delete node->fade;
         node->fade = nullptr;
     }
-    node->held = pending_;
+    node->heldTrack = pending_.trackId;
     view_ = pending_;
     return node;
 }

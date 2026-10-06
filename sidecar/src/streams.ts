@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "path";
 import vm from "node:vm";
 import type { Innertube } from "youtubei.js";
-import { loadSettings, localePref } from "./settings";
+import { loadSettings, localePref, type CookieSource, type SettingsV2 } from "./settings";
 import { dataDir } from "./env";
 import {
   writeNetscapeCookieFile,
@@ -20,9 +20,9 @@ import { resolveCookies } from "./innertube";
 import { UNPACK_FAILED, unpackFailedMessage } from "./ytdlp-proc";
 import { relayUrl } from "./stream-relay";
 import { looksStale, ytdlp, ytdlpChannel } from "./ytdlp";
-import { notify } from "./rpc";
+import { notify, RpcError } from "./rpc";
 import { mintPoToken, poTokenSession, type PoToken } from "./potoken";
-import { isStillAtHeight, isStillFormat, pickVideoFormat, codecOf, videoCacheKey, type VideoCodec } from "./video-formats";
+import { isStillAtHeight, isStillFormat, pickVideoFormat, videoCacheKey, type VideoCodec } from "./video-formats";
 
 /** True only for googlevideo CDN URLs that 403 a plain GET. */
 export function needsStreamRelay(url: string): boolean {
@@ -51,7 +51,6 @@ function ytdlpHttpHeaders(data: { http_headers?: unknown }): Record<string, stri
 // yt-dlp with `--js-runtimes node` costs ~6s per stream (and ~20s whenever
 // YouTube ships a new player build). youtubei.js deciphers in-process in
 // well under a second; yt-dlp remains the fallback for anything it can't do.
-let itSession: Promise<Innertube> | null = null;
 
 // youtubei.js is external to the bundle (~930KB) and loads lazily inside
 // getSession(). v17 removed its bundled JS interpreter, so a node:vm evaluator
@@ -81,53 +80,119 @@ const FAST_STREAMS = !process.env.MELO_NO_FAST_STREAMS;
 
 export function warmStreamSession(): void {
   if (!FAST_STREAMS) return;
-  getSession().catch(() => { itSession = null; sessionKey = ""; });
+  getSession().catch(() => {});   // the browser's is built on first need
 }
 
-// Session follows the cookie settings (guest profile / browser / none) and is
-// recreated whenever they change — streams must use the same identity yt-dlp
-// would have used.
-let sessionKey = "";
+// One session per identity + locale, recreated whenever the cookie settings change.
+const sessions = new Map<string, Promise<Innertube>>();
 
-/** Drop the session so the next request builds one from the current cookies. */
+type Identity = readonly [CookieSource, string, string];
+
+export function mainIdentity(s: SettingsV2): Identity {
+  return [s.cookieSource, s.browser, s.cookieProfile];
+}
+
+/** The identity Playback cookies names: the browser's when set to Browser,
+ *  else the main one. */
+export function streamIdentity(s: SettingsV2): Identity {
+  return s.streamCookieSource === "browser"
+    ? ["browser", s.browser, s.cookieProfile]
+    : mainIdentity(s);
+}
+
+/** The identities a stream is resolved with, in order: the main one, then
+ *  the stream identity when it differs. */
+export function resolveIdentities(s: SettingsV2): Identity[] {
+  const a = mainIdentity(s), b = streamIdentity(s);
+  return a.join(":") === b.join(":") ? [a] : [a, b];
+}
+
+/** Drop the sessions so the next request builds them from the current cookies. */
 export function resetSession(): void {
-  itSession = null;
-  sessionKey = "";
+  sessions.clear();
+}
+
+// locale is part of the session identity: a stale session would keep serving
+// titles in the previous language after the setting changed
+function keyOf(id: Identity): string {
+  const { hl, gl } = localePref();
+  return `${id.join(":")}:${hl}-${gl}`;
+}
+
+function buildSession([source, browser, profile]: Identity): Promise<Innertube> {
+  return (async () => {
+    const { Innertube, UniversalCache, Platform } = await import("youtubei.js");
+    installEvalShim(Platform);
+    let cookie: string | undefined;
+    try {
+      const cookies = await resolveCookies(source, browser, profile);
+      const yt = cookies.filter(
+        (c) => c.domain.includes("youtube.com") || c.domain.includes(".google.com"));
+      if (yt.length) cookie = yt.map((c) => `${c.name}=${c.value}`).join("; ");
+    } catch { /* anonymous session */ }
+    const pot = await poTokenSession();
+    // Same locale the browse/search module sends. Without it youtubei.js
+    // picks its own default, so a track's title could differ between the
+    // list it was browsed in and the stream that played it.
+    const { hl, gl } = localePref();
+    return Innertube.create({
+      cache: new UniversalCache(true, join(dataDir(), "yjs-cache")),
+      cookie,
+      lang: hl,
+      location: gl,
+      ...(pot ? { po_token: await pot.mint(pot.visitorData), visitor_data: pot.visitorData } : {}),
+    });
+  })();
+}
+
+function getSessionFor(id: Identity): Promise<Innertube> {
+  const key = keyOf(id);
+  let p = sessions.get(key);
+  if (!p) {
+    // only the identities the settings name now are kept
+    const s = loadSettings();
+    const live = new Set([...resolveIdentities(s), mainIdentity(s)].map(keyOf));
+    for (const k of [...sessions.keys()]) if (!live.has(k)) sessions.delete(k);
+    const built = sessionBuilder(id);
+    built.catch(() => { if (sessions.get(key) === built) sessions.delete(key); });
+    sessions.set(key, built);
+    p = built;
+  }
+  return p;
 }
 
 function getSession(): Promise<Innertube> {
-  const s = loadSettings();
-  const { hl, gl } = localePref();
-  // locale is part of the session identity: a stale session would keep serving
-  // titles in the previous language after the setting changed
-  const key = `${s.cookieSource}:${s.browser}:${s.cookieProfile}:${hl}-${gl}`;
-  if (!itSession || key !== sessionKey) {
-    sessionKey = key;
-    itSession = (async () => {
-      const { Innertube, UniversalCache, Platform } = await import("youtubei.js");
-      installEvalShim(Platform);
-      let cookie: string | undefined;
-      try {
-        const cookies = await resolveCookies(s.cookieSource, s.browser, s.cookieProfile);
-        const yt = cookies.filter(
-          (c) => c.domain.includes("youtube.com") || c.domain.includes(".google.com"));
-        if (yt.length) cookie = yt.map((c) => `${c.name}=${c.value}`).join("; ");
-      } catch { /* anonymous session */ }
-      const pot = await poTokenSession();
-      // Same locale the browse/search module sends. Without it youtubei.js
-      // picks its own default, so a track's title could differ between the
-      // list it was browsed in and the stream that played it.
-      const { hl, gl } = localePref();
-      return Innertube.create({
-        cache: new UniversalCache(true, join(dataDir(), "yjs-cache")),
-        cookie,
-        lang: hl,
-        location: gl,
-        ...(pot ? { po_token: await pot.mint(pot.visitorData), visitor_data: pot.visitorData } : {}),
-      });
-    })();
+  return getSessionFor(mainIdentity(loadSettings()));
+}
+
+let sessionBuilder: (id: Identity) => Promise<Innertube> = buildSession;
+/** @internal test seam; null restores the real builder. */
+export function setSessionBuilderForTest(b: ((id: Identity) => Promise<Innertube>) | null): void {
+  sessionBuilder = b ?? buildSession;
+  sessions.clear();
+}
+
+// YTMUSIC reports non-music videos UNPLAYABLE; MWEB plays them.
+const FAST_CLIENTS = ["YTMUSIC", "MWEB"] as const;
+
+async function playableInfo(
+  yt: Innertube, videoId: string, tag: string,
+): Promise<{ info: Awaited<ReturnType<Innertube["getBasicInfo"]>> } | { why: string }> {
+  const why: string[] = [];
+  for (const client of FAST_CLIENTS) {
+    try {
+      const info = await yt.getBasicInfo(videoId, { client });
+      const st = info.playability_status;
+      if (st?.status === "OK") {
+        if (why.length) console.error(`[${tag}] innertube ${why.join(", ")} for ${videoId}; ${client} answered`);
+        return { info };
+      }
+      why.push(`${client} ${st?.status ?? "unknown"}${st?.reason ? ` (${st.reason})` : ""}`);
+    } catch (e) {
+      why.push(`${client} failed: ${String(e).split("\n")[0]}`);
+    }
   }
-  return itSession;
+  return { why: `playability ${why.join(", ")}` };
 }
 
 /** Swap the URL's session-bound `pot=` for one bound to this video. */
@@ -136,21 +201,22 @@ function withVideoPot(url: string, token: string): string {
   return `${stripped}${stripped.includes("?") ? "&" : "?"}pot=${token}`;
 }
 
-async function innertubeStream(videoId: string): Promise<CachedStream | null> {
+async function innertubeStream(
+  videoId: string, id: Identity, declined: { why?: string } = {},
+): Promise<CachedStream | null> {
   // Every `return null` says why. A silent decline here reads downstream as
   // "yt-dlp is broken", with no trace that the fast path gave up.
   const decline = (why: string) => {
     console.error(`[streams] innertube declined ${videoId}: ${why}`);
+    declined.why = why;
     return null;
   };
   const pot = await poTokenSession();
   if (!pot) return decline("no PO token session");   // every URL would be walled
-  const yt = await getSession();
-  const info = await yt.getBasicInfo(videoId, { client: "YTMUSIC" });
-  const status = info.playability_status?.status;
-  if (status !== "OK")
-    return decline(`playability ${status ?? "unknown"}`
-      + (info.playability_status?.reason ? ` (${info.playability_status.reason})` : ""));
+  const yt = await getSessionFor(id);
+  const played = await playableInfo(yt, videoId, "streams");
+  if ("why" in played) return decline(played.why);
+  const info = played.info;
   const fmts = (info.streaming_data?.adaptive_formats ?? [])
     .filter((f: any) => f.has_audio && !f.has_video);
   const pick = fmts.find((f: any) => f.itag === 251)
@@ -626,26 +692,55 @@ async function streamClientArgs(
   return ["--extractor-args", `youtube:${parts.join(";")}`];
 }
 
-export async function cookieArgs(): Promise<string[]> {
-  const s = loadSettings();
-  switch (s.cookieSource) {
+async function cookieArgsFor([source, browser, profile]: Identity): Promise<string[]> {
+  switch (source) {
     case "browser":
-      return ["--cookies-from-browser", s.browser];
+      return ["--cookies-from-browser", browser];
     case "guest":
-      return ["--cookies", await writeNetscapeCookieFile(s.cookieProfile)];
+      return ["--cookies", await writeNetscapeCookieFile(profile)];
     case "none":
       return [];
   }
 }
 
+export async function cookieArgs(): Promise<string[]> {
+  const s = loadSettings();
+  return cookieArgsFor([s.cookieSource, s.browser, s.cookieProfile]);
+}
+
+/** cookieArgs() on the stream identity, for downloads. */
+export async function streamCookieArgs(): Promise<string[]> {
+  return cookieArgsFor(streamIdentity(loadSettings()));
+}
+
+// Only a guest run has cookies to write back.
+function syncCookiesFor([source, , profile]: Identity): void {
+  if (source !== "guest") return;
+  try {
+    const cookies = parseNetscapeCookieFile(cookiesTxtPath(profile));
+    if (cookies.length > 0) mergeGuestCookies(profile, cookies);
+  } catch { /* ignore */ }
+}
+
+// YouTube walls a flagged address with this; other cookies get past it.
+export function isBotWall(reason: string): boolean {
+  return /confirm you.re not a bot/i.test(reason);
+}
+
+const BOT_WALL_MESSAGE = "YouTube is refusing guest playback from this address.";
+
+/** The -32040 error; yt-dlp's own sentence rides in `data` for the log line. */
+function botWallError(reason: string): RpcError {
+  return new RpcError(-32040, BOT_WALL_MESSAGE, { ytdlp: botWallSentence(reason) });
+}
+
+function botWallSentence(reason: string): string {
+  return /[^.]*confirm you.re not a bot[^.]*\.?/i.exec(reason)?.[0].trim() ?? reason;
+}
+
 /** After yt-dlp runs in guest mode, merge any new cookies back into the store. */
 export function syncYtDlpCookies(): void {
-  const s = loadSettings();
-  if (s.cookieSource !== "guest") return;
-  try {
-    const cookies = parseNetscapeCookieFile(cookiesTxtPath(s.cookieProfile));
-    if (cookies.length > 0) mergeGuestCookies(s.cookieProfile, cookies);
-  } catch { /* ignore */ }
+  syncCookiesFor(mainIdentity(loadSettings()));
 }
 
 export interface StreamResult {
@@ -691,14 +786,14 @@ export function invalidateStreamCache(videoId: string): void {
 }
 
 export interface VideoStreamResult {
-  ok: true; videoId: string; url: string; width: number; height: number; fps: number; codec: VideoCodec; still: boolean;
+  ok: true; videoId: string; url: string; still: boolean;
 }
 
 interface CachedVideo {
   videoId: string;
   raw: string;
   headers?: Record<string, string>;
-  width: number; height: number; fps: number; codec: VideoCodec; still: boolean;
+  still: boolean;
   expiresAt: number;
 }
 // Keyed per video and cap: a 720p entry must not answer a 1080p request.
@@ -715,7 +810,7 @@ export function videoCacheHas(videoId: string, maxHeight: number): boolean {
 }
 export function primeVideoCacheForTest(videoId: string, maxHeight: number, raw: string): void {
   videoCache.set(videoCacheKey(videoId, maxHeight), {
-    videoId, raw, width: 0, height: 0, fps: 0, codec: "vp9", still: false, expiresAt: cacheExpiryMs(raw),
+    videoId, raw, still: false, expiresAt: cacheExpiryMs(raw),
   });
 }
 export function streamCacheHas(videoId: string): boolean { return streamCache.has(videoId); }
@@ -731,7 +826,7 @@ async function toVideoResult(c: CachedVideo): Promise<VideoStreamResult> {
     url: needsStreamRelay(c.raw)
       ? await relayUrl(c.raw, c.headers, () => invalidateVideoCache(c.videoId))
       : c.raw,
-    width: c.width, height: c.height, fps: c.fps, codec: c.codec, still: c.still,
+    still: c.still,
   };
 }
 
@@ -778,7 +873,31 @@ async function tailIsReadable(raw: string, headers?: Record<string, string>): Pr
   }
 }
 
-export async function runYtdlpStream(videoId: string): Promise<StreamResult> {
+// A wall, a walled URL or a 403 can pass under other cookies; "unavailable",
+// "private" or a missing format cannot.
+function identitySensitive(reason: string): boolean {
+  return isBotWall(reason) || /walled|not fully readable|\b403\b/i.test(reason);
+}
+
+// Failures no identity changes.
+function isTerminal(reason: string): boolean {
+  return !isBotWall(reason) && /unavailable|not available|private video|confirm your age|age[- ]restricted|inappropriate for some users|in your country|region|members[- ]only|no (audio|video)[- ]only format|no video-only format|removed|copyright|terminated/i.test(reason);
+}
+
+/** Under the browser's cookies anything but a terminal reason can pass under
+ *  the next identity: an unreadable cookie store fails every client. */
+function failsWithIdentity(id: Identity, reason: string): boolean {
+  return identitySensitive(reason) || (id[0] === "browser" && !isTerminal(reason));
+}
+
+/** Every client failed. `identity`: another identity could pass. */
+export class ResolveFailed extends Error {
+  constructor(message: string, readonly stderr: string, readonly identity: boolean) {
+    super(message);
+  }
+}
+
+export async function runYtdlpStream(videoId: string, id: Identity): Promise<StreamResult> {
   const hit = streamCache.get(videoId);
   if (hit && Date.now() < hit.expiresAt) {
     console.error(`[streams] cache hit for ${videoId}`);
@@ -786,33 +905,39 @@ export async function runYtdlpStream(videoId: string): Promise<StreamResult> {
   }
   if (hit) streamCache.delete(videoId);
 
-  const cookies = await cookieArgs();
+  const cookies = await cookieArgsFor(id);
   const haveIdentity = cookiesCarryIdentity(cookies);
   const pot = await mintPoToken(videoId);
 
   // Tried in order, not raced: racing cost ~770ms on every cold music resolve
   // to save ~3.3s on rare non-music videos, and web_embedded resolves music
   // to a URL delivering 0 bytes, so it must never beat web_music.
-  let lastErr: unknown;
+  let lastRaw = "";
+  let wallReason = "";
+  let identity = false;
   for (const client of STREAM_CLIENTS) {
     try {
       const resolved = await resolveWithClient(videoId, client, cookies, haveIdentity, pot);
       if (needsStreamRelay(resolved.raw) && !(await tailIsReadable(resolved.raw, resolved.headers))) {
         console.error(`[streams] ${client ?? "default"} returned a walled URL for ${videoId} — trying next`);
-        lastErr = new Error(`${client} URL is not fully readable`);
+        lastRaw = `${client ?? "default"} URL is not fully readable`;
+        identity = true;
         continue;
       }
       streamCache.set(videoId, resolved);
       // cookie writeback is not something the player is waiting on
-      setImmediate(syncYtDlpCookies);
+      setImmediate(() => syncCookiesFor(id));
       return toStreamResult(resolved);
     } catch (err) {
-      lastErr = err;
-      const msg = ytdlpReason(String((err as { stderr?: string })?.stderr || err));
+      lastRaw = String((err as { stderr?: string })?.stderr || err);
+      const msg = ytdlpReason(lastRaw);
+      if (isBotWall(msg) && !wallReason) wallReason = msg;
+      if (failsWithIdentity(id, msg)) identity = true;
       console.error(`[streams] ${client ?? "default"} failed for ${videoId}: ${msg}`);
     }
   }
-  throw lastErr;
+  if (wallReason) throw botWallError(wallReason);
+  throw new ResolveFailed(ytdlpReason(lastRaw), lastRaw, identity);
 }
 
 // yt-dlp's reason, without its "ERROR: [youtube] id: " prefix. stderr can open
@@ -838,73 +963,97 @@ function maybeReportStale(message: string): void {
 }
 
 export async function fetchStreamUrl(videoId: string): Promise<StreamResult | StreamError> {
-  try {
-    // Local-first: downloaded library tracks play from disk.
-    const localUrl = getDownloadedUrl(videoId);
-    if (localUrl) {
-      const meta = getTrackMetadata(videoId);
-      return {
-        ok: true,
-        url: localUrl,
-        title: meta?.title || "",
-        channel: meta?.channel || "",
-        duration: meta?.duration || 0,
-        thumbnail: meta?.thumbnail || "",
-      };
-    }
-    // Cache covers BOTH resolvers, so a prefetch or replay skips them entirely.
-    const hit = streamCache.get(videoId);
-    if (hit && Date.now() < hit.expiresAt) {
-      console.error(`[streams] cache hit for ${videoId}`);
-      return toStreamResult(hit);
-    }
-    if (FAST_STREAMS) {
-      const tf = Date.now();
-      try {
-        const fast = await innertubeStream(videoId);
-        if (fast) {
-          streamCache.set(videoId, fast);
-          console.error(`[streams] innertube resolved ${videoId} in ${Date.now() - tf}ms`);
-          return toStreamResult(fast);
-        }
-      } catch (e) {
-        console.error(`[streams] innertube failed: ${String(e).split("\n")[0]}`);
-      }
-    }
-    const t0 = Date.now();
-    const res = await runYtdlpStream(videoId);
-    console.error(`[streams] yt-dlp resolved ${videoId} in ${Date.now() - t0}ms`);
-    return res;
-  } catch (err: any) {
-    const msg = err?.stderr || String(err);
-    if (/name resolution|timed? ?out|temporarily unavailable|network/i.test(msg)) {
-      try {
-        return await runYtdlpStream(videoId);   // one retry on transient network errors
-      } catch (retryErr: any) {
-        const retryMsg = retryErr?.stderr || String(retryErr);
-        const clean = ytdlpReason(retryMsg);
-        return { ok: false, error: clean || "Network error" };
-      }
-    }
-    const clean = ytdlpReason(msg);
-    maybeReportStale(msg);
-    return { ok: false, error: clean || "Failed to get stream" };
+  // Local-first: downloaded library tracks play from disk.
+  const localUrl = getDownloadedUrl(videoId);
+  if (localUrl) {
+    const meta = getTrackMetadata(videoId);
+    return {
+      ok: true,
+      url: localUrl,
+      title: meta?.title || "",
+      channel: meta?.channel || "",
+      duration: meta?.duration || 0,
+      thumbnail: meta?.thumbnail || "",
+    };
   }
+  // Cache covers BOTH resolvers, so a prefetch or replay skips them entirely.
+  const hit = streamCache.get(videoId);
+  if (hit && Date.now() < hit.expiresAt) {
+    console.error(`[streams] cache hit for ${videoId}`);
+    return toStreamResult(hit);
+  }
+  // On a walled address the identities pass different videos, so the next one
+  // is tried only when this one's failure is one cookies can change.
+  const isNetwork = (raw: string) => /name resolution|timed? ?out|temporarily unavailable|network/i.test(raw);
+  const rawOf = (e: any) => String(e?.stderr || e);
+  let wall: RpcError | null = null;
+  let lastMsg = "";
+  for (const id of resolveIdentities(loadSettings())) {
+    const declined: { why?: string } = {};
+    const noteWall = (e: RpcError) => {
+      const ytdlpSaid = (e.data as { ytdlp?: string } | undefined)?.ytdlp ?? e.message;
+      console.error(`[streams] innertube declined: ${declined.why ?? "not tried"}; yt-dlp: ${ytdlpSaid} (${id[0]})`);
+      wall = e;
+    };
+    try {
+      if (FAST_STREAMS) {
+        const tf = Date.now();
+        try {
+          const fast = await innertubeStream(videoId, id, declined);
+          if (fast) {
+            streamCache.set(videoId, fast);
+            console.error(`[streams] innertube resolved ${videoId} in ${Date.now() - tf}ms (${id[0]})`);
+            return toStreamResult(fast);
+          }
+        } catch (e) {
+          declined.why = String(e).split("\n")[0];
+          console.error(`[streams] innertube failed: ${declined.why}`);
+        }
+      }
+      const t0 = Date.now();
+      const res = await runYtdlpStream(videoId, id);
+      console.error(`[streams] yt-dlp resolved ${videoId} in ${Date.now() - t0}ms (${id[0]})`);
+      return res;
+    } catch (err: any) {
+      let e = err;
+      if (!(e instanceof RpcError) && isNetwork(rawOf(e))) {
+        try {
+          return await runYtdlpStream(videoId, id);   // one retry on transient network errors
+        } catch (retryErr: any) {
+          e = retryErr;
+          // a dead network fails every identity the same way
+          if (!(e instanceof RpcError) && isNetwork(rawOf(e)))
+            return { ok: false, error: ytdlpReason(rawOf(e)) || "Network error" };
+        }
+      }
+      if (e instanceof RpcError) { noteWall(e); continue; }
+      lastMsg = rawOf(e);
+      const cookiesMatter = (e instanceof ResolveFailed ? e.identity : failsWithIdentity(id, ytdlpReason(lastMsg)))
+        || identitySensitive(declined.why ?? "");
+      if (!cookiesMatter) break;
+    }
+  }
+  // a thrown RpcError reaches the player with its code
+  if (wall) throw wall;
+  maybeReportStale(lastMsg);
+  return { ok: false, error: ytdlpReason(lastMsg) || "Failed to get stream" };
 }
 
 async function innertubeVideo(
-  videoId: string, maxHeight: number, codecs: VideoCodec[],
+  videoId: string, maxHeight: number, codecs: VideoCodec[], id: Identity,
+  declined: { why?: string } = {},
 ): Promise<CachedVideo | null> {
   const decline = (why: string) => {
     console.error(`[video] innertube declined ${videoId}: ${why}`);
+    declined.why = why;
     return null;
   };
   const pot = await poTokenSession();
   if (!pot) return decline("no PO token session");
-  const yt = await getSession();
-  const info = await yt.getBasicInfo(videoId, { client: "YTMUSIC" });
-  if (info.playability_status?.status !== "OK")
-    return decline(`playability ${info.playability_status?.status ?? "unknown"}`);
+  const yt = await getSessionFor(id);
+  const played = await playableInfo(yt, videoId, "video");
+  if ("why" in played) return decline(played.why);
+  const info = played.info;
   const formats = (info.streaming_data?.adaptive_formats ?? []) as any[];
   const pick = pickVideoFormat(formats, maxHeight, codecs);
   if (!pick) return decline("no video-only format under the cap");
@@ -915,16 +1064,16 @@ async function innertubeVideo(
   if (!(await tailIsReadable(url))) return decline("url walled");
   return {
     videoId, raw: url, headers: undefined,
-    width: pick.width ?? 0, height: pick.height ?? 0, fps: pick.fps ?? 0,
-    codec: codecOf(pick.mime_type)!, still: isStillAtHeight(formats, pick.height ?? 0),
+    still: isStillAtHeight(formats, pick.height ?? 0),
     expiresAt: cacheExpiryMs(url),
   };
 }
 
 async function ytdlpVideo(
-  videoId: string, maxHeight: number, codecs: VideoCodec[],
+  videoId: string, maxHeight: number, codecs: VideoCodec[], id: Identity,
+  last: { reason?: string; identity?: boolean; wall?: string } = {},
 ): Promise<CachedVideo | null> {
-  const cookies = await cookieArgs();
+  const cookies = await cookieArgsFor(id);
   const haveIdentity = cookiesCarryIdentity(cookies);
   const pot = await mintPoToken(videoId);
   const format = codecs
@@ -935,24 +1084,25 @@ async function ytdlpVideo(
       const { stdout } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
         ...YTDLP_COMMON,
         "-f", format,
-        "-O", "%(.{url,http_headers,width,height,fps,vcodec,vbr,tbr})j",
+        "-O", "%(.{url,http_headers,width,height,vbr,tbr})j",
         `https://www.youtube.com/watch?v=${videoId}`],
         { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
       const data = JSON.parse(stdout);
       const raw = typeof data.url === "string" ? data.url : "";
       if (!raw) continue;
       const headers = ytdlpHttpHeaders(data);
-      if (!(await tailIsReadable(raw, headers))) continue;
-      const codec = codecOf(`codecs="${String(data.vcodec ?? "")}"`) ?? "vp9";
+      if (!(await tailIsReadable(raw, headers))) { last.identity = true; continue; }
       const kbps = Number(data.vbr ?? data.tbr ?? 0);
       return {
         videoId, raw, headers,
-        width: Number(data.width ?? 0), height: Number(data.height ?? 0), fps: Number(data.fps ?? 0),
-        codec, still: isStillFormat({ width: data.width, height: data.height, bitrate: kbps * 1000 }),
+        still: isStillFormat({ width: data.width, height: data.height, bitrate: kbps * 1000 }),
         expiresAt: cacheExpiryMs(raw),
       };
     } catch (e: any) {
-      console.error(`[video] yt-dlp ${client ?? "default"} failed: ${ytdlpReason(e?.stderr || String(e))}`);
+      last.reason = ytdlpReason(e?.stderr || String(e));
+      if (failsWithIdentity(id, last.reason)) last.identity = true;
+      if (isBotWall(last.reason)) last.wall ??= last.reason;
+      console.error(`[video] yt-dlp ${client ?? "default"} failed: ${last.reason}`);
     }
   }
   return null;
@@ -966,15 +1116,31 @@ export async function fetchVideoStreamUrl(
   if (hit && Date.now() < hit.expiresAt) return toVideoResult(hit);
   try {
     let found: CachedVideo | null = null;
-    if (FAST_STREAMS) {
-      try { found = await innertubeVideo(videoId, maxHeight, codecs); }
-      catch (e) { console.error(`[video] innertube failed: ${String(e).split("\n")[0]}`); }
+    let wall: RpcError | null = null;
+    for (const id of resolveIdentities(loadSettings())) {
+      const declined: { why?: string } = {};
+      const last: { reason?: string; identity?: boolean; wall?: string } = {};
+      if (FAST_STREAMS) {
+        try { found = await innertubeVideo(videoId, maxHeight, codecs, id, declined); }
+        catch (e) {
+          declined.why = String(e).split("\n")[0];
+          console.error(`[video] innertube failed: ${declined.why}`);
+        }
+      }
+      if (!found) found = await ytdlpVideo(videoId, maxHeight, codecs, id, last);
+      if (found) break;
+      if (last.wall) {
+        console.error(`[video] innertube declined: ${declined.why ?? "not tried"}; yt-dlp: ${botWallSentence(last.wall)} (${id[0]})`);
+        wall = botWallError(last.wall);
+      }
+      if (!last.identity && !identitySensitive(declined.why ?? "")) break;
     }
-    if (!found) found = await ytdlpVideo(videoId, maxHeight, codecs);
+    if (!found && wall) throw wall;
     if (!found) return { ok: false, error: "No video for this track" };
     videoCache.set(key, found);
     return toVideoResult(found);
   } catch (err: any) {
+    if (err instanceof RpcError) throw err;
     return { ok: false, error: ytdlpReason(err?.stderr || String(err)) || "Failed to get video" };
   }
 }

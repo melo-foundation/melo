@@ -78,22 +78,20 @@ public:
     // ---- video: decks are made only while a surface wants them --------------
     void setVideoWanted(bool on);   // false keeps the decks until dropVideoDecksIfUnwanted()
     void dropVideoDecksIfUnwanted();
-    bool videoWanted() const { return videoWanted_; }
     QStringList videoCodecs() const { return videoCodecs_; }
     // Decks hand over NV12/I420 by default; false asks videoconvert
     // for RGBA, for a build without the planar material.
     void setVideoPlanar(bool on) { videoPlanar_ = on; }
-    bool videoPlanar() const { return videoPlanar_; }
     // incoming = prerolled for the next track; trackId empty = unknown, binds to whatever plays
     void attachVideo(const QString& url, bool incoming, const QString& trackId);
     void discardPendingVideo();
     void dropVideoDecks();
     bool hasVideoDeck() const;
-    bool hasVideoFrame();   // drops a failed deck, hence not const
+    void dropFailedVideoDecks();
     double fadeProgress() const { return fadeTimer_.isActive() || fadeFrozen_ ? std::min(fadePos_, 1.0) : 0.0; }
     VideoView videoView() override;
-    // What is heard trails the mixer by the audio queue, the sink buffer and the
-    // device: frames are picked that much earlier (120 ms on pulsesink).
+    // What is heard trails the mixer by the audio queue and the sink buffer:
+    // frames are picked that much earlier (120 ms on pulsesink).
     double outputLatencySeconds() const;
     // Hidden ui key videoSyncMs; positive shows the picture later.
     void setVideoSyncMs(int ms) { videoSyncMs_ = ms; }
@@ -140,7 +138,6 @@ private:
     double balance_ = 0.0;
 
     std::unique_ptr<VideoDeck> makeVideoDeck(const QString& url);
-    void dropFailedVideoDecks();
     std::unique_ptr<VideoDeck> videoCurrent_;    // bound to current_
     std::unique_ptr<VideoDeck> videoIncoming_;   // bound to incoming_
     std::unique_ptr<VideoDeck> videoPending_;    // prerolled, bound by the next loadTrack/crossfadeTo
@@ -154,7 +151,7 @@ private:
     bool videoWanted_ = false;
     bool videoPlanar_ = true;
     QStringList videoCodecs_;
-    struct OutputLead { double queue = 0, sink = 0, device = 0; };   // seconds
+    struct OutputLead { double queue = 0, sink = 0; };   // seconds
     OutputLead outputLeadParts() const;
     void logOutputLeadOnce();
     GstElement* audioQueue_  = nullptr;

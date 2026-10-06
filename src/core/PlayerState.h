@@ -29,7 +29,6 @@ class PlayerState : public QObject {
     Q_PROPERTY(bool showPanel READ showPanel WRITE setShowPanel NOTIFY showPanelChanged)
     Q_PROPERTY(bool videoWanted READ videoWanted WRITE setVideoWanted NOTIFY videoWantedChanged)
     Q_PROPERTY(bool hasVideo READ hasVideo NOTIFY hasVideoChanged)
-    Q_PROPERTY(bool videoReady READ videoReady NOTIFY videoReadyChanged)
     Q_PROPERTY(bool videoPending READ videoPending NOTIFY videoPendingChanged)   // a current-track request is out
     Q_PROPERTY(bool videoSupported READ videoSupported NOTIFY videoSupportedChanged)
     Q_PROPERTY(int panelMode READ panelMode WRITE setPanelMode NOTIFY panelModeChanged)
@@ -78,7 +77,6 @@ public:
     bool showPanel() const { return showPanel_; }
     bool videoWanted() const { return videoWanted_; }
     bool hasVideo() const { return hasVideo_; }
-    bool videoReady() const { return videoReady_; }
     bool videoPending() const { return videoPending_; }
     bool videoSupported() const { return videoSupported_; }
     int panelMode() const { return panelMode_; }
@@ -88,6 +86,7 @@ public:
         if (error_.isEmpty()) return {};
         if (errorCode_ == -32010) return QStringLiteral("signin");
         if (errorCode_ == -32020 || errorCode_ == -32030) return QStringLiteral("retry");
+        if (errorCode_ == -32040) return QStringLiteral("playbackCookies");
         return {};
     }
 
@@ -121,7 +120,6 @@ public:
     void setShowPanel(bool v) { if (v != showPanel_) { showPanel_ = v; emit showPanelChanged(); } }
     void setVideoWanted(bool v) { if (v != videoWanted_) { videoWanted_ = v; emit videoWantedChanged(); } }
     void setHasVideo(bool v) { if (v != hasVideo_) { hasVideo_ = v; emit hasVideoChanged(); } }
-    void setVideoReady(bool v) { if (v != videoReady_) { videoReady_ = v; emit videoReadyChanged(); } }
     void setVideoPending(bool v) { if (v != videoPending_) { videoPending_ = v; emit videoPendingChanged(); } }
     void setVideoSupported(bool v) { if (v != videoSupported_) { videoSupported_ = v; emit videoSupportedChanged(); } }
     void setPanelMode(int v) { if (v != panelMode_) { panelMode_ = v; emit panelModeChanged(); } }
@@ -147,7 +145,6 @@ signals:
     void showPanelChanged();
     void videoWantedChanged();
     void hasVideoChanged();
-    void videoReadyChanged();
     void videoPendingChanged();
     void videoSupportedChanged();
     void panelModeChanged();
@@ -168,7 +165,7 @@ private:
     bool radioActive_ = false;
     int view_ = Home;
     bool showPanel_ = false;
-    bool videoWanted_ = false, hasVideo_ = false, videoReady_ = false, videoSupported_ = false;
+    bool videoWanted_ = false, hasVideo_ = false, videoSupported_ = false;
     bool videoPending_ = false;
     int panelMode_ = Suggestions;
     QString error_;

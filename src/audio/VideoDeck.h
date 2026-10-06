@@ -28,7 +28,6 @@ public:
     bool hasFrame() const { return sawSample_.load(); }
     void onFirstFrame(std::function<void()> cb);   // runs now if the first frame already came
     bool failed();                                 // sticky once the pipeline posts an error
-    uint64_t generation() const { return ring_.generation(); }
 
     static void joinAllTeardowns();
 
