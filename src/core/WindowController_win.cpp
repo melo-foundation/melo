@@ -28,7 +28,8 @@ bool WindowController::blurAvailable() const { return false; }
 bool WindowController::contrastAvailable() const { return false; }
 void WindowController::setInputRegion(QQuickWindow*, int, int, int, int) {}
 bool WindowController::alignForCollapse(int) { return false; }
-bool WindowController::alignForExpand(int, int) { return false; }
+bool WindowController::alignForExpand(int, int, int) { return false; }
+bool WindowController::fitPopupHost(const QString&) { return false; }
 bool WindowController::setWindowOpacities(const QVariantList&) { return false; }
 // false: the caller's own QWindow::setPosition already performed the move on
 // this platform (only Wayland needs the compositor to do it).

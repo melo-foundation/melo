@@ -157,6 +157,8 @@ WindowController::WindowController(QObject* parent) : QObject(parent) {
             this, &WindowController::interactiveMoveStarted);
     connect(geoReceiver_, &GeometryReceiver::windowReported,
             this, &WindowController::windowGeometry);
+    connect(geoReceiver_, &GeometryReceiver::popupCursorReported,
+            this, &WindowController::popupCursor);
 }
 
 // KWin's script registry is session-global and keyed by plugin name, not path.
@@ -412,19 +414,42 @@ bool WindowController::alignForCollapse(int barHeight) {
         "}\n").arg(barHeight));
 }
 
-bool WindowController::alignForExpand(int barHeight, int width) {
+bool WindowController::alignForExpand(int barHeight, int width, int height) {
     if (!kwinAvailable_) return false;
     // Whose width wins: the caller's, since QML may have just set a width
     // the compositor has not seen, and g.width would write the mini bar's
     // width back over it.
     const QString w = width > 0 ? QString::number(width) + QStringLiteral(" * k")
                                 : QStringLiteral("g.width");
+    const QString h = height > 0 ? QString::number(height) + QStringLiteral(" * k")
+                                 : QStringLiteral("g.height");
     return runKwinScript(findWindowsPrelude() + QStringLiteral(
         "if (main && mini) {\n"
         "  const m = mini.frameGeometry;\n"
         "  const g = main.frameGeometry;\n"
-        "  main.frameGeometry = { x: m.x, y: m.y + %1 * k - g.height, width: %2, height: g.height };\n"
-        "}\n").arg(QString::number(barHeight), w));
+        "  const h = %3;\n"
+        "  main.frameGeometry = { x: m.x, y: m.y + %1 * k - h, width: %2, height: h };\n"
+        "}\n").arg(QString::number(barHeight), w, h));
+}
+
+// The popup host's rectangle for a side, shared with the glue script.
+static QString popupHostJs() {
+    return QStringLiteral(
+        "function hostRect(side) {\n"
+        "  const m = mini.frameGeometry;\n"
+        "  const a = workspace.clientArea(KWin.MaximizeArea, mini);\n"
+        "  const top = Math.min(a.y, m.y), foot = m.y + m.height;\n"
+        "  let x = m.x, w = m.width;\n"
+        "  if (side === \"left\") { x = Math.min(a.x, m.x); w = m.x + m.width - x; }\n"
+        "  else if (side === \"right\") { w = Math.max(a.x + a.width, m.x + m.width) - m.x; }\n"
+        "  return { x: x, y: top, width: w, height: foot - top };\n"
+        "}\n");
+}
+
+bool WindowController::fitPopupHost(const QString& side) {
+    if (!kwinAvailable_) return false;
+    return runKwinScript(findWindowsPrelude() + popupHostJs() + QStringLiteral(
+        "if (main && mini) main.frameGeometry = hostRect(\"%1\");\n").arg(side));
 }
 
 // N-window opacity in one script execution. Not findWindowsPrelude(), which
@@ -569,21 +594,36 @@ bool WindowController::setMiniQueueGlue(bool on) {
     glueScriptName_ = kwinScriptName(glueScriptPath_);
     QFile f(glueScriptPath_);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
-    f.write((findWindowsPrelude() + QStringLiteral(
+    // Keeps main's foot on the bar's through moves and resizes. A host melo widened
+    // for a drag (fitPopupHost) stays put until the drag ends: the popup in it is
+    // drawn against the bar's fixed side, from the bar's own width.
+    f.write((findWindowsPrelude() + popupHostJs() + QStringLiteral(
         "function glue() {\n"
         "  if (!mini || !main) return;\n"
-        "  if (mini.resize) return;   // never reposition per resize frame\n"
         "  const m = mini.frameGeometry;\n"
         "  const g = main.frameGeometry;\n"
+        "  if (mini.resize && g.width > m.width + 1) return;\n"
         "  const nx = m.x, ny = m.y + m.height - g.height;\n"
         "  if (g.x === nx && g.y === ny) return;   // skip no-op moves\n"
         "  main.frameGeometry = { x: nx, y: ny, width: g.width, height: g.height };\n"
         "}\n"
+        "function settle() { if (mini && main) main.frameGeometry = hostRect(\"\"); }\n"
+        // KWin holds the pointer through the bar's resize, so a popup corner's
+        // height comes from here: the cursor over the bar's top, once per pixel.
+        "let lastAbove = null;\n"
+        "function cursorAbove() {\n"
+        "  if (!mini || !mini.resize) { lastAbove = null; return; }\n"
+        "  const above = Math.round((mini.frameGeometry.y - workspace.cursorPos.y) / k);\n"
+        "  if (above === lastAbove) return;\n"
+        "  lastAbove = above;\n"
+        "  callDBus(\"%1\", \"/melo/geometry\", \"com.melo.Geometry\", \"ReportPopupCursor\", String(above));\n"
+        "}\n"
         "if (mini && main) {\n"
         "  glue();\n"
         "  mini.frameGeometryChanged.connect(glue);\n"
-        "  mini.interactiveMoveResizeFinished.connect(glue);   // settle after resize\n"
-        "}\n")).toUtf8());
+        "  mini.interactiveMoveResizeFinished.connect(settle);   // the bar's span again, as tall as fits\n"
+        "  workspace.cursorPosChanged.connect(cursorAbove);\n"
+        "}\n").arg(geoService_)).toUtf8());
     f.close();
 
     QDBusReply<int> id = scripting.call("loadScript", glueScriptPath_, glueScriptName_);

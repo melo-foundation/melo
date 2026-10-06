@@ -55,11 +55,20 @@ public slots:
         for (const bool b : ok) if (!b) return;
         emit windowReported(caption, int(v[0]), int(v[1]), int(v[2]), int(v[3]));
     }
+    // The cursor's height over the bar's top, in logical px, while the bar is
+    // being resized with the popup open: the popup's corners resize the bar and
+    // the popup at once, and KWin holds the pointer.
+    void ReportPopupCursor(const QString& above) {
+        bool ok = false;
+        const double v = above.toDouble(&ok);
+        if (ok) emit popupCursorReported(int(v));
+    }
 signals:
     void reported(int x, int y, int w, int h, bool cursorInside);
     void resizeStarted();
     void moveStarted();
     void windowReported(const QString& caption, int x, int y, int w, int h);
+    void popupCursorReported(int above);
 };
 #endif
 
@@ -160,7 +169,14 @@ public:
     // the compositor currently has. QML sets the width and then asks for this
     // in the same turn, and the compositor has not seen that set yet — reading
     // g.width there re-applies the width it is being told to replace.
-    Q_INVOKABLE bool alignForExpand(int barHeight, int width = 0);
+    // `height` > 0 also sets main's height (back to the full player's after a popup).
+    Q_INVOKABLE bool alignForExpand(int barHeight, int width = 0, int height = 0);
+    // The popup's host: "melo" over the bar's span and as tall as the work area
+    // above the bar's foot, so the popup can reach the top of the screen. "left" or
+    // "right" also widens it to the work area's edge on that side, before a drag
+    // from that side; the glue leaves a widened host alone until the drag ends and
+    // then fits it back. One configure, so position and size land with one frame.
+    Q_INVOKABLE bool fitPopupHost(const QString& side);
     // Set the compositor opacity of several windows ({ "title", "opacity" }
     // maps) in one KWin script run so they change in the same composite; a
     // client-side swap leaves a 1-frame gap or double. Unlisted captions are
@@ -253,6 +269,8 @@ signals:
     void contrastAvailableChanged();
     void pinModeChanged();
     void mainGeometry(int x, int y, int w, int h, bool cursorInside);
+    // the cursor's height above the bar during a bar resize with the popup open
+    void popupCursor(int above);
     // interactive move/resize started on a melo window (KWin watcher);
     // mainGeometry marks the end
     void interactiveStarted();

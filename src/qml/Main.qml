@@ -526,7 +526,7 @@ Window {
         // expand aligns main here (its width settled over the last 50ms)
         if (miniPlayer) {
             miniVisWanted = false
-            WindowCtl.alignForExpand(root.barH, Math.round(root.width))
+            WindowCtl.alignForExpand(root.barH, Math.round(root.width), Math.round(root.lastFullHeight))
         }
         // Who is behind the flip now, set before the state that moves both
         // bars: the one being revealed plays the change, the one going dark
@@ -631,6 +631,15 @@ Window {
     onVideoWantedChanged: PlayerState.videoWanted = videoWanted
     // the popup renders inside MAIN, so main must be at least as wide as
     // the bar; asserted at cheap moments (popup open, bar-resize end)
+    // A bar resize with the popup open widens its host to that side first; the popup
+    // keeps to the bar's right edge through a drag from the left. Cleared once the
+    // host is the bar's width again, where both placements are the same.
+    property bool popupAnchorRight: false
+    function beginPopupResize(edges) {
+        if (!miniQueueShown) return
+        popupAnchorRight = (edges & Qt.LeftEdge) !== 0
+        WindowCtl.fitPopupHost(popupAnchorRight ? "left" : "right")
+    }
     function ensureMainWideEnough() {
         if (miniPlayer && width < miniWin.width) width = miniWin.width
     }
@@ -640,7 +649,7 @@ Window {
                      && (PlayerState.showPanel || miniVisWanted)
         if (want) ensureMainWideEnough()
         if (want && !miniQueueShown) {
-            WindowCtl.alignForExpand(root.barH, Math.round(root.width))           // blocking; invisible while it happens
+            WindowCtl.fitPopupHost("")             // blocking; invisible while it happens
             WindowCtl.setMiniQueueGlue(true)       // follow bar drags
         } else if (!want && miniQueueShown) {
             WindowCtl.setMiniQueueGlue(false)
@@ -655,7 +664,7 @@ Window {
         } else if (!miniPlayer) {
             WindowCtl.setInputEnabled(root, true)
         } else if (miniQueueShown) {
-            WindowCtl.setInputRegion(root, 0, miniQueueOverlay.y,
+            WindowCtl.setInputRegion(root, miniQueueOverlay.x, miniQueueOverlay.y,
                                      miniQueueOverlay.width, miniQueueOverlay.height)
         } else {
             WindowCtl.setInputEnabled(root, false)
@@ -673,6 +682,7 @@ Window {
     // interactive side-drag makes the main window's resize stutter.
     onWidthChanged: {
         if (resizeFreeze) resizeFreezeSafety.restart()   // see onHeightChanged
+        if (popupAnchorRight && !resizeFreeze && Math.abs(width - miniWin.width) < 1) popupAnchorRight = false
         // MELO_GEOM_DEBUG=1 traces every width the main window takes and what
         // state it was in
         if (MELO_GEOM_DEBUG)
@@ -847,8 +857,12 @@ Window {
         enabled: root.miniQueueShown
         onActivated: { PlayerState.showPanel = false; root.miniVisWanted = false }
     }
-    // popup height is user-resizable (top-edge drag) and persisted
+    // popup height is user-resizable (top edge and top corners) and persisted
     property int miniPanelH: 400
+    // A popup corner drag: the bar's width through KWin's resize, the popup's
+    // height from KWin's cursor reports, less where in the corner it was grabbed.
+    property bool popupCornerDrag: false
+    property real popupCornerGrab: NaN
     Timer {
         id: panelHSaveTimer
         interval: 800
@@ -859,12 +873,14 @@ Window {
         visible: root.miniQueueShown
         // the popup fades with the bar (shared mini hover state)
         opacity: root.miniPlayer ? root.miniHoverFade : 1
-        anchors.left: parent.left
+        // under the bar: from main's left, or through a drag from the left, from its
+        // right, where the bar's fixed edge is (see fitPopupHost)
+        x: root.popupAnchorRight ? root.width - width : 0
         // width follows the BAR live — but ONLY while shown: a hidden overlay tracking the bar per drag
         // frame re-layouts its ListView, and the polish request schedules
         // real (empty) frames on main — sibling chatter during the resize
         width: !root.miniQueueShown ? 400
-             : root.miniPlayer ? (root.miniLeftResizeHold ? root.miniBarWFrozen : miniWin.width)
+             : root.miniPlayer ? miniWin.width
              : root.width
         // a SEPARATE rounded card: a small gap above the bar (only when the
         // corners are rounded — squared themes stay flush/continuous)
@@ -883,12 +899,13 @@ Window {
                 if (MELO_GEOM_DEBUG)
                     console.warn("[geom] blur region y=" + Math.round(y) + " " + Math.round(width)
                                  + "x" + Math.round(height) + " mainW=" + Math.round(root.width))
-                WindowCtl.setBlurRegion(root, 0, y, width, height)
+                WindowCtl.setBlurRegion(root, x, y, width, height)
             }
             regionSyncTimer.restart()
         }
         onHeightChanged: trackRegions()
         onWidthChanged: trackRegions()
+        onXChanged: trackRegions()
         onYChanged: trackRegions()
         Timer {
             id: regionSyncTimer
@@ -898,7 +915,7 @@ Window {
             // behind with nothing to correct it.
             onTriggered: if (root.miniQueueShown) {
                 if (root.wantBlur)
-                    WindowCtl.setBlurRegion(root, 0, miniQueueOverlay.y,
+                    WindowCtl.setBlurRegion(root, miniQueueOverlay.x, miniQueueOverlay.y,
                                             miniQueueOverlay.width, miniQueueOverlay.height)
                 root.updateMainInput()
             }
@@ -935,6 +952,62 @@ Window {
             }
         }
         HoverHandler { id: overlayHover }
+        // The popup's sides are the bar's: a press there is the bar's own resize.
+        Repeater {
+            model: [Qt.LeftEdge, Qt.RightEdge]
+            MouseArea {
+                required property int modelData
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.topMargin: 12
+                x: modelData === Qt.LeftEdge ? 0 : parent.width - width
+                width: 5
+                z: 11
+                cursorShape: Qt.SizeHorCursor
+                onPressed: (m) => {
+                    root.beginResizeHold()
+                    root.beginPopupResize(modelData)
+                    miniWin.startSystemResize(modelData)
+                }
+            }
+        }
+        Repeater {   // top corners: the bar's width and the popup's height together
+            model: [Qt.LeftEdge, Qt.RightEdge]
+            MouseArea {
+                required property int modelData
+                x: modelData === Qt.LeftEdge ? 0 : parent.width - width
+                width: 12
+                height: 12
+                z: 12
+                cursorShape: modelData === Qt.LeftEdge ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
+                onPressed: (m) => {
+                    root.popupCornerGrab = NaN
+                    root.popupCornerDrag = true
+                    root.beginResizeHold()
+                    // A corner, so KWin draws the diagonal cursor through the drag;
+                    // the bar's height is pinned for it, and only for it.
+                    miniWin.maximumHeight = miniWin.height
+                    miniWin.minimumHeight = miniWin.height
+                    root.beginPopupResize(modelData)
+                    miniWin.startSystemResize(modelData | Qt.TopEdge)
+                }
+            }
+        }
+        Connections {
+            target: WindowCtl
+            enabled: root.popupCornerDrag
+            function onPopupCursor(above) {
+                if (isNaN(root.popupCornerGrab)) root.popupCornerGrab = above - miniQueueOverlay.height
+                root.miniPanelH = Math.max(120, Math.min(root.height - root.barH - miniQueueOverlay.gap,
+                                                         above - root.popupCornerGrab))
+                panelHSaveTimer.restart()
+            }
+            function onMainGeometry() {
+                root.popupCornerDrag = false
+                miniWin.minimumHeight = 0
+                miniWin.maximumHeight = 16777215   // QWINDOWSIZE_MAX
+            }
+        }
         QueuePanel {
             anchors.fill: parent
             visible: !root.miniVisWanted
@@ -1047,11 +1120,8 @@ Window {
             onPressed: (m) => {
                 const e = sideAt(m.x)
                 if (!e) { m.accepted = false; return }
-                if (e === Qt.LeftEdge) {
-                    root.miniBarWFrozen = miniWin.width
-                    root.miniLeftResizeHold = true
-                }
                 root.beginResizeHold()
+                root.beginPopupResize(e)
                 miniWin.startSystemResize(e)
                 m.accepted = true
             }
@@ -2359,20 +2429,21 @@ Window {
         contextMenu.open(sx, sy, acts, host)
     }
 
-    // A press anywhere outside the search field drops its focus. Unaccepted
-    // presses fall through to whatever is underneath, so this steals nothing.
-    // (Also covers window re-activation handing focus straight back to the
-    // TextInput.)
-    MouseArea {
+    // A press anywhere outside the search field drops its focus. (Also covers
+    // window re-activation handing focus straight back to the TextInput.) A
+    // passive handler: a full-window MouseArea, even disabled, owns the cursor
+    // over everything under it and hid every resize and hand cursor.
+    Item {
         anchors.fill: parent
-        z: 940   // under the resize edges (950), over the content
-        enabled: searchInput.activeFocus
-        acceptedButtons: Qt.AllButtons
-        onPressed: (m) => {
-            const p = mapToItem(searchBarRect, m.x, m.y)
-            if (!searchBarRect.contains(Qt.point(p.x, p.y)))
-                searchInput.focus = false
-            m.accepted = false
+        z: 940
+        PointHandler {
+            enabled: searchInput.activeFocus
+            acceptedButtons: Qt.AllButtons
+            onActiveChanged: if (active) {
+                const p = parent.mapToItem(searchBarRect, point.position.x, point.position.y)
+                if (!searchBarRect.contains(Qt.point(p.x, p.y)))
+                    searchInput.focus = false
+            }
         }
     }
 
@@ -2799,15 +2870,6 @@ Window {
     function beginResizeHold() {
         sysDragging = true
         resizeFreeze = true          // carries the position freeze with it
-        // The compact popup is a separate surface KWin glues under the bar, and
-        // the compositor will not keep that glue honest through an interactive
-        // resize — it lags the drag, smears, or lands off the bar. Close it for
-        // the duration; reopening is one click.
-        if (miniQueueShown) {
-            PlayerState.showPanel = false
-            miniVisWanted = false
-            syncMiniQueue()
-        }
     }
     // Separate from sysDragging, which hover also clears and which let the
     // freeze go mid-resize. Set by the two starts, cleared only by KWin's
@@ -2822,11 +2884,37 @@ Window {
         Spectrum.setFrozen(resizeFreeze)
         if (PluginWindows) PluginWindows.setFrozen(resizeFreeze)
         resizeFreeze ? resizeFreezeSafety.restart() : resizeFreezeSafety.stop()
-        // Main, at opacity 0, draws nothing through a bar resize: closing the
-        // popup at the start makes it render, and on the shared GUI thread its
-        // frames stall the bar's resize.
-        WindowCtl.holdFrames(root, resizeFreeze && miniPlayer)
+        applyMainHold()
     }
+    // Through a bar resize main draws nothing, or with the popup open one frame after
+    // each of the bar's: the bar's late frames are the ones KWin stretches, and main's
+    // popup frames otherwise take the shared render thread from it (3 to 11 a late frame).
+    readonly property bool mainLockstep: resizeFreeze && miniPlayer && miniQueueShown
+    property bool mainWaits: true
+    onMainLockstepChanged: { mainWaits = true; applyMainHold() }
+    function applyMainHold() {
+        WindowCtl.holdFrames(root, resizeFreeze && miniPlayer && (!miniQueueShown || mainWaits))
+    }
+    function releaseMainFrame() {
+        if (!mainWaits) return
+        mainWaits = false
+        mainFrameDue.stop()
+        applyMainHold()
+    }
+    Connections {
+        target: root.mainLockstep ? miniWin : null
+        function onFrameSwapped() { root.releaseMainFrame() }
+    }
+    Connections {
+        target: root.mainLockstep ? root : null
+        function onFrameSwapped() {
+            root.mainWaits = true
+            root.applyMainHold()
+            mainFrameDue.restart()
+        }
+    }
+    // a bar that draws nothing new (a corner moved straight up) leaves main its turn
+    Timer { id: mainFrameDue; interval: 34; onTriggered: root.releaseMainFrame() }
     // Last resort only. The real releases are KWin's ended report and,
     // without KWin, the hover fallback above; this is a floor so a missed
     // signal cannot leave plugin windows permanently unable to redraw.
@@ -2835,11 +2923,6 @@ Window {
         interval: 30000
         onTriggered: root.resizeFreeze = false
     }
-    // Left-edge bar resize: the overlay's host is repositioned only after the
-    // resize (the KWin glue is silent during it) and Wayland cannot draw left of
-    // the host, so the overlay width freezes for the drag and snaps after.
-    property bool miniLeftResizeHold: false
-    property int miniBarWFrozen: 0
     // KWin's finished report clears sysDragging; hover resuming clears it
     // too (non-KDE fallback) — release the tick freeze on either path
     onSysDraggingChanged: if (!sysDragging) {
@@ -2848,8 +2931,6 @@ Window {
         // is a guess, and a wrong one mid-resize — which is why the freeze does
         // not take it there.
         if (!kwinSwap) resizeFreeze = false
-
-        miniLeftResizeHold = false
     }
     // One grab area over the whole window, taking the ring inside the shape's
     // edge; rectangle strips sit as deep as the deepest cut beside them and
