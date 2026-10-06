@@ -1164,13 +1164,13 @@ bool ThemeStore::exportTheme(const QString& id, const QString& path) {
     return true;
 }
 
-// An SVG file as a glyph entry, for the row that is about to write it into
+// A file as a glyph entry, for the row that is about to write it into
 // `glyphs`. The parsing is in ThemeFormat so a test can hand it a string.
 QVariantMap ThemeStore::importGlyph(const QString& path) const {
     QFile f(portalPath(path));
     if (!f.open(QIODevice::ReadOnly))
         return QJsonObject{{"ok", false}, {"error", QStringLiteral("cannot read the file")}}.toVariantMap();
-    return ThemeFormat::importGlyphSvg(f.readAll()).toVariantMap();
+    return ThemeFormat::importGlyphFile(portalPath(path), f.readAll()).toVariantMap();
 }
 
 QString ThemeStore::importTheme(const QString& path) {

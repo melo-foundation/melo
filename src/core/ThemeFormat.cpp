@@ -6,6 +6,7 @@
 #include "ThemeFormat.h"
 #include <QJsonValue>
 #include <QStringList>
+#include <QUrl>
 
 namespace ThemeFormat {
 
@@ -449,6 +450,15 @@ QJsonObject importGlyphSvg(const QByteArray& svg) {
     for (const QString& d : std::as_const(paths)) arr << d;
     QJsonObject entry{{"vb", vb}, {"ink", vb}, {"fill", fill}, {"paths", arr}};
     if (!fill && !sw.isEmpty()) entry["sw"] = sw.toDouble();
+    return QJsonObject{{"ok", true}, {"entry", entry}};
+}
+
+QJsonObject importGlyphFile(const QString& localPath, const QByteArray& bytes) {
+    if (localPath.endsWith(QLatin1String(".svg"), Qt::CaseInsensitive)) {
+        const QJsonObject r = importGlyphSvg(bytes);
+        if (r["ok"].toBool()) return r;
+    }
+    const QJsonObject entry{{"image", QUrl::fromLocalFile(localPath).toString()}};
     return QJsonObject{{"ok", true}, {"entry", entry}};
 }
 

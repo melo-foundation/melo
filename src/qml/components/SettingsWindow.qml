@@ -3261,7 +3261,9 @@ Window {
                             required property string modelData
                             name: modelData
                             desc: win.glyphError[modelData] || ""
-                            reserve: Theme.sp(220)
+                            readonly property var own: Theme.glyphMap[modelData]
+                            readonly property bool isImage: own !== undefined && typeof own.image === "string"
+                            reserve: Theme.sp(isImage ? 360 : 220)
                             Row {
                                 anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
@@ -3274,8 +3276,21 @@ Window {
                                     label: "Import"
                                     onClicked: {
                                         win.glyphFor = glyphRow.modelData
-                                        Portal.openFile("glyph-import", "Import glyph", "SVG", ["*.svg"], false)
+                                        Portal.openFile("glyph-import", "Import glyph", "Images",
+                                                        ["*.svg", "*.png", "*.webp", "*.jpg", "*.jpeg", "*.gif", "*.bmp"], false)
                                     }
+                                }
+                                SBtn {
+                                    label: "Tint"
+                                    visible: glyphRow.isImage
+                                    active: glyphRow.isImage && glyphRow.own.tint === true
+                                    onClicked: win.setGlyph(glyphRow.modelData, Object.assign({}, glyphRow.own, { tint: !active }))
+                                }
+                                SBtn {
+                                    label: "Pixelated"
+                                    visible: glyphRow.isImage
+                                    active: glyphRow.isImage && glyphRow.own.smooth === false
+                                    onClicked: win.setGlyph(glyphRow.modelData, Object.assign({}, glyphRow.own, { smooth: active }))
                                 }
                                 SBtn {
                                     label: "Reset"

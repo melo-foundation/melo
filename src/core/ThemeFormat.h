@@ -55,4 +55,7 @@ QJsonObject partsPatch(const QJsonObject& themeSettings, const QJsonObject& curr
 // whatever the first shape says. {"ok": true, "entry": {…}} or
 // {"ok": false, "error": "…"}, the error being what the settings row shows.
 QJsonObject importGlyphSvg(const QByteArray& svg);
+// A file as a glyph entry: an SVG that reduces to paths is paths; any other
+// SVG or picture is {"image": "<file url>"}, drawn in its own colours.
+QJsonObject importGlyphFile(const QString& localPath, const QByteArray& bytes);
 }

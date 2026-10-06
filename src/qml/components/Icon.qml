@@ -16,7 +16,10 @@ Item {
     // The twin draws what the plain glyph cannot: a fill, a stack (even of plain
     // colours; `source` is only the bottom layer's), contrast, or an opacity, which
     // overlapping glyph paths would compound and the fill applies once.
-    readonly property bool twin: inkRole !== null
+    // An untinted image glyph keeps its own colours, so it has no twin.
+    readonly property var own: Theme.glyphTable[name]
+    readonly property bool ownColours: own !== undefined && typeof own.image === "string" && own.tint !== true
+    readonly property bool twin: inkRole !== null && !ownColours
                                  && (Theme.layered(inkRole) || inkRole.source === "adaptive"
                                      || inkRole.opacity < 0.999 || inkRole.colour.a < 0.999)
     property color color: ink.length > 0 ? Theme[ink] : "#aaaaaa"

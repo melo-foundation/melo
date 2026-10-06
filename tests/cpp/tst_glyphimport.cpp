@@ -85,6 +85,22 @@ private slots:
         QVERIFY2(over["error"].toString().contains(QStringLiteral("9")),
                  qPrintable(over["error"].toString()));
     }
+
+    // a picture, and an SVG that does not reduce to paths, are image glyphs
+    void aPictureOrAnUnreducibleSvgIsAnImage() {
+        const QJsonObject png = ThemeFormat::importGlyphFile(QStringLiteral("/x/play.png"), QByteArray("\x89PNG"));
+        QVERIFY(png["ok"].toBool());
+        QCOMPARE(png["entry"].toObject()["image"].toString(), QStringLiteral("file:///x/play.png"));
+
+        const QJsonObject svg = ThemeFormat::importGlyphFile(QStringLiteral("/x/art.svg"),
+            QByteArray(R"SVG(<svg viewBox="0 0 24 24"><path transform="rotate(4)" d="M1 1H3Z"/></svg>)SVG"));
+        QVERIFY(svg["ok"].toBool());
+        QCOMPARE(svg["entry"].toObject()["image"].toString(), QStringLiteral("file:///x/art.svg"));
+
+        const QJsonObject paths = ThemeFormat::importGlyphFile(QStringLiteral("/x/p.svg"),
+            QByteArray(R"SVG(<svg viewBox="0 0 24 24"><path d="M1 1H3Z"/></svg>)SVG"));
+        QVERIFY(paths["entry"].toObject().contains(QStringLiteral("paths")));
+    }
 };
 
 QTEST_MAIN(TestGlyphImport)
