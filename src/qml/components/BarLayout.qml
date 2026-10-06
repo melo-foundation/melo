@@ -84,18 +84,25 @@ Item {
         for (let i = 0; i < r0.count; ++i) { const r = r0.itemAt(i); if (r && r.collapsed && !r.onEdge) h += (r.rowH + rowGap) }
         return h
     }
-    readonly property real barHeight: Theme.bar(Math.max(24, docHeight - collapsedH))
+    // What the rows need: the least room above them, the shown rows and their
+    // gaps, the least room below. The bar is never shorter.
+    readonly property real contentH: {
+        const dep = rowGen
+        return minAbove(alt ? altTop : mainTop) + stackOf(rep()) + minBelow()
+    }
+    // collapsedH is in the bar's scale (the rows' heights are), docHeight is not
+    readonly property real barHeight: Math.max(Math.max(Theme.bar(24), Theme.bar(docHeight) - collapsedH), contentH)
     // A bar on its way out keeps its padding, frozen like its height: `backing` is
     // not animated and flips to the incoming value at once, so the outgoing cells
     // would jump sideways by the card's inset a frame before their transition.
     property real frozenEdge: -1
     property real frozenEdgeR: -1
-    // Side padding: the document's `padLeft`/`padRight`, else `pad`, else the theme's
-    // player inset; the floating card's inset is added on top.
+    // Side padding: the document's `padLeft`/`padRight`, else `pad`, else 12, plus
+    // the theme's player inset; the floating card's inset is added on top.
     function docPad(side) {
         const own = side === "left" ? doc.padLeft : doc.padRight
-        if (own !== undefined) return Number(own)
-        return doc.pad !== undefined ? Number(doc.pad) : Theme.inset("player", side)
+        const layoutPad = own !== undefined ? Number(own) : doc.pad !== undefined ? Number(doc.pad) : 12
+        return layoutPad + Theme.inset("player", side)
     }
     function sideEdge(side) {
         return docPad(side)
@@ -105,39 +112,51 @@ Item {
     }
     readonly property real edge: frozenEdge >= 0 ? frozenEdge : sideEdge("left")
     readonly property real edgeRight: frozenEdgeR >= 0 ? frozenEdgeR : sideEdge("right")
-    // and the vertical padding the same way: `top` from the variant, then the
-    // document, then the inset; the bottom is the theme's, since a document
-    // says how tall it is rather than what it leaves under its rows
-    readonly property real topPad: variant && variant.top !== undefined ? variant.top
-                                 : (doc.top !== undefined ? doc.top : Theme.inset("player", "top"))
-    readonly property real botPad: Theme.inset("player", "bottom")
-    readonly property real rowGap: doc.rowGap !== undefined ? doc.rowGap : 4
+    // The vertical room, each side the least space between the bar's edge and the
+    // rows: the document's `top` (a variant's first) plus the theme's top inset; the
+    // theme's bottom inset below. On top of it what covers the bar there: a
+    // floating card's own inset, and the window frame's band where a shaped window
+    // draws it over the bar (cutTop, cutBottom, as cutLeft is at the ends).
+    readonly property real mainTop: (doc.top !== undefined ? Number(doc.top) : 0) + Theme.inset("player", "top")
+    readonly property real altTop: altDoc && altDoc.top !== undefined ? Number(altDoc.top) + Theme.inset("player", "top") : mainTop
+    readonly property bool onCard: bar && bar.backing === "floating"
+    function coverTop() { return (onCard ? bar.cardTop : 0) + (bar ? bar.cutTop : 0) }
+    function coverBottom() { return (onCard ? bar.cardBottom : 0) + (bar ? bar.cutBottom : 0) }
+    function minAbove(top) { return coverTop() + top }
+    function minBelow() { return coverBottom() + Theme.inset("player", "bottom") }
+    readonly property real rowGap: Theme.bar(doc.rowGap !== undefined ? doc.rowGap : 4)
     readonly property bool vcenter: doc.vcenter === true
     readonly property real vOffset: doc.vOffset || 0
 
-    // the stacked rows' y, from their heights — each arrangement's own
-    function stackYs(r0, top) {
-        // On a floating card the rows sit in the card, not the bar: its top and
-        // bottom insets add to the paddings the way its side inset adds to the
-        // edges. They are not equal, so centring in the bar would put the rows
-        // off the card's middle.
-        const card = bar && bar.backing === "floating"
-        top += card ? bar.cardTop : 0
-        const bottom = botPad + (card ? bar.cardBottom : 0)
-        const ys = []; let y = top
+    function heightsOf(r0) {
         const hs = []
         for (let i = 0; i < r0.count; ++i) { const r = r0.itemAt(i); hs.push(r && !r.onEdge ? r.usedH : 0) }
-        // A gap only between two rows that are there, so an empty row does not
-        // make the stack a gap too tall and centre everything half a gap high.
-        const shown = hs.filter(h => h > 0)
-        const stack = shown.reduce((a, h) => a + h, 0) + Math.max(0, shown.length - 1) * rowGap
-        // centred between the paddings: equal ones centre in the bar
-        if (vcenter) y = top + (height - top - bottom - stack) / 2 + vOffset
+        return hs
+    }
+    // A gap only between two rows that are there, so an empty row does not
+    // make the stack a gap too tall and centre everything half a gap high.
+    function stackOf(r0) {
+        const shown = heightsOf(r0).filter(h => h > 0)
+        return shown.reduce((a, h) => a + h, 0) + Math.max(0, shown.length - 1) * rowGap
+    }
+    // the stacked rows' y — each arrangement's own. Where the layout puts them
+    // (centred in what the bar shows, nudged by vOffset; else at the top), held
+    // between the two least spaces, so each moves the rows on its own.
+    function stackYs(r0, top) {
+        const hs = heightsOf(r0), stack = stackOf(r0)
+        const above = minAbove(top), below = minBelow()
+        let y = above
+        if (vcenter) {
+            const t = coverTop(), b = coverBottom()
+            y = t + (height - t - b - stack) / 2 + vOffset
+            y = Math.max(above, Math.min(y, height - below - stack))
+        }
+        const ys = []
         for (let i = 0; i < hs.length; ++i) { ys.push(y); if (hs[i] > 0) y += hs[i] + rowGap }
         return ys
     }
-    readonly property var ysMain: { const dep = rowGen; return stackYs(repMain, doc.top !== undefined ? doc.top : Theme.inset("player", "top")) }
-    readonly property var ysAlt: { const dep = rowGen; return stackYs(repAlt, altDoc && altDoc.top !== undefined ? altDoc.top : (doc.top !== undefined ? doc.top : Theme.inset("player", "top"))) }
+    readonly property var ysMain: { const dep = rowGen; return stackYs(repMain, mainTop) }
+    readonly property var ysAlt: { const dep = rowGen; return stackYs(repAlt, altTop) }
     readonly property var rowYs: alt ? ysAlt : ysMain
     Item {
         id: setMain

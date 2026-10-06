@@ -1723,7 +1723,7 @@ QtObject {
         header:  [10, 5, 10, 5],     // the search row's field and toggle
         tabs:    [8, 0, 8, 5],       // the tab bar's first tab from its left; below, the air above it (header bottom + tabs top)
         title:   [10, 0, 4, 0],      // a title bar's label and buttons
-        player:  [12, 6, 12, 6],     // the bar's cells from the bar edge
+        player:  [0, 6, 0, 6],       // added to the bar layout's own pad and top
         panel:   [12, 6, 12, 6],     // the queue panel's rows and header
         row:     [6, 6, 16, 6],      // a list row's thumbnail and text; the
                                      // right holds a right-aligned duration

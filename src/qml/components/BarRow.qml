@@ -19,11 +19,12 @@ Item {
     // where the others are and still pull its right end in.
     readonly property real pad: doc.padLeft !== undefined ? Number(doc.padLeft)
                               : doc.pad !== undefined ? Number(doc.pad)
-                              : (layout ? layout.edge : Theme.inset("player", "left"))
+                              : (layout ? layout.edge : 12 + Theme.inset("player", "left"))
     readonly property real padRight: doc.padRight !== undefined ? Number(doc.padRight)
                                    : doc.pad !== undefined ? Number(doc.pad)
-                                   : (layout ? layout.edgeRight : Theme.inset("player", "right"))
-    readonly property real rowH: doc.height || 24
+                                   : (layout ? layout.edgeRight : 12 + Theme.inset("player", "right"))
+    // in the bar's scale, as the bar's own height is: the cells grow with the UI
+    readonly property real rowH: Theme.bar(doc.height || 24)
     // A row may be a panel. The players this bar comes from put their readout
     // on a screen — black, with the words on it in the screen's own ink — and
     // a bar that can only colour its whole deck cannot say that. `role` is the
@@ -128,8 +129,8 @@ Item {
     // yet (cells building, or only spacers) the stated height stands. `padTop` and
     // `padBottom` (px) deepen a panel row past its cells so a plate's drop sits
     // inside it, and count toward the ceiling.
-    readonly property real padTop: doc.padTop > 0 ? Number(doc.padTop) : 0
-    readonly property real padBottom: doc.padBottom > 0 ? Number(doc.padBottom) : 0
+    readonly property real padTop: doc.padTop > 0 ? Theme.bar(Number(doc.padTop)) : 0
+    readonly property real padBottom: doc.padBottom > 0 ? Theme.bar(Number(doc.padBottom)) : 0
     readonly property real usedH: collapsed ? 0 : (tallest > 0 ? Math.min(rowH, tallest + padTop + padBottom) : rowH)
     height: onEdge ? (layout ? layout.height : usedH) : usedH
 

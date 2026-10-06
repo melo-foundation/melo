@@ -94,7 +94,7 @@ QJsonObject builtInLayout(const QString& id) {
           { "type": "button", "id": "queue" },
           { "type": "button", "id": "vis", "mini": true } ] } ] })";
     static const char* kCentre = R"({
-      "id": "centre", "name": "Centre", "height": 77, "pad": 12, "top": 8, "rowGap": 8,
+      "id": "centre", "name": "Centre", "height": 77, "pad": 12, "top": 2, "rowGap": 8,
       "rows": [
         { "height": 28, "gap": 6, "cells": [
           { "type": "button", "id": "library", "size": 24 },
@@ -111,7 +111,7 @@ QJsonObject builtInLayout(const QString& id) {
           { "type": "scrub", "h": 22, "fitMax": 532, "fitMargin": 114, "track": 4, "hover": 7 },
           { "type": "total", "size": 11 },
           { "type": "spacer", "flex": 1 } ] } ],
-      "variants": [ { "maxWidth": "narrow", "height": 56, "top": 6, "rows": [
+      "variants": [ { "maxWidth": "narrow", "height": 56, "top": 0, "rows": [
         { "height": 28, "gap": 6, "cells": [
           { "type": "time", "sep": "  /  ", "minWidth": 431, "gap": 2 },
           { "type": "spacer", "flex": 1, "gap": 0 },

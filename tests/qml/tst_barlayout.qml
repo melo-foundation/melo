@@ -266,18 +266,18 @@ Item {
             compare(lay.rowAt(1).y, (77 - 56) / 2 + 2 + 28 + 4)
             lay.destroy()
         }
-        // A document that names no pad takes the theme's player inset, each
-        // side its own; one that names a pad keeps wearing it.
-        function test_the_side_pad_falls_back_to_the_inset() {
+        // The theme's player inset adds to the document's pad, each side its
+        // own; a document that names no pad has 12.
+        function test_the_theme_inset_adds_to_the_side_pad() {
             const row = [ { height: 20, cells: [ { type: "spacer", flex: 1 } ] } ]
             const lay = flexC.createObject(null, { width: 300, doc: { height: 40, rows: row } })
             settle()
             compare(lay.rowAt(0).x, 12); compare(lay.rowAt(0).width, 276)
             Theme.held = true
             Theme.ts.insets = { player: { left: 4, right: 18 } }; Theme.tsChanged(); settle()
-            compare(lay.rowAt(0).x, 4); compare(lay.rowAt(0).width, 278)
+            compare(lay.rowAt(0).x, 16); compare(lay.rowAt(0).width, 254)
             lay.doc = { height: 40, pad: 2, rows: row }; settle()
-            compare(lay.rowAt(0).x, 2); compare(lay.rowAt(0).width, 296)
+            compare(lay.rowAt(0).x, 6); compare(lay.rowAt(0).width, 274)
             delete Theme.ts.insets; Theme.tsChanged(); Theme.held = false
             lay.destroy()
         }

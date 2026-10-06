@@ -121,7 +121,11 @@ Window {
     // window is exactly its bar, one height per layout: a height that followed the
     // width snapped the window while the bar eased, showing clipped frames and
     // then desktop under it.
-    readonly property int barH: Theme.bar(Theme.slotDoc("barMini:" + Theme.barMini, true).height || 77)
+    // ...and never shorter than the rows and the player insets need. An unshaped
+    // window moves the bar in by its frame, so the window takes the frame too.
+    readonly property int barH: Math.max(Theme.bar(Theme.slotDoc("barMini:" + Theme.barMini, true).height || 77),
+                                         Math.ceil(miniBar.settledHeight))
+                                + (miniBar.framedWindow && !miniBar.shaped ? Math.round(frT + frB) : 0)
     // 0 when maximised or fullscreen: flush with the screen edges, a radius only
     // shows desktop at the corners. Everything rounding the main window reads
     // this; the mini bar and queue card keep their own.
@@ -160,7 +164,8 @@ Window {
     readonly property real barRingTop: borderInParts && !barCard ? frT : 0
     readonly property real upperFoot: borderInParts ? frB : 0
     readonly property real contentTop: Theme.borderTitle ? 0 : frT
-    readonly property real upperH: height - playerBar.settledHeight - barInB - barRingTop
+    readonly property real barFoot: shaped ? 0 : barInB   // a shaped window's bar covers its own band
+    readonly property real upperH: height - playerBar.settledHeight - barFoot - barRingTop
     // the title bar's corners inside the frame: the band holds the window's
     // curve and the bar the curve left inside it
     readonly property real titleRadiusCap: framed && !Theme.borderTitle ? Math.max(0, cornerRadius - Math.max(frL, frT)) : cornerRadius
@@ -1252,6 +1257,8 @@ Window {
             mini: true
             cutLeft: shaped ? Math.max(root.frL, root.miniCutL) : 0
             cutRight: shaped ? Math.max(root.frR, root.miniCutR) : 0
+            cutTop: framedWindow && shaped ? root.frT : 0
+            cutBottom: framedWindow && shaped ? root.frB : 0
             layout: root.handoverLayout.length && !root.miniPlayer ? root.handoverLayout : "barMini:" + Theme.barMini
             backing: root.handoverBacking.length && !root.miniPlayer ? root.handoverBacking : Theme.backMini
             // What the main window may hand over, both of them: this bar
@@ -1308,6 +1315,7 @@ Window {
         // The bar fills a shaped window, and its rows start inside the cut
         cutLeft: root.shaped ? root.cutBarL : 0
         cutRight: root.shaped ? root.cutBarR : 0
+        cutBottom: root.shaped ? root.barInB : 0
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -1356,7 +1364,7 @@ Window {
         readonly property real mb: 1048576
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: playerBar.settledHeight + root.barInB + root.barRingTop + root.upperFoot
+        anchors.bottomMargin: playerBar.settledHeight + root.barFoot + root.barRingTop + root.upperFoot
                               + Theme.gap(44)
         width: ytdlpToastText.implicitWidth + Theme.inset("toast", "left") + Theme.inset("toast", "right")
         // 16 is the row the words sit in
@@ -1406,7 +1414,7 @@ Window {
         // Anchored to where the bar ends up, not its animating top edge, which
         // re-laid the whole column every frame of a layout change.
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: playerBar.settledHeight + root.barInB + root.barRingTop + root.upperFoot
+        anchors.bottomMargin: playerBar.settledHeight + root.barFoot + root.barRingTop + root.upperFoot
         anchors.topMargin: root.contentTop
         opacity: root.fullBaseOpacity   // appears immediately on expand
         // NOT laid out in mini: opacity-0 content still pays full layout

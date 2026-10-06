@@ -34,9 +34,9 @@ Edits stay unsaved (Custom) until **Save** or **Save as**. Keep an edited built-
 | key | value | default |
 |---|---|---|
 | `height` | px, min 24 | 77 |
-| `pad` | px, left and right | theme's player inset |
+| `pad` | px, left and right, plus the theme's player inset | 12 |
 | `padLeft` `padRight` | px, one side; overrides `pad` | `pad` |
-| `top` | px above the first row | theme's player top inset |
+| `top` | px above the first row, plus the theme's player top inset | 0 |
 | `vcenter` | bool, centre the rows vertically | false |
 | `vOffset` | px, with `vcenter` | 0 |
 | `rowGap` | px between rows | 4 |
@@ -51,7 +51,7 @@ Edits stay unsaved (Custom) until **Save** or **Save as**. Keep an edited built-
 |---|---|---|
 | `height` | px, the most the row grows to; a row whose cells have no height (only spacers) is this tall | 24 |
 | `gap` | px between cells | 8 |
-| `pad` | px, left and right, this row | the document's |
+| `pad` | px, left and right, this row; the theme's inset is not added | the document's |
 | `padLeft` `padRight` | px, one side; overrides `pad` | `pad` |
 | `padTop` `padBottom` | px above / below the cells, counted inside `height` | 0 |
 | `at` | `bottom`: row sits on the bar's bottom edge, full bar height | — |

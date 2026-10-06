@@ -84,6 +84,10 @@ Rectangle {
     // keep shallow; the rows are a stack of fixed height.
     property real cutLeft: 0
     property real cutRight: 0
+    // ...and what lies over its top and foot: a shaped window draws its frame band
+    // over the bar rather than moving the bar in, so the rows stay clear of it
+    property real cutTop: 0
+    property real cutBottom: 0
     // the floating card's inset from the bar's edges, the same on every side; the
     // theme's offset moves it off centre. The layouts read it.
     readonly property real inset: Theme.gap(Theme.floatInset)
