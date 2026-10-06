@@ -952,6 +952,25 @@ Window {
             }
         }
         HoverHandler { id: overlayHover }
+        // The popup is a card in the bar's style: the theme's corners cut it and
+        // the theme's frame goes round it, for the queue and the visualizer alike.
+        WindowShape {
+            id: popupShape
+            anchors.fill: parent
+            z: 1000
+            input: false   // the window's input is updateMainInput's
+            spec: Theme.panelShapeFor(Theme.windowRadius, Theme.windowRadius)
+            active: spec !== null
+        }
+        WindowBorder {
+            anchors.fill: parent
+            z: 999
+            borderLeft: root.frL; borderTop: root.frT; borderRight: root.frR; borderBottom: root.frB
+            radiusTL: Theme.windowRadius; radiusTR: Theme.windowRadius
+            radiusBL: Theme.windowRadius; radiusBR: Theme.windowRadius
+            shape: popupShape.active ? popupShape : null
+            visible: root.frameDrawn
+        }
         // The popup's sides are the bar's: a press there is the bar's own resize.
         Repeater {
             model: [Qt.LeftEdge, Qt.RightEdge]
@@ -1010,6 +1029,9 @@ Window {
         }
         QueuePanel {
             anchors.fill: parent
+            // inside the popup's frame, as the bar sits inside its own
+            anchors.leftMargin: root.frL; anchors.topMargin: root.frT
+            anchors.rightMargin: root.frR; anchors.bottomMargin: root.frB
             visible: !root.miniVisWanted
             fullWidth: true
             miniHost: true
@@ -1020,13 +1042,8 @@ Window {
             anchors.fill: parent
             visible: root.miniVisWanted
             role: "window"
-            // All corners rounded: the projectM FBO cannot be corner-masked on this GPU
-            // (a layer mask artifacted), so the viz is inset by the radius and this card
-            // frames it.
-            radius: Theme.windowRadius
-            // the appearance window-border outline on the visualizer card
-            borderRole: Theme.windowBorder ? "windowBorder" : ""
-            borderWidth: Theme.windowBorder ? Theme.windowBorderWidth : 0
+            // The card's corners and frame are the popup's (popupShape); the viz
+            // sits inset by the radius, clear of a cut or rounded corner.
             Image {   // under the video, for stills and the first beat
                 anchors.fill: parent
                 anchors.margins: Theme.windowRadius

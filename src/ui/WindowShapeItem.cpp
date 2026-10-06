@@ -397,7 +397,10 @@ void WindowShapeItem::setInput(bool on) {
     if (on == input_) return;
     input_ = on;
     emit inputChanged();
-    if (!on) {
+    // Before completion this item has set nothing on the window: a shape that
+    // is not the window's own (input: false from the start) must leave the
+    // window's mask, which another shape item keeps, alone.
+    if (!on && isComponentComplete()) {
         if (QQuickWindow* w = window()) {
             w->setProperty("meloShape", QVariant());
             if (!w->property("meloInputOff").toBool()) w->setMask(meloWindowMask(QRegion()));
