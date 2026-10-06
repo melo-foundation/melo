@@ -1605,6 +1605,9 @@ QtObject {
     // window buttons, a page's tools, the transport and the bar's buttons.
     // `bare` is the icon alone, the default.
     readonly property string titleButtons: ts.titleButtons || "bare"
+    // The click-through lock: glyph | button | pill | tab, at centre | title | left | right
+    readonly property string lockStyle: ts.lockStyle || "glyph"
+    readonly property string lockPlace: ts.lockPlace || "centre"
     readonly property string toolButtons: ts.toolButtons || "bare"
     readonly property string transportButtons: ts.transportButtons || "bare"
     // the air between two tabs, in spacing units; none between segments
@@ -1815,6 +1818,7 @@ QtObject {
         maximize: { fill: false, ink: 16.0, paths: ["M5 5H19V19H5Z"] },
         restore:  { fill: false, ink: 16.0, paths: ["M5 9H15V19H5Z", "M9 9V5H19V15H15"] },
         pin:   { fill: false, ink: 20.0, paths: ["M12 17V22", "M5 17H19L17 10H7L5 17Z", "M9 10V4H15V10"] },
+        lock:  { fill: false, ink: 18.0, paths: ["M5 11H19V21H5Z", "M8 11V7A4 4 0 0 1 16 7V11"] },
         minus: { fill: false, ink: 16.0, paths: ["M5 12H19"] },
         shuffle: { fill: false, ink: 20.5, paths: ["M16 3H21V8", "M4 20L21 3", "M21 16V21H16",
                                         "M15 15L21 21", "M4 4L9 9"] },

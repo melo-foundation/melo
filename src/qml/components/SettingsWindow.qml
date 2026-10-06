@@ -3056,6 +3056,20 @@ Window {
                                   onPicked: (v) => ThemeBackend.setThemeSetting("transportButtons", v) }
                     }
                     SRow {
+                        name: "Click-through lock"
+                        SSelect { value: Theme.lockStyle
+                                  options: [ { value: "glyph", label: "Glyph" }, { value: "button", label: "Title button" },
+                                             { value: "pill", label: "Pill" }, { value: "tab", label: "Tab" } ]
+                                  onPicked: (v) => ThemeBackend.setThemeSetting("lockStyle", v) }
+                    }
+                    SRow {
+                        name: "Click-through lock position"
+                        SSelect { value: Theme.lockPlace
+                                  options: [ { value: "centre", label: "Top centre" }, { value: "title", label: "Title bar" },
+                                             { value: "left", label: "Top left" }, { value: "right", label: "Top right" } ]
+                                  onPicked: (v) => ThemeBackend.setThemeSetting("lockPlace", v) }
+                    }
+                    SRow {
                         name: "Card art corners"
                         SSelect { value: Theme.cardArtCorners
                                   options: [ { value: "auto", label: "Auto" }, { value: "square", label: "Square" }, { value: "round", label: "Round" } ]

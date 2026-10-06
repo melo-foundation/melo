@@ -23,13 +23,14 @@ var DEFAULTS = {
     toggleVisualizer: "",
     openSettings: "",
     togglePin: "",
+    toggleClickThrough: "ctrl+shift+KeyG",
 }
 
 var ORDER = ["toggleSearch", "playPause", "rewind", "forward", "nextTrack",
              "prevTrack", "prevTrackAlt", "deleteTrack", "addToLibrary",
              "toggleCompact", "toggleMaximize",
              "toggleQueue", "toggleEq", "toggleVisualizer",
-             "openSettings", "togglePin"]
+             "openSettings", "togglePin", "toggleClickThrough"]
 
 var LABELS = {
     toggleSearch: "Toggle search",
@@ -48,6 +49,7 @@ var LABELS = {
     toggleVisualizer: "Visualizer",
     openSettings: "Settings",
     togglePin: "Always on top",
+    toggleClickThrough: "Click through",
 }
 
 // Stored for a key the user cleared, so the default does not come back

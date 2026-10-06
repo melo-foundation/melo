@@ -83,6 +83,12 @@ Item {
             compare(SC.LABELS.toggleMaximize.length > 0, true)
         }
 
+        function test_click_through_is_ctrl_shift_g() {
+            compare(SC.toQt(SC.DEFAULTS.toggleClickThrough), "Ctrl+Shift+G")
+            compare(SC.ORDER.indexOf("toggleClickThrough") >= 0, true)
+            compare(SC.LABELS.toggleClickThrough, "Click through")
+        }
+
         function test_record_shifted_keys() {
             // Shift+key reports the SHIFTED symbol; recorder must normalize
             compare(SC.fromKeyEvent({ key: Qt.Key_Delete, modifiers: Qt.ShiftModifier }),

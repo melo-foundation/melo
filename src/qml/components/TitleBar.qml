@@ -112,7 +112,10 @@ Rectangle {
         font { pixelSize: Theme.fs(Theme.titleFontSize); family: Theme.fontFamily; weight: Theme.titleWeight }
     }
 
+    // where the buttons start, for what sits beside them (the click-through lock)
+    readonly property Item buttonRow: tbRow
     Row {
+        id: tbRow
         anchors.right: parent.right
         // On whole pixels: centring a button in a bar whose height differs
         // from it by an odd number puts the faces and their glyphs on a half

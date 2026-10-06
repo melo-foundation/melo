@@ -465,8 +465,18 @@ Window {
     // Input + the folded opacity, in that order and in one call each. Plugin
     // windows are deliberately NOT gated here: they do not live in mini mode.
     function syncPluginMini() {
-        WindowCtl.setInputEnabled(miniWin, miniPlayer && builtinMini)
+        if (miniPlayer && builtinMini && clickThrough) setInputToBadge(miniWin, miniClickBadge)
+        else WindowCtl.setInputEnabled(miniWin, miniPlayer && builtinMini)
         applyWindowOpacity()
+    }
+    // Click through: pointer input passes to what is behind, except over the
+    // badge that turns it off. Not saved: a start is always clickable.
+    property bool clickThrough: false
+    onClickThroughChanged: { updateMainInput(); syncPluginMini() }
+    function setInputToBadge(win, badge) {
+        const p = badge.mapToItem(null, 0, 0)
+        WindowCtl.setInputRegion(win, Math.round(p.x), Math.round(p.y),
+                                 Math.round(badge.width), Math.round(badge.height))
     }
 
     property bool toggling: false
@@ -662,7 +672,10 @@ Window {
         if (shellHidden) {
             WindowCtl.setInputEnabled(root, false)
         } else if (!miniPlayer) {
-            WindowCtl.setInputEnabled(root, true)
+            if (clickThrough) setInputToBadge(root, mainClickBadge)
+            else WindowCtl.setInputEnabled(root, true)
+        } else if (miniQueueShown && clickThrough) {
+            WindowCtl.setInputEnabled(root, false)
         } else if (miniQueueShown) {
             WindowCtl.setInputRegion(root, miniQueueOverlay.x, miniQueueOverlay.y,
                                      miniQueueOverlay.width, miniQueueOverlay.height)
@@ -1110,6 +1123,20 @@ Window {
         visible: true
 
         HoverHandler { id: miniHover; enabled: root.miniPlayer }
+        ClickThroughBadge {
+            id: miniClickBadge
+            parent: miniWin.contentItem
+            // the bar has no title row: "title" is its top right
+            x: Theme.lockPlace === "left" ? Theme.gap(4)
+             : Theme.lockPlace === "centre" ? (parent.width - width) / 2
+             : parent.width - width - Theme.gap(4)
+            y: look === "tab" ? 0 : Theme.gap(4)
+            z: 9000
+            visible: root.clickThrough && root.miniPlayer
+            onXChanged: if (visible) root.syncPluginMini()
+            onYChanged: if (visible) root.syncPluginMini()
+            onReleased: root.clickThrough = false
+        }
         WindowShape {
             id: miniShape
             parent: miniWin.contentItem
@@ -2106,6 +2133,26 @@ Window {
 
     }
     Connections { target: miniShape; function onShapeApplied() { root.readMiniCuts() } }
+    ClickThroughBadge {
+        id: mainClickBadge
+        // "title": in the title row, left of its buttons
+        readonly property point titleSpot: {
+            const r = mainTitle.buttonRow
+            const p = mainTitle.mapToItem(root.contentItem, r.x, r.y + r.height / 2)
+            return Qt.point(p.x - width - Theme.gap(6), p.y - height / 2)
+        }
+        x: Theme.lockPlace === "title" ? titleSpot.x
+         : Theme.lockPlace === "left" ? Theme.gap(8)
+         : Theme.lockPlace === "right" ? parent.width - width - Theme.gap(8)
+         : (parent.width - width) / 2
+        // on the title row's centre line, as its buttons are; a tab hangs from the edge
+        y: look === "tab" ? 0 : titleSpot.y
+        z: 9000
+        visible: root.clickThrough && !root.miniPlayer
+        onXChanged: if (visible) root.updateMainInput()
+        onYChanged: if (visible) root.updateMainInput()
+        onReleased: root.clickThrough = false
+    }
     WindowShape {
         id: mainShape
         parent: root.contentItem
@@ -2851,6 +2898,9 @@ Window {
                 settingsLoader.item && settingsLoader.item.visible
                     ? settingsLoader.item.visible = false
                     : root.settingsWindow().open()
+                break
+            case "toggleClickThrough":
+                root.clickThrough = !root.clickThrough
                 break
             case "togglePin":
                 if (InterceptMap.offer("togglePin")) break
