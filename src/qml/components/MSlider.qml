@@ -87,8 +87,8 @@ Item {
     }
     Surface {
         y: sld.trackY + (sld.trackH - height) / 2
-        x: sld.knobAt - width / 2
-        width: Math.round(sld.knobSize * sld.partKnobAspect); height: sld.knobSize
+        x: GridUi.onGrid(sld.knobAt - width / 2)   // see NpBarScrub's knob
+        width: GridUi.snap(sld.knobSize * sld.partKnobAspect); height: sld.knobSize
         radius: Theme.knobRadius(sld.partKnobShape, Math.min(width, height))
         objectName: "sliderKnob"
         role: sld.knobRole

@@ -52,6 +52,8 @@ Item {
     // pixels, or it sits half a pixel off (at 1.9, a 16px knob over a 6px track).
     // Sizes snap to device pixels; the knob gives or takes one to match.
     function snap(v) { return Math.max(1, Math.round(v * dpr)) / dpr }
+    // a position on the nearest whole device pixel
+    function onGrid(v) { return Math.round(v * dpr) / dpr }
     function knobOn(knob, track) {
         const k = Math.max(1, Math.round(knob * dpr)), t = Math.max(1, Math.round(track * dpr))
         return ((k - t) % 2 === 0 ? k : k + 1) / dpr

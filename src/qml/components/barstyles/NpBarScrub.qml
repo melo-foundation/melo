@@ -134,9 +134,10 @@ Item {
             // half off the rail at nought and at full. A round one loses a
             // crescent there; a capsule wider than it is tall loses a cap,
             // which is most of what makes it read as a thumb at all.
-            x: Math.max(0, Math.min(parent.width - width, fill.width - width / 2))
+            // on whole device pixels from the rail, so moving never reshapes its edges
+            x: GridUi.onGrid(Math.max(0, Math.min(parent.width - width, fill.width - width / 2)))
             height: GridUi.knobOn(Theme.ctl(Theme.scrubberKnobSize), parent.height)
-            width: Math.round(height * Theme.scrubberKnobAspect)
+            width: GridUi.snap(height * Theme.scrubberKnobAspect)
             radius: Theme.knobRadius(Theme.scrubberKnobShape, Math.min(width, height))
             role: "scrubberKnob"
         }
