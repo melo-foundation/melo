@@ -159,6 +159,10 @@ WindowController::WindowController(QObject* parent) : QObject(parent) {
             this, &WindowController::windowGeometry);
     connect(geoReceiver_, &GeometryReceiver::popupCursorReported,
             this, &WindowController::popupCursor);
+    connect(geoReceiver_, &GeometryReceiver::popupWindowReported,
+            this, &WindowController::popupWindow);
+    connect(geoReceiver_, &GeometryReceiver::popupRoomReported,
+            this, &WindowController::popupRoom);
 }
 
 // KWin's script registry is session-global and keyed by plugin name, not path.
@@ -397,11 +401,13 @@ static QString findWindowsPrelude() {
     return QStringLiteral(
         "const k = %2;\n"
         "let main = null, mini = null, mq = null;\n"
+        "const pws = {};\n"
         "for (const w of workspace.windowList()) {\n"
         "  if (w.pid !== %1) continue;\n"
         "  if (w.caption === \"melo\") main = w;\n"
         "  else if (w.caption === \"melo-mini\") mini = w;\n"
         "  else if (w.caption === \"melo-mini-queue\") mq = w;\n"
+        "  else if ([\"melo-queue\", \"melo-vis\", \"melo-video\"].includes(w.caption)) pws[w.caption] = w;\n"
         "}\n").arg(QString::number(QCoreApplication::applicationPid()), kwinScaleJs());
 }
 
@@ -432,24 +438,138 @@ bool WindowController::alignForExpand(int barHeight, int width, int height) {
         "}\n").arg(QString::number(barHeight), w, h));
 }
 
-// The popup host's rectangle for a side, shared with the glue script.
-static QString popupHostJs() {
+// The popup host's rectangle for a side, shared with the glue script; and the
+// room above the bar, reported to melo.
+static QString popupHostJs(const QString& service) {
     return QStringLiteral(
         "function hostRect(side) {\n"
         "  const m = mini.frameGeometry;\n"
         "  const a = workspace.clientArea(KWin.MaximizeArea, mini);\n"
-        "  const top = Math.min(a.y, m.y), foot = m.y + m.height;\n"
+        "  const foot = m.y + m.height, h = Math.max(a.height, foot - a.y);\n"
         "  let x = m.x, w = m.width;\n"
         "  if (side === \"left\") { x = Math.min(a.x, m.x); w = m.x + m.width - x; }\n"
         "  else if (side === \"right\") { w = Math.max(a.x + a.width, m.x + m.width) - m.x; }\n"
-        "  return { x: x, y: top, width: w, height: foot - top };\n"
-        "}\n");
+        "  return { x: x, y: foot - h, width: w, height: h };\n"
+        "}\n"
+        "function reportRoom() {\n"
+        "  const m = mini.frameGeometry, a = workspace.clientArea(KWin.MaximizeArea, mini);\n"
+        "  callDBus(\"%1\", \"/melo/geometry\", \"com.melo.Geometry\", \"ReportPopupRoom\",\n"
+        "           String(Math.round((m.y + m.height - a.y) / k)));\n"
+        "}\n").arg(service);
+}
+
+// a caption as a JS string literal, from melo's own fixed set
+static QString jsCaption(const QString& c) {
+    static const QStringList known{QStringLiteral("melo-queue"), QStringLiteral("melo-vis"), QStringLiteral("melo-video")};
+    return known.contains(c) ? QStringLiteral("\"%1\"").arg(c) : QStringLiteral("\"\"");
+}
+
+bool WindowController::placePopupWindowOverMain(const QString& caption, int rx, int ry) {
+    if (!kwinAvailable_) return false;
+    return runKwinScript(findWindowsPrelude() + QStringLiteral(
+        "const pw = pws[%3];\n"
+        "if (main && pw) {\n"
+        "  const g = main.frameGeometry, p = pw.frameGeometry;\n"
+        "  pw.frameGeometry = { x: g.x + %1 * k, y: g.y + %2 * k, width: p.width, height: p.height };\n"
+        "}\n").arg(QString::number(rx), QString::number(ry), jsCaption(caption)));
+}
+
+bool WindowController::swapPopupWindows(const QString& from, const QString& to) {
+    if (!kwinAvailable_) return false;
+    return runKwinScript(findWindowsPrelude() + QStringLiteral(
+        "const a = pws[%1], b = pws[%2];\n"
+        "if (a && b) {\n"
+        "  b.frameGeometry = a.frameGeometry;\n"
+        "  b.opacity = 1; a.opacity = 0;\n"
+        "}\n").arg(jsCaption(from), jsCaption(to)));
+}
+
+bool WindowController::placePopupWindowBeside(const QString& caption) {
+    if (!kwinAvailable_) return false;
+    QString c = caption;
+    c.replace(QLatin1Char('"'), QString());
+    return runKwinScript(findWindowsPrelude() + QStringLiteral(
+        "const kinds = [\"melo-queue\", \"melo-vis\", \"melo-video\"];\n"
+        "let me = null; const others = [];\n"
+        "for (const w of workspace.windowList()) {\n"
+        "  if (w.pid !== %2 || kinds.indexOf(w.caption) < 0) continue;\n"
+        "  if (w.caption === \"%1\") me = w; else if (w.opacity > 0.5) others.push(w);\n"
+        "}\n"
+        "if (me && others.length) {\n"
+        "  const g = me.frameGeometry, a = workspace.clientArea(KWin.MaximizeArea, me), gap = 12 * k;\n"
+        "  const free = (x, y) => x >= a.x && y >= a.y && x + g.width <= a.x + a.width && y + g.height <= a.y + a.height\n"
+        "    && others.every(o => { const r = o.frameGeometry; return x + g.width <= r.x || r.x + r.width <= x || y + g.height <= r.y || r.y + r.height <= y; });\n"
+        "  let spot = null;\n"
+        "  for (const o of others) {\n"
+        "    const r = o.frameGeometry;\n"
+        "    for (const [x, y] of [[r.x + r.width + gap, r.y], [r.x - g.width - gap, r.y], [r.x, r.y - g.height - gap], [r.x, r.y + r.height + gap]])\n"
+        "      if (!spot && free(x, y)) spot = [x, y];\n"
+        "  }\n"
+        "  if (!spot) { const r = others[others.length - 1].frameGeometry; spot = [r.x + 40 * k, r.y + 40 * k]; }\n"
+        "  me.frameGeometry = { x: spot[0], y: spot[1], width: g.width, height: g.height };\n"
+        "}\n").arg(c, QString::number(QCoreApplication::applicationPid())));
+}
+
+bool WindowController::watchPopupWindows(bool on) {
+    if (!kwinAvailable_) return false;
+    const KWinObject scripting("/Scripting", "org.kde.kwin.Scripting");
+    if (!on || popupWatchId_ >= 0) {
+        if (popupWatchId_ >= 0) {
+            const KWinObject runner(QStringLiteral("/Scripting/Script%1").arg(popupWatchId_), "org.kde.kwin.Script");
+            runner.call("stop");
+            scripting.call("unloadScript", popupWatchName_);
+            QFile::remove(popupWatchPath_);
+            popupWatchId_ = -1;
+            popupWatchName_.clear();
+        }
+        if (!on) return true;
+    }
+    static int seq = 0;
+    popupWatchPath_ = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                      + QStringLiteral("/melo-kwin-popup-%1-%2.js")
+                            .arg(QCoreApplication::applicationPid()).arg(++seq);
+    popupWatchName_ = kwinScriptName(popupWatchPath_);
+    QFile f(popupWatchPath_);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+    // Near the bar: its foot within 80 px of the bar's top, either side, and over
+    // at least a third of the bar's width. The bar is looked up per report: the
+    // script loads at startup, before the bar's window exists.
+    f.write((findWindowsPrelude() + QStringLiteral(
+        "function report(w) {\n"
+        "  const p = w.frameGeometry;\n"
+        "  let near = 0;\n"
+        "  if (!mini) mini = workspace.windowList().find(x => x.pid === w.pid && x.caption === \"melo-mini\") || null;\n"
+        "  if (mini) {\n"
+        "    const m = mini.frameGeometry;\n"
+        "    const over = Math.min(p.x + p.width, m.x + m.width) - Math.max(p.x, m.x);\n"
+        "    if (Math.abs(p.y + p.height - m.y) < 80 * k && over > m.width / 3) near = 1;\n"
+        "  }\n"
+        "  callDBus(\"%1\", \"/melo/geometry\", \"com.melo.Geometry\", \"ReportPopupWindow\",\n"
+        "           [w.caption].concat([p.x / k, p.y / k, p.width / k, p.height / k, near].map(Math.round)).join(\",\"));\n"
+        "}\n"
+        "function hook(w) {\n"
+        "  if (w && w.pid === %2 && [\"melo-queue\", \"melo-vis\", \"melo-video\"].includes(w.caption))\n"
+        "    w.interactiveMoveResizeFinished.connect(() => report(w));\n"
+        "}\n"
+        "for (const c in pws) hook(pws[c]);\n"
+        "workspace.windowAdded.connect(hook);\n").arg(geoService_, QString::number(QCoreApplication::applicationPid()))).toUtf8());
+    f.close();
+    QDBusReply<int> id = scripting.call("loadScript", popupWatchPath_, popupWatchName_);
+    if (!id.isValid() || id.value() < 0) {
+        warnLoadRefused(popupWatchName_, id);
+        popupWatchName_.clear();
+        return false;
+    }
+    popupWatchId_ = id.value();
+    const KWinObject runner(QStringLiteral("/Scripting/Script%1").arg(popupWatchId_), "org.kde.kwin.Script");
+    runner.call("run");
+    return true;
 }
 
 bool WindowController::fitPopupHost(const QString& side) {
     if (!kwinAvailable_) return false;
-    return runKwinScript(findWindowsPrelude() + popupHostJs() + QStringLiteral(
-        "if (main && mini) main.frameGeometry = hostRect(\"%1\");\n").arg(side));
+    return runKwinScript(findWindowsPrelude() + popupHostJs(geoService_) + QStringLiteral(
+        "if (main && mini) { main.frameGeometry = hostRect(\"%1\"); reportRoom(); }\n").arg(side));
 }
 
 // N-window opacity in one script execution. Not findWindowsPrelude(), which
@@ -552,6 +672,18 @@ bool WindowController::setKeepAbove(bool on) {
         "if (mini) mini.keepAbove = %1;\n").arg(on ? "true" : "false"));
 }
 
+bool WindowController::setWindowKeepAbove(QQuickWindow* win, bool on) {
+    if (!win) return false;
+    if (pinMode_ == QLatin1String("flag")) { win->setFlag(Qt::WindowStaysOnTopHint, on); return true; }
+    if (pinMode_ != QLatin1String("kwin") || !kwinAvailable_) return false;
+    QString t = win->title();
+    t.replace(QLatin1Char('"'), QString());
+    return runKwinScript(QStringLiteral(
+        "for (const w of workspace.windowList())\n"
+        "  if (w.pid === %1 && w.caption === \"%2\") w.keepAbove = %3;\n")
+        .arg(QString::number(QCoreApplication::applicationPid()), t, on ? "true" : "false"));
+}
+
 #ifdef MELO_NATIVE_BLUR
 bool WindowController::showWindowMenu(QQuickWindow* win, int x, int y) {
     if (pinMode_ != QLatin1String("menu") || !win || !isWayland_) return false;
@@ -597,7 +729,7 @@ bool WindowController::setMiniQueueGlue(bool on) {
     // Keeps main's foot on the bar's through moves and resizes. A host melo widened
     // for a drag (fitPopupHost) stays put until the drag ends: the popup in it is
     // drawn against the bar's fixed side, from the bar's own width.
-    f.write((findWindowsPrelude() + popupHostJs() + QStringLiteral(
+    f.write((findWindowsPrelude() + popupHostJs(geoService_) + QStringLiteral(
         "function glue() {\n"
         "  if (!mini || !main) return;\n"
         "  const m = mini.frameGeometry;\n"
@@ -607,7 +739,7 @@ bool WindowController::setMiniQueueGlue(bool on) {
         "  if (g.x === nx && g.y === ny) return;   // skip no-op moves\n"
         "  main.frameGeometry = { x: nx, y: ny, width: g.width, height: g.height };\n"
         "}\n"
-        "function settle() { if (mini && main) main.frameGeometry = hostRect(\"\"); }\n"
+        "function settle() { if (mini && main) { main.frameGeometry = hostRect(\"\"); reportRoom(); } }\n"
         // KWin holds the pointer through the bar's resize, so a popup corner's
         // height comes from here: the cursor over the bar's top, once per pixel.
         "let lastAbove = null;\n"

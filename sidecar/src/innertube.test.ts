@@ -56,8 +56,8 @@ const response = {
 };
 
 describe("parseNextResponse", () => {
-  // A related item as /next sends it since 2026: the length sits in the thumbnail's
-  // bottom overlay; the older thumbnailOverlayBadgeViewModel form still occurs.
+  // A related item from /next: the length sits in a thumbnailBottomOverlayViewModel
+  // or a thumbnailOverlayBadgeViewModel.
   const lockup = (id: string, overlay: object) => ({
     lockupViewModel: {
       contentId: id,

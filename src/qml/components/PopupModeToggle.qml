@@ -2,11 +2,13 @@ import QtQuick
 import "."
 import ".."
 
-// Visualizer | Video, in the style the theme gives toggles. Reports a pick;
-// the owner saves it and sets `video`.
+// Two options, Visualizer | Video unless named, in the style the theme gives
+// toggles. Reports a pick; the owner saves it and sets `video` (the right one).
 Item {
     id: root
     property bool video: false
+    property string leftLabel: "Visualizer"
+    property string rightLabel: "Video"
     signal picked(bool video)
     readonly property bool segmented: Theme.toggles === "segment"
     // the segment track draws this far around the strip, on every side
@@ -39,7 +41,7 @@ Item {
         y: root.pad
         height: 30
         spacing: root.segmented ? 0 : Theme.gap(2)
-        Seg { objectName: "seg:visualizer"; label: "Visualizer"; isVideo: false }
-        Seg { objectName: "seg:video"; label: "Video"; isVideo: true }
+        Seg { objectName: "seg:visualizer"; label: root.leftLabel; isVideo: false }
+        Seg { objectName: "seg:video"; label: root.rightLabel; isVideo: true }
     }
 }

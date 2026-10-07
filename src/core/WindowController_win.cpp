@@ -30,6 +30,15 @@ void WindowController::setInputRegion(QQuickWindow*, int, int, int, int) {}
 bool WindowController::alignForCollapse(int) { return false; }
 bool WindowController::alignForExpand(int, int, int) { return false; }
 bool WindowController::fitPopupHost(const QString&) { return false; }
+bool WindowController::setWindowKeepAbove(QQuickWindow* win, bool on) {
+    if (!win) return false;
+    win->setFlag(Qt::WindowStaysOnTopHint, on);
+    return true;
+}
+bool WindowController::placePopupWindowOverMain(const QString&, int, int) { return false; }
+bool WindowController::watchPopupWindows(bool) { return false; }
+bool WindowController::placePopupWindowBeside(const QString&) { return false; }
+bool WindowController::swapPopupWindows(const QString&, const QString&) { return false; }
 bool WindowController::setWindowOpacities(const QVariantList&) { return false; }
 // false: the caller's own QWindow::setPosition already performed the move on
 // this platform (only Wayland needs the compositor to do it).

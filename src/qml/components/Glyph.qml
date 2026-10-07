@@ -35,12 +35,12 @@ Item {
     readonly property real fit: ink > inkSw ? (inkFill * vb - inkSw) / (ink - inkSw) : 1
     readonly property real sw: swRaw / fit
     readonly property real k: size / vb * fit
-    // A glyph of only horizontal and vertical lines is drawn on the pixel grid at a
-    // whole-pixel width, or its lines come out different weights (a 2-unit line at
-    // 16 px is 1.33 px wide). Null when any path is not such a line.
     // the window's own scale: under fractional scaling the screen's is a whole number
     readonly property real dpr: GridUi.dpr > 1 ? GridUi.dpr
                               : Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+    // A glyph of only horizontal and vertical lines is drawn on the pixel grid at a
+    // whole-pixel width, or its lines come out different weights (a 2-unit line at
+    // 16 px is 1.33 px wide). Null when any path is not such a line.
     readonly property int lineDev: spec.fill ? 0 : Math.max(1, Math.round(sw * k * dpr))
     // A fill whose edges all sit on one grid step is pixel art: each step is a whole
     // number of device pixels, or its equal blocks round to unequal widths. Only

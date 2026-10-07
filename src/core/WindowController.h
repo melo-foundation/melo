@@ -63,12 +63,32 @@ public slots:
         const double v = above.toDouble(&ok);
         if (ok) emit popupCursorReported(int(v));
     }
+    // The height between the bar's foot and the top of the work area, after the
+    // popup's host is fitted: the popup's tallest.
+    void ReportPopupRoom(const QString& room) {
+        bool ok = false;
+        const double v = room.toDouble(&ok);
+        if (ok) emit popupRoomReported(int(v));
+    }
+    // A detached window after a user move or resize: "caption,x,y,w,h,near",
+    // near 1 when it was let go just above the bar.
+    void ReportPopupWindow(const QString& geo) {
+        const QStringList p = geo.split(',');
+        if (p.size() != 6) return;
+        bool ok[4] = {false, false, false, false};
+        const double v[4] = {p[1].toDouble(&ok[0]), p[2].toDouble(&ok[1]),
+                             p[3].toDouble(&ok[2]), p[4].toDouble(&ok[3])};
+        for (const bool b : ok) if (!b) return;
+        emit popupWindowReported(p[0], int(v[0]), int(v[1]), int(v[2]), int(v[3]), p[5].toInt() == 1);
+    }
 signals:
     void reported(int x, int y, int w, int h, bool cursorInside);
     void resizeStarted();
     void moveStarted();
     void windowReported(const QString& caption, int x, int y, int w, int h);
     void popupCursorReported(int above);
+    void popupWindowReported(const QString& caption, int x, int y, int w, int h, bool nearBar);
+    void popupRoomReported(int room);
 };
 #endif
 
@@ -171,12 +191,26 @@ public:
     // g.width there re-applies the width it is being told to replace.
     // `height` > 0 also sets main's height (back to the full player's after a popup).
     Q_INVOKABLE bool alignForExpand(int barHeight, int width = 0, int height = 0);
-    // The popup's host: "melo" over the bar's span and as tall as the work area
-    // above the bar's foot, so the popup can reach the top of the screen. "left" or
+    // The popup's host: "melo" over the bar's span, its foot on the bar's and as
+    // tall as the work area, whatever the bar's height on screen, so a move never
+    // resizes it; the room above the bar comes back through popupRoom(). "left" or
     // "right" also widens it to the work area's edge on that side, before a drag
     // from that side; the glue leaves a widened host alone until the drag ends and
     // then fits it back. One configure, so position and size land with one frame.
     Q_INVOKABLE bool fitPopupHost(const QString& side);
+    // The detached windows ("melo-queue", "melo-vis", "melo-video").
+    // placePopupWindowBeside: a window with no place of its own goes right, left,
+    // above or below one already open, else stepped down from the last; with none
+    // open, KWin places it.
+    // placePopupWindowOverMain: at (rx, ry) in main's coordinates, over where the
+    // attached popup was.
+    // watchPopupWindows: each reports through popupWindow() after a user move or resize.
+    Q_INVOKABLE bool placePopupWindowBeside(const QString& caption);
+    Q_INVOKABLE bool placePopupWindowOverMain(const QString& caption, int rx, int ry);
+    Q_INVOKABLE bool watchPopupWindows(bool on);
+    // One detached window for another in one compositor step: `to` takes `from`'s
+    // place and size, then `from` goes to opacity 0 and `to` to 1.
+    Q_INVOKABLE bool swapPopupWindows(const QString& from, const QString& to);
     // Set the compositor opacity of several windows ({ "title", "opacity" }
     // maps) in one KWin script run so they change in the same composite; a
     // client-side swap leaves a 1-frame gap or double. Unlisted captions are
@@ -192,6 +226,8 @@ public:
     // script sets keepAbove. flag: WindowStaysOnTopHint, which Qt sends to the
     // window system on a mapped window. false in the other modes: nothing was pinned.
     Q_INVOKABLE bool setKeepAbove(bool on);
+    // One window kept above the others, the way setKeepAbove keeps the player.
+    Q_INVOKABLE bool setWindowKeepAbove(QQuickWindow* win, bool on);
     QString pinMode() const { return pinMode_; }
     // "menu" mode: the compositor's window menu at (x, y) in `win`'s
     // coordinates. Call it from the pointer press itself: Mutter accepts only
@@ -271,6 +307,10 @@ signals:
     void mainGeometry(int x, int y, int w, int h, bool cursorInside);
     // the cursor's height above the bar during a bar resize with the popup open
     void popupCursor(int above);
+    // a detached window let go at (x, y, w, h); nearBar: just above the bar
+    void popupWindow(const QString& caption, int x, int y, int w, int h, bool nearBar);
+    // the room above the bar for the popup, after its host is fitted
+    void popupRoom(int room);
     // interactive move/resize started on a melo window (KWin watcher);
     // mainGeometry marks the end
     void interactiveStarted();
@@ -316,6 +356,8 @@ private:
     // must therefore be kept alongside the paths and unloaded by name.
     int glueScriptId_ = -1;
     QString glueScriptPath_, glueScriptName_;
+    int popupWatchId_ = -1;
+    QString popupWatchPath_, popupWatchName_;
     int watchScriptId_ = -1;
     QString watchScriptPath_, watchScriptName_;
     // The per-window watcher (watchWindowGeometry). Separate from the main

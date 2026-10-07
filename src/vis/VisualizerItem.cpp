@@ -108,6 +108,12 @@ VisualizerItem::VisualizerItem() {
 }
 
 void VisualizerItem::itemChange(ItemChange change, const ItemChangeData& value) {
+    // Another window is another renderer and a new projectM: it takes the preset
+    // and the settings this one had.
+    if (change == ItemSceneChange && value.window && currentIndex_ >= 0) {
+        presetIdxRequested_.store(currentIndex_);
+        settingsDirty_.store(true);
+    }
     if (change == ItemVisibleHasChanged) {   // EFFECTIVE visibility
         pumpOn_.store(value.boolValue);
         if (value.boolValue) update();       // restart the render loop

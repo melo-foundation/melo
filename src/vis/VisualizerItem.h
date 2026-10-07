@@ -54,6 +54,7 @@ public:
 
     QString currentPreset() const { return currentPreset_; }
     Q_INVOKABLE void setCurrentPresetIndex(int i) {   // renderer pushes on switch
+        currentIndex_ = i;
         const QString name = presetNames_.value(i);
         if (name == currentPreset_) return;
         currentPreset_ = name;
@@ -89,4 +90,5 @@ protected:
 private:
     QStringList presetNames_;
     QString currentPreset_;
+    int currentIndex_ = -1;
 };

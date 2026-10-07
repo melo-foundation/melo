@@ -1781,6 +1781,18 @@ Window {
                               onPicked: (v) => { value = v; Settings.uiSet("videoFit", v) } }
                 }
                 SRow {
+                    name: "Overlay controls"
+                    SSelect { value: String(Settings.uiGet("detachedControls", "bar"))
+                              options: [{ value: "bar", label: "Off" }, { value: "over", label: "On" }]
+                              onPicked: (v) => { value = v; Settings.uiSet("detachedControls", v) } }
+                }
+                SRow {
+                    name: "Mini player with a window open"
+                    SSelect { value: Settings.uiGet("detachedHideBar", false) === true ? "hide" : "show"
+                              options: [{ value: "show", label: "Show" }, { value: "hide", label: "Hide" }]
+                              onPicked: (v) => { value = v; Settings.uiSet("detachedHideBar", v === "hide") } }
+                }
+                SRow {
                     name: "Skip silence"
                     SToggle { checked: Settings.silenceSkip
                               onToggled: (v) => Settings.silenceSkip = v }
@@ -3068,6 +3080,12 @@ Window {
                                   options: [ { value: "centre", label: "Top centre" }, { value: "title", label: "Title bar" },
                                              { value: "left", label: "Top left" }, { value: "right", label: "Top right" } ]
                                   onPicked: (v) => ThemeBackend.setThemeSetting("lockPlace", v) }
+                    }
+                    SRow {
+                        name: "Detached popup"
+                        SSelect { value: Theme.popupFrame
+                                  options: [ { value: "card", label: "Card" }, { value: "title", label: "Title bar" } ]
+                                  onPicked: (v) => ThemeBackend.setThemeSetting("popupFrame", v) }
                     }
                     SRow {
                         name: "Card art corners"

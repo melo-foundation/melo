@@ -24,13 +24,17 @@ var DEFAULTS = {
     openSettings: "",
     togglePin: "",
     toggleClickThrough: "ctrl+shift+KeyG",
+    toggleQueueWindow: "ctrl+shift+KeyQ",
+    toggleVisualizerWindow: "ctrl+shift+KeyW",
+    toggleVideoWindow: "ctrl+shift+KeyE",
 }
 
 var ORDER = ["toggleSearch", "playPause", "rewind", "forward", "nextTrack",
              "prevTrack", "prevTrackAlt", "deleteTrack", "addToLibrary",
              "toggleCompact", "toggleMaximize",
              "toggleQueue", "toggleEq", "toggleVisualizer",
-             "openSettings", "togglePin", "toggleClickThrough"]
+             "openSettings", "togglePin", "toggleClickThrough", "toggleQueueWindow",
+             "toggleVisualizerWindow", "toggleVideoWindow"]
 
 var LABELS = {
     toggleSearch: "Toggle search",
@@ -50,6 +54,9 @@ var LABELS = {
     openSettings: "Settings",
     togglePin: "Always on top",
     toggleClickThrough: "Click through",
+    toggleQueueWindow: "Queue window",
+    toggleVisualizerWindow: "Visualizer window",
+    toggleVideoWindow: "Video window",
 }
 
 // Stored for a key the user cleared, so the default does not come back

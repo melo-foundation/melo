@@ -88,6 +88,15 @@ Item {
             compare(SC.ORDER.indexOf("toggleClickThrough") >= 0, true)
             compare(SC.LABELS.toggleClickThrough, "Click through")
         }
+        function test_window_shortcuts_are_ctrl_shift_q_w_e() {
+            compare(SC.toQt(SC.DEFAULTS.toggleQueueWindow), "Ctrl+Shift+Q")
+            compare(SC.toQt(SC.DEFAULTS.toggleVisualizerWindow), "Ctrl+Shift+W")
+            compare(SC.toQt(SC.DEFAULTS.toggleVideoWindow), "Ctrl+Shift+E")
+            for (const a of ["toggleQueueWindow", "toggleVisualizerWindow", "toggleVideoWindow"])
+                compare(SC.ORDER.indexOf(a) >= 0, true)
+            compare(SC.LABELS.toggleVisualizerWindow, "Visualizer window")
+            compare(SC.DEFAULTS.toggleDetachedPopup, undefined)
+        }
 
         function test_record_shifted_keys() {
             // Shift+key reports the SHIFTED symbol; recorder must normalize

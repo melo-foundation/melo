@@ -1608,6 +1608,8 @@ QtObject {
     // The click-through lock: glyph | button | pill | tab, at centre | title | left | right
     readonly property string lockStyle: ts.lockStyle || "glyph"
     readonly property string lockPlace: ts.lockPlace || "centre"
+    // the queue, visualizer and video windows: card | title (a title bar with close)
+    readonly property string popupFrame: ts.popupFrame || "card"
     readonly property string toolButtons: ts.toolButtons || "bare"
     readonly property string transportButtons: ts.transportButtons || "bare"
     // the air between two tabs, in spacing units; none between segments

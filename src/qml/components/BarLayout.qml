@@ -139,9 +139,9 @@ Item {
         const shown = heightsOf(r0).filter(h => h > 0)
         return shown.reduce((a, h) => a + h, 0) + Math.max(0, shown.length - 1) * rowGap
     }
-    // the stacked rows' y — each arrangement's own. Where the layout puts them
-    // (centred in what the bar shows, nudged by vOffset; else at the top), held
-    // between the two least spaces, so each moves the rows on its own.
+    // the stacked rows' y, for one arrangement: with vcenter, centred in what the
+    // bar shows and nudged by vOffset, else at the top; never closer to either
+    // edge than the least room above and below.
     function stackYs(r0, top) {
         const hs = heightsOf(r0), stack = stackOf(r0)
         const above = minAbove(top), below = minBelow()

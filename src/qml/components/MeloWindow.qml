@@ -12,6 +12,10 @@ Window {
     id: win
 
     property string heading: ""
+    // false: no title bar, the body runs up to the frame
+    property bool titled: true
+    // edges that resize the window
+    property bool resizable: false
     readonly property Item body: bodyItem
     // a window's own controls in the title bar, left of the close
     readonly property Item titleTools: titleToolsItem
@@ -19,7 +23,9 @@ Window {
     readonly property real chromeHeight: titleBar.y + titleBar.height + titleGap + (shaped ? 0 : frB)
     // the close in the title bar and Escape; hides unless the window says otherwise
     signal closeRequested()
-    onCloseRequested: visible = false
+    // false: the window decides what closing means (one that stays mapped)
+    property bool hideOnClose: true
+    onCloseRequested: if (hideOnClose) visible = false
 
     visible: false
     color: "transparent"
@@ -109,7 +115,7 @@ Window {
     WindowBorder {   // the window frame and border; with the title in it, round the title too
         anchors.fill: parent
         borderLeft: win.frL; borderTop: win.frT; borderRight: win.frR; borderBottom: win.frB
-        titleHeight: Theme.borderTitle && !win.frameOff ? titleBar.height : 0
+        titleHeight: Theme.borderTitle && !win.frameOff && win.titled ? titleBar.height : 0
         shape: shapeLoader.item && shapeLoader.item.active ? shapeLoader.item : null
         titleRim: win.frameOff ? 0 : Theme.borderTitleRim
         titleFade: Theme.borderTitleFade
@@ -125,7 +131,8 @@ Window {
         x: Theme.borderTitle ? 0 : win.frL
         y: Theme.borderTitle ? 0 : win.frT
         width: parent.width - (Theme.borderTitle ? 0 : win.frL + win.frR)
-        height: Theme.titleBarH
+        visible: win.titled
+        height: win.titled ? Theme.titleBarH : 0
         role: "title"
         topLeftRadius: Math.min(win.titleCap, height / 2)
         topRightRadius: Math.min(win.titleCap, height / 2)
@@ -175,6 +182,30 @@ Window {
         anchors.leftMargin: win.cutBodyL
         anchors.rightMargin: win.cutBodyR
         anchors.bottomMargin: win.shaped ? 0 : win.frB
+    }
+
+    Repeater {   // the resize edges and corners
+        model: win.resizable ? [Qt.LeftEdge, Qt.RightEdge, Qt.TopEdge, Qt.BottomEdge,
+                                Qt.LeftEdge | Qt.TopEdge, Qt.RightEdge | Qt.TopEdge,
+                                Qt.LeftEdge | Qt.BottomEdge, Qt.RightEdge | Qt.BottomEdge] : []
+        MouseArea {
+            required property int modelData
+            readonly property bool l: (modelData & Qt.LeftEdge) !== 0
+            readonly property bool r: (modelData & Qt.RightEdge) !== 0
+            readonly property bool t: (modelData & Qt.TopEdge) !== 0
+            readonly property bool b: (modelData & Qt.BottomEdge) !== 0
+            readonly property real grip: Math.max(6, win.frL)
+            readonly property real corner: 14
+            x: l ? 0 : r ? win.width - width : corner
+            y: t ? 0 : b ? win.height - height : corner
+            width: (l || r) ? ((t || b) ? corner : grip) : win.width - 2 * corner
+            height: (t || b) ? ((l || r) ? corner : grip) : win.height - 2 * corner
+            z: (l || r) && (t || b) ? 2001 : 2000
+            cursorShape: (l && t) || (r && b) ? Qt.SizeFDiagCursor
+                       : (r && t) || (l && b) ? Qt.SizeBDiagCursor
+                       : (l || r) ? Qt.SizeHorCursor : Qt.SizeVerCursor
+            onPressed: win.startSystemResize(modelData)
+        }
     }
 
     Shortcut { sequence: "Escape"; onActivated: win.closeRequested() }

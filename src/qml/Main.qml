@@ -90,7 +90,8 @@ Window {
         if (d > 0) { GridUi.dpr = d; dprSeen = true }
     }
     function snapSize() {
-        if (!gridSnap) return
+        // in mini mode main is the popup's host, sized by KWin to the bar
+        if (!gridSnap || miniPlayer) return
         if (visibility === Window.Maximized || visibility === Window.FullScreen) return
         if (typeof WindowCtl === "undefined") return
         const d = WindowCtl.dprOf(root); if (!(d > 0)) return
@@ -110,8 +111,8 @@ Window {
     onGridGenChanged: { pushDpr(); snapSize() }
     width: 400
     height: 650
-    minimumWidth: 384
-    minimumHeight: 320
+    minimumWidth: miniPlayer ? 0 : 384
+    minimumHeight: miniPlayer ? 0 : 320
     visible: true
     color: "transparent"
     title: "melo"
@@ -297,6 +298,11 @@ Window {
         root.trackLayout = Settings.uiGet("library-layout", "grid")
         root.refreshShortcuts()
         root.miniPanelH = Number(Settings.uiGet("miniPanelHeight", 400))
+        root.readWindowSettings()
+        for (const w of [queueWin, visWin, videoWin]) w.restore()
+        root.detached = ({ queue: queueWin.prefs().detached === true, vis: visWin.prefs().detached === true,
+                           video: videoWin.prefs().detached === true })
+        WindowCtl.watchPopupWindows(true)
         root.miniPopupVideo = Settings.uiGet("miniPopupVideo", false) === true
         if (npLoader.item) npLoader.item.showVideo = Settings.uiGet("npVideo", false) === true
         root.readVideoFit()
@@ -447,10 +453,11 @@ Window {
     }
 
     function applyWindowOpacity() {
-        const mainOp = shellHidden ? 0 : ((!miniPlayer || miniQueueShown) ? 1 : 0)
+        const mainOp = shellHidden || popupSwap === -1 ? 0
+                     : ((!miniPlayer || miniQueueShown || popupSwap === 1) ? 1 : 0)
         const wins = [{ title: "melo",      opacity: mainOp },
                       { title: "melo-mini",
-                        opacity: (miniPlayer && builtinMini && !shellHidden) ? 1 : 0 }]
+                        opacity: (miniPlayer && builtinMini && !shellHidden && !hideMiniBar) ? 1 : 0 }]
         // Plugin windows join this call so one KWin script execution swaps them all
         // (see kwinSwap); they report opacity 1 while their host is active.
         if (PluginWindows)
@@ -471,7 +478,7 @@ Window {
     // windows are deliberately NOT gated here: they do not live in mini mode.
     function syncPluginMini() {
         if (miniPlayer && builtinMini && clickThrough) setInputToBadge(miniWin, miniClickBadge)
-        else WindowCtl.setInputEnabled(miniWin, miniPlayer && builtinMini)
+        else WindowCtl.setInputEnabled(miniWin, miniPlayer && builtinMini && !hideMiniBar)
         applyWindowOpacity()
     }
     // Click through: pointer input passes to what is behind, except over the
@@ -635,6 +642,158 @@ Window {
     // overlay is revealed and input-masked. A KWin glue keeps it aligned during
     // drags.
     property bool miniQueueShown: false
+    // the room above the bar, from KWin when the popup's host is fitted
+    property real popupRoom: 1e6
+    readonly property real popupMaxH: Math.min(height, popupRoom) - barH - miniQueueOverlay.gap
+    Connections {
+        target: WindowCtl
+        function onPopupRoom(room) { root.popupRoom = room }
+    }
+    // The queue, the visualizer and the video, each in a window of its own: by
+    // choice (Ctrl+drag off the popup, or its shortcut), and always where the popup
+    // cannot sit under the bar. Any of them may be open at once.
+    property var detached: ({ queue: false, vis: false, video: false })
+    function inWindow(kind) { return detached[kind] === true || !WindowCtl.canPlaceWindows }
+    function winOf(kind) { return kind === "queue" ? queueWin : kind === "vis" ? visWin : videoWin }
+    function setDetached(kind, on) {
+        const d = Object.assign({}, detached); d[kind] = on; detached = d
+        winOf(kind).remember({ detached: on })
+    }
+    readonly property bool queueInWindow: inWindow("queue")
+    property string detachedControls: "bar"
+    property bool detachedHideBar: false
+    function readWindowSettings() {
+        detachedControls = Settings.uiGet("detachedControls", "bar") === "over" ? "over" : "bar"
+        detachedHideBar = Settings.uiGet("detachedHideBar", false) === true
+    }
+    Connections { target: Settings; function onChanged() { root.readWindowSettings() } }
+    readonly property bool anyWindowOpen: queueWin.open || visWin.open || videoWin.open
+    // the mini bar hides by choice while a window is open; the last window closing brings it back
+    readonly property bool hideMiniBar: miniPlayer && detachedHideBar && anyWindowOpen
+    onHideMiniBarChanged: syncPluginMini()
+    // what the attached popup shows
+    readonly property string popupKind: !miniVisWanted ? "queue" : popupVideoMode ? "video" : "vis"
+    // the visualizer in its window, unless it is on its way back under the bar
+    readonly property bool vizInVisWin: visWin.open && !(popupSwap === -1 && swapWin === visWin)
+    readonly property bool vizInPopup: miniVisWanted && miniQueueShown && !popupVideoMode
+
+    // a window by its shortcut: closed, or opened (that kind detached); one the
+    // attached popup is showing comes off it in place
+    function toggleWindow(kind) {
+        const w = winOf(kind)
+        if (w.open) { w.hide(); return }
+        if (miniQueueShown && popupKind === kind) { detachFromPopup(kind, false); return }
+        if (!detached[kind] && WindowCtl.canPlaceWindows) setDetached(kind, true)
+        if (kind === "queue" && miniPlayer) PlayerState.showPanel = false
+        syncMiniQueue()
+        w.show()
+    }
+    // The visualizer and the video share one place when only one is open: the
+    // switch hands it to the other window, which takes this one's place and size.
+    property var mediaSwap: null
+    function swapMedia(to) {
+        const from = to === "video" ? visWin : videoWin, dest = winOf(to)
+        if (!from.open || dest.open) return
+        setDetached(to, true)
+        dest.width = from.width
+        dest.height = from.height
+        if (!dest.mapped) { from.hide(); dest.show(); return }
+        mediaSwap = { from: from, to: dest }
+        dest.open = true          // draws at opacity 0 first
+        dest.awaitingFrame = true
+        dest.applyGlass()
+    }
+    function finishMediaSwap() {
+        const from = mediaSwap.from, dest = mediaSwap.to
+        mediaSwap = null
+        WindowCtl.swapPopupWindows(from.title, dest.title)
+        WindowCtl.setInputEnabled(dest, true)
+        WindowCtl.setInputEnabled(from, false)
+        from.open = false
+    }
+    // Off the popup into its window where the popup was, then carried by the
+    // pointer that is still down. Detaching and reattaching swap the windows in
+    // one compositor step: the one going keeps its last frame (held) until the one
+    // coming has drawn the content, then one KWin call shows one and hides the other.
+    property point detachAt: Qt.point(0, 0)
+    property int popupSwap: 0   // 1 detaching, -1 reattaching
+    property var swapWin: null
+    property bool detachCarry: false
+    function detachFromPopup(kind, carry) {
+        const w = winOf(kind)
+        detachAt = Qt.point(miniQueueOverlay.x, miniQueueOverlay.y)
+        w.width = miniQueueOverlay.width
+        w.height = miniQueueOverlay.height
+        const swap = miniQueueShown && w.mapped
+        setDetached(kind, true)
+        if (kind === "queue" && miniPlayer) PlayerState.showPanel = false
+        if (!swap) { syncMiniQueue(); w.show(); return }
+        WindowCtl.holdFrames(root, true)
+        detachCarry = carry
+        popupSwap = 1
+        swapWin = w
+        syncMiniQueue()              // main stays up, held on its last frame, until the swap
+        w.open = true                // the content draws in the window, still at opacity 0
+        w.awaitingFrame = true
+        w.applyGlass()
+    }
+    function finishDetach(w) {
+        popupSwap = 0
+        swapWin = null
+        WindowCtl.placePopupWindowOverMain(w.title, Math.round(detachAt.x), Math.round(detachAt.y))
+        WindowCtl.setInputEnabled(w, true)
+        WindowCtl.setWindowOpacities([{ title: w.title, opacity: 1 },
+                                      { title: "melo", opacity: !miniPlayer || miniQueueShown ? 1 : 0 }])
+        applyMainHold()
+        if (detachCarry) { detachCarry = false; w.startSystemMove() }
+    }
+    function showInPopup(kind) {
+        if (kind === "queue") { miniVisWanted = false; PlayerState.showPanel = true; return }
+        PlayerState.showPanel = false
+        miniVisWanted = true
+        miniPopupVideo = kind === "video"
+        Settings.uiSet("miniPopupVideo", miniPopupVideo)
+    }
+    // back under the bar
+    function reattach(w) {
+        setDetached(w.kind, false)
+        if (!miniPlayer || !w.mapped || !w.open) {
+            w.hide()
+            if (miniPlayer) { showInPopup(w.kind); syncMiniQueue() }
+            return
+        }
+        WindowCtl.holdFrames(w, true)   // the window keeps its last frame
+        popupSwap = -1
+        swapWin = w
+        showInPopup(w.kind)
+        syncMiniQueue()                 // main stays at opacity 0 until it has drawn
+    }
+    function finishReattach() {
+        const w = swapWin
+        popupSwap = 0
+        swapWin = null
+        w.open = false
+        WindowCtl.setInputEnabled(w, false)
+        WindowCtl.setWindowOpacities([{ title: "melo", opacity: 1 }, { title: w.title, opacity: 0 }])
+        WindowCtl.holdFrames(w, false)
+        updateMainInput()
+    }
+    function windowFramed(w) {
+        if (popupSwap === 1 && swapWin === w) finishDetach(w)
+        else if (mediaSwap && mediaSwap.to === w) finishMediaSwap()
+    }
+    Connections {
+        target: root.popupSwap === -1 ? root : null
+        function onFrameSwapped() { root.finishReattach() }
+    }
+    Connections {
+        target: WindowCtl
+        function onPopupWindow(caption, x, y, w, h, nearBar) {
+            const win = caption === "melo-queue" ? queueWin : caption === "melo-vis" ? visWin
+                      : caption === "melo-video" ? videoWin : null
+            if (win) win.reported(x, y, w, h, nearBar && root.miniPlayer)
+        }
+    }
     // the popup region hosts EITHER the queue or the mini visualizer
     property bool miniVisWanted: false
     property bool miniPopupVideo: false
@@ -642,10 +801,8 @@ Window {
     readonly property bool popupVideoMode: miniPopupVideo && PlayerState.videoSupported
     readonly property bool videoWanted: VideoWanted.wanted(PlayerState.view, root.miniPlayer,
         npLoader.item ? npLoader.item.showVideo : false,
-        root.miniVisWanted, root.miniQueueShown, root.popupVideoMode)
+        root.miniVisWanted, root.miniQueueShown, root.popupVideoMode) || videoWin.open
     onVideoWantedChanged: PlayerState.videoWanted = videoWanted
-    // the popup renders inside MAIN, so main must be at least as wide as
-    // the bar; asserted at cheap moments (popup open, bar-resize end)
     // A bar resize with the popup open widens its host to that side first; the popup
     // keeps to the bar's right edge through a drag from the left. Cleared once the
     // host is the bar's width again, where both placements are the same.
@@ -655,13 +812,16 @@ Window {
         popupAnchorRight = (edges & Qt.LeftEdge) !== 0
         WindowCtl.fitPopupHost(popupAnchorRight ? "left" : "right")
     }
+    // The popup renders inside main, so main is widened to the bar's width when
+    // the popup opens and when a bar resize ends.
     function ensureMainWideEnough() {
         if (miniPlayer && width < miniWin.width) width = miniWin.width
     }
     function syncMiniQueue() {
         // no popup where melo cannot place windows: toggleQueue expands instead
         const want = WindowCtl.canPlaceWindows && miniPlayer && PlayerState.hasTrack
-                     && (PlayerState.showPanel || miniVisWanted)
+                     && ((PlayerState.showPanel && !detached.queue)
+                         || (miniVisWanted && !detached[popupVideoMode ? "video" : "vis"]))
         if (want) ensureMainWideEnough()
         if (want && !miniQueueShown) {
             WindowCtl.fitPopupHost("")             // blocking; invisible while it happens
@@ -905,7 +1065,7 @@ Window {
         readonly property int gap: root.cornerRadius > 0 ? 6 : 0
         anchors.bottom: parent.bottom
         anchors.bottomMargin: root.barH + gap
-        height: Math.max(120, Math.min(root.miniPanelH, root.height - root.barH - gap))
+        height: Math.max(120, Math.min(root.miniPanelH, root.popupMaxH))
         z: 60
         // BLUR region tracks the popup per frame (a lagging glass backing
         // trails the edges visibly); the INPUT mask stays debounced — mask
@@ -951,8 +1111,7 @@ Window {
             onPositionChanged: (m) => {
                 if (!pressed) return
                 const gy = mapToItem(root.contentItem, m.x, m.y).y
-                root.miniPanelH = Math.max(120,
-                    Math.min(root.height - root.barH, (root.height - root.barH) - gy))
+                root.miniPanelH = Math.max(120, Math.min(root.popupMaxH, (root.height - root.barH) - gy))
                 panelHSaveTimer.restart()
             }
             onReleased: root.updateMainInput()   // final exact region
@@ -970,8 +1129,18 @@ Window {
             }
         }
         HoverHandler { id: overlayHover }
+        Item {   // Ctrl+drag takes the popup off into its own window
+            anchors.fill: parent
+            z: 20
+            DragHandler {
+                target: null
+                acceptedModifiers: Qt.ControlModifier
+                grabPermissions: PointerHandler.CanTakeOverFromAnything   // a queue row holds its press
+                onActiveChanged: if (active) root.detachFromPopup(root.popupKind, true)
+            }
+        }
         // The popup is a card in the bar's style: the theme's corners cut it and
-        // the theme's frame goes round it, for the queue and the visualizer alike.
+        // the theme's frame goes round it, whatever it shows.
         WindowShape {
             id: popupShape
             anchors.fill: parent
@@ -1035,8 +1204,7 @@ Window {
             enabled: root.popupCornerDrag
             function onPopupCursor(above) {
                 if (isNaN(root.popupCornerGrab)) root.popupCornerGrab = above - miniQueueOverlay.height
-                root.miniPanelH = Math.max(120, Math.min(root.height - root.barH - miniQueueOverlay.gap,
-                                                         above - root.popupCornerGrab))
+                root.miniPanelH = Math.max(120, Math.min(root.popupMaxH, above - root.popupCornerGrab))
                 panelHSaveTimer.restart()
             }
             function onMainGeometry() {
@@ -1046,11 +1214,15 @@ Window {
             }
         }
         QueuePanel {
+            parent: root.queueInWindow ? queueWin.body : miniQueueOverlay
             anchors.fill: parent
-            // inside the popup's frame, as the bar sits inside its own
-            anchors.leftMargin: root.frL; anchors.topMargin: root.frT
-            anchors.rightMargin: root.frR; anchors.bottomMargin: root.frB
-            visible: !root.miniVisWanted
+            // inside the popup's frame, as the bar sits inside its own; the
+            // window's body is inside its frame already
+            anchors.leftMargin: root.queueInWindow ? 0 : root.frL
+            anchors.topMargin: root.queueInWindow ? 0 : root.frT
+            anchors.rightMargin: root.queueInWindow ? 0 : root.frR
+            anchors.bottomMargin: root.queueInWindow ? 0 : root.frB
+            visible: root.queueInWindow ? queueWin.open : !root.miniVisWanted
             fullWidth: true
             miniHost: true
             contextMenu: contextMenu   // main-window overlays work in mini mode
@@ -1060,7 +1232,7 @@ Window {
             anchors.fill: parent
             visible: root.miniVisWanted
             role: "window"
-            // The card's corners and frame are the popup's (popupShape); the viz
+            // The card's corners and frame are the popup's (popupShape); what it holds
             // sits inset by the radius, clear of a cut or rounded corner.
             Image {   // under the video, for stills and the first beat
                 anchors.fill: parent
@@ -1111,6 +1283,104 @@ Window {
                 Behavior on opacity { NumberAnimation { duration: 150 } }
                 onPicked: (v) => { root.miniPopupVideo = v; Settings.uiSet("miniPopupVideo", v) }
             }
+        }
+    }
+
+    DetachedWindow {
+        id: queueWin
+        kind: "queue"
+        defaultControls: root.detachedControls
+        onFramed: root.windowFramed(queueWin)
+        onReattachRequested: root.reattach(queueWin)
+        onMenuRequested: (x, y) => root.openWindowMenu(queueWin, x, y)
+    }
+    DetachedWindow {
+        id: visWin
+        kind: "vis"
+        defaultControls: root.detachedControls
+        onFramed: root.windowFramed(visWin)
+        onReattachRequested: root.reattach(visWin)
+        onMenuRequested: (x, y) => root.openWindowMenu(visWin, x, y)
+        Item { id: visSlot; parent: visWin.body; anchors.fill: parent }   // the shared viz reparents in
+        Row {   // on hover: Visualizer | Video while the video has no window
+            parent: visWin.body
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.margins: Math.max(1, Theme.windowRadius) + Theme.gap(10)
+            z: 25
+            spacing: Theme.gap(6)
+            opacity: visWin.hovered ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 150 } }
+            PopupModeToggle {
+                visible: PlayerState.videoSupported && !videoWin.open
+                video: false
+                onPicked: (v) => { if (v) root.swapMedia("video") }
+            }
+        }
+        OverlayControls {
+            parent: visWin.body
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            // as far in as the row at the top: its faces sit inside a segment track,
+            // and a shaped window's body runs under the bottom frame
+            anchors.bottomMargin: Math.max(1, Theme.windowRadius) + Theme.gap(10) + (Theme.toggles === "segment" ? Theme.tabTrackPad : 0)
+                                  + (visWin.shaped ? visWin.frB : 0)
+            z: 20
+            shown: visWin.overlay && visWin.open && visWin.hovered
+        }
+    }
+    DetachedWindow {
+        id: videoWin
+        kind: "video"
+        defaultControls: root.detachedControls
+        onFramed: root.windowFramed(videoWin)
+        onReattachRequested: root.reattach(videoWin)
+        onMenuRequested: (x, y) => root.openWindowMenu(videoWin, x, y)
+        Image {   // under the video, for stills and the first beat
+            parent: videoWin.body
+            anchors.fill: parent
+            source: PlayerState.trackThumbnail
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            opacity: 1 - windowVideo.opacity
+            visible: videoWin.open && opacity > 0.01
+        }
+        VideoSurface {
+            id: windowVideo
+            parent: videoWin.body
+            anchors.fill: parent
+            running: videoWin.open && PlayerState.hasVideo
+            frozen: !PlayerState.isPlaying
+            fit: root.videoFit
+            opacity: hasFrame ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 300 } }
+            visible: opacity > 0.01
+        }
+        Row {
+            parent: videoWin.body
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.margins: Math.max(1, Theme.windowRadius) + Theme.gap(10)
+            z: 25
+            spacing: Theme.gap(6)
+            opacity: videoWin.hovered ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 150 } }
+            PopupModeToggle {
+                visible: MELO_HAS_GL && !visWin.open
+                video: true
+                onPicked: (v) => { if (!v) root.swapMedia("vis") }
+            }
+        }
+        OverlayControls {
+            parent: videoWin.body
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            // as far in as the row at the top: its faces sit inside a segment track,
+            // and a shaped window's body runs under the bottom frame
+            anchors.bottomMargin: Math.max(1, Theme.windowRadius) + Theme.gap(10) + (Theme.toggles === "segment" ? Theme.tabTrackPad : 0)
+                                  + (videoWin.shaped ? videoWin.frB : 0)
+            z: 20
+            shown: videoWin.overlay && videoWin.open && videoWin.hovered
         }
     }
 
@@ -1272,8 +1542,8 @@ Window {
             holdAnims: root.sysDragging
             miniActive: root.miniPlayer
             eqActive: eqLoader.item ? eqLoader.item.visible : false
-            visActive: root.miniVisWanted
-            visAllowed: WindowCtl.canPlaceWindows
+            visActive: (root.miniVisWanted && root.miniQueueShown) || visWin.open || videoWin.open
+            visAllowed: MELO_HAS_GL
             onQueueToggle: CommandMap.invoke("toggleQueue")
             onVisToggle: CommandMap.invoke("toggleVisualizer")
             onEqToggle: CommandMap.invoke("toggleEq")
@@ -1332,8 +1602,10 @@ Window {
         holdAnims: root.sysDragging
         miniActive: root.miniPlayer
         eqActive: eqLoader.item ? eqLoader.item.visible : false
-        visAllowed: WindowCtl.canPlaceWindows
+        visActive: visWin.open || videoWin.open
+        visAllowed: MELO_HAS_GL
         onQueueToggle: CommandMap.invoke("toggleQueue")
+        onVisToggle: CommandMap.invoke("toggleVisualizer")
         onEqToggle: CommandMap.invoke("toggleEq")
         onDragStarted: root.holdFadeForDrag()
         onNeutralClick: if (PlayerState.view === 5 && npLoader.item && npLoader.item.videoShown) npLoader.item.toggleOverlay()
@@ -1801,11 +2073,11 @@ Window {
                 // instances showed different presets). A Loader, so a
                 // machine without OpenGL 3.3 never builds it.
                 Loader {
+                    id: vizLoader
                     active: MELO_HAS_GL
                     sourceComponent: Visualizer {
                         id: viz
-                        parent: root.miniVisWanted && root.miniQueueShown && !root.popupVideoMode
-                                ? miniVisSlot : vizSlot
+                        parent: root.vizInVisWin ? visSlot : root.vizInPopup ? miniVisSlot : vizSlot
                         anchors.fill: parent
                         // ...unless a plugin occupies the slot. Bound means
                         // INSTEAD OF, not on top of — two visualisers drawing
@@ -1813,7 +2085,7 @@ Window {
                         // mode a slot exists to avoid.
                         visible: !root.vizSlotFilled
                                  && ((PlayerState.view === 4 && !root.miniPlayer)
-                                     || (root.miniVisWanted && root.miniQueueShown && !root.popupVideoMode))
+                                     || root.vizInVisWin || root.vizInPopup)
                         // inset inside the rounded card so its square corners
                         // clear the card's rounded corners (max(1) keeps a
                         // 1px top gap in the mini slot)
@@ -1860,7 +2132,7 @@ Window {
                         }
                         MouseArea {
                             anchors.fill: parent
-                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            acceptedButtons: root.vizInVisWin ? Qt.LeftButton : Qt.LeftButton | Qt.RightButton
                             onClicked: (m) => m.button === Qt.RightButton ? viz.backPreset()
                                          : (viz.randomClick ? viz.randomPreset() : viz.nextPreset())
                         }
@@ -2468,9 +2740,28 @@ Window {
         return acts
     }
 
+    // a detached window's right click: its picture's entries, then the window's
+    function openWindowMenu(w, sx, sy) {
+        const acts = w.kind === "video" ? videoActs() : []
+        if (w.kind === "vis" && vizLoader.item)
+            acts.push({ label: "Previous preset", act: () => vizLoader.item.backPreset() })
+        if (w.kind !== "queue")
+            acts.push({ label: "Overlay controls", check: w.overlay, rule: acts.length > 0,
+                        act: () => w.setControls(w.overlay ? "bar" : "over") })
+        if (root.miniPlayer)
+            acts.push({ label: "Show mini player", check: !root.detachedHideBar, rule: w.kind === "queue" && acts.length > 0,
+                        act: () => Settings.uiSet("detachedHideBar", !root.detachedHideBar) })
+        if (root.pinToggles)
+            acts.push({ label: "Keep above", check: w.keepAbove, rule: acts.length > 0,
+                        act: () => w.setKeepAbove(!w.keepAbove) })
+        if (root.miniPlayer && WindowCtl.canPlaceWindows)
+            acts.push({ label: "Attach to mini player", rule: acts.length > 0, act: () => root.reattach(w) })
+        acts.push({ label: "Close", rule: !root.miniPlayer && acts.length > 0, act: () => w.hide() })
+        contextMenu.open(sx, sy, acts, w)
+    }
     // Quality and fit, on the picture itself. Flat, with a check on the
     // current value: the menu has no submenus of its own.
-    function openVideoMenu(sx, sy, host) {
+    function videoActs() {
         const q = Number(Settings.uiGet("videoQuality", 720))
         const f = String(Settings.uiGet("videoFit", "fill"))
         const acts = []
@@ -2479,8 +2770,9 @@ Window {
         const fits = [["fill", "Fill"], ["fit", "Fit"], ["stretch", "Stretch"]]
         fits.forEach(([v, label], i) =>
             acts.push({ label: label, check: f === v, rule: i === 0, act: () => Settings.uiSet("videoFit", v) }))
-        contextMenu.open(sx, sy, acts, host)
+        return acts
     }
+    function openVideoMenu(sx, sy, host) { contextMenu.open(sx, sy, videoActs(), host) }
 
     // The player bar's own menu: the playing track's entries, then the bar's.
     // Through CommandMap, as the bar's buttons go, so a plugin's intercepts hold.
@@ -2501,10 +2793,10 @@ Window {
         contextMenu.open(sx, sy, acts, host)
     }
 
-    // A press anywhere outside the search field drops its focus. (Also covers
-    // window re-activation handing focus straight back to the TextInput.) A
-    // passive handler: a full-window MouseArea, even disabled, owns the cursor
-    // over everything under it and hid every resize and hand cursor.
+    // A press anywhere outside the search field drops its focus, also when window
+    // re-activation hands focus straight back to the TextInput. A passive handler:
+    // a full-window MouseArea, even disabled, owns the cursor over everything under
+    // it and would hide the resize and hand cursors.
     Item {
         anchors.fill: parent
         z: 940
@@ -2877,10 +3169,8 @@ Window {
             // window placement there is no popup: the full player opens on the panel.
             case "toggleQueue":
                 if (InterceptMap.offer("toggleQueue")) break
-                if (root.miniPlayer && !WindowCtl.canPlaceWindows) {
-                    root.miniVisWanted = false
-                    PlayerState.showPanel = true
-                    root.toggleMini()
+                if (root.miniPlayer && root.queueInWindow) {
+                    root.toggleWindow("queue")
                 } else if (root.miniPlayer) {
                     root.miniVisWanted = false
                     PlayerState.showPanel = !PlayerState.showPanel
@@ -2891,7 +3181,15 @@ Window {
                 break
             case "toggleVisualizer":
                 if (InterceptMap.offer("toggleVisualizer")) break
-                if (!WindowCtl.canPlaceWindows) break   // its only home is the popup
+                // full size has no popup: the button opens or closes the window
+                if (!root.miniPlayer) {
+                    if (visWin.open || videoWin.open) { if (visWin.open) visWin.hide(); if (videoWin.open) videoWin.hide() }
+                    else root.toggleWindow(root.popupVideoMode ? "video" : "vis")
+                    break
+                }
+                if (root.inWindow(root.popupVideoMode ? "video" : "vis")) {
+                    root.toggleWindow(root.popupVideoMode ? "video" : "vis"); break
+                }
                 PlayerState.showPanel = false
                 root.miniVisWanted = !root.miniVisWanted
                 root.syncMiniQueue()
@@ -2909,6 +3207,15 @@ Window {
                 break
             case "toggleClickThrough":
                 root.clickThrough = !root.clickThrough
+                break
+            case "toggleQueueWindow":
+                root.toggleWindow("queue")
+                break
+            case "toggleVisualizerWindow":
+                root.toggleWindow("vis")
+                break
+            case "toggleVideoWindow":
+                root.toggleWindow("video")
                 break
             case "togglePin":
                 if (InterceptMap.offer("togglePin")) break
@@ -2962,8 +3269,8 @@ Window {
         applyMainHold()
     }
     // Through a bar resize main draws nothing, or with the popup open one frame after
-    // each of the bar's: the bar's late frames are the ones KWin stretches, and main's
-    // popup frames otherwise take the shared render thread from it (3 to 11 a late frame).
+    // each of the bar's: KWin stretches the bar's late frames, and main's popup frames
+    // otherwise run on the thread that renders both windows, 3 to 11 inside each late one.
     readonly property bool mainLockstep: resizeFreeze && miniPlayer && miniQueueShown
     property bool mainWaits: true
     onMainLockstepChanged: { mainWaits = true; applyMainHold() }
