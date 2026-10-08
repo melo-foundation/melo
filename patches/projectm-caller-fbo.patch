@@ -1,5 +1,6 @@
 From: melo-foundation <333192008+melo-foundation@users.noreply.github.com>
-Subject: [PATCH] render into the caller-bound FBO instead of binding one
+Subject: [PATCH] render into the caller-bound FBO instead of binding one;
+ new framebuffer textures start black
 
 Modified by melo-foundation for melo on 2026-09-02.
 
@@ -39,3 +40,57 @@ index 88fa014..cbfb7d7 100644
      glViewport(0, 0, renderContext.viewportSizeX, renderContext.viewportSizeY);
  
  #ifdef USE_GLES
+diff --git a/src/libprojectM/Renderer/Framebuffer.hpp b/src/libprojectM/Renderer/Framebuffer.hpp
+--- a/src/libprojectM/Renderer/Framebuffer.hpp
++++ b/src/libprojectM/Renderer/Framebuffer.hpp
+@@ -223,6 +223,11 @@
+     void UpdateDrawBuffers(int framebufferIndex);
+ 
+     /**
++     * @brief melo patch: clears the bound framebuffer's color attachments to black.
++     */
++    void ClearBound();
++
++    /**
+      * @brief Removes the given attachment type from the framebuffer.
+      * @param framebufferIndex The framebuffer index.
+      * @param attachmentType The attachment type to remove.
+diff --git a/src/libprojectM/Renderer/Framebuffer.cpp b/src/libprojectM/Renderer/Framebuffer.cpp
+--- a/src/libprojectM/Renderer/Framebuffer.cpp
++++ b/src/libprojectM/Renderer/Framebuffer.cpp
+@@ -97,6 +97,7 @@
+             texture.second->SetSize(width, height);
+             glFramebufferTexture2D(GL_FRAMEBUFFER, texture.first, GL_TEXTURE_2D, texture.second->Texture()->TextureID(), 0);
+         }
++        ClearBound();
+     }
+     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+ 
+@@ -212,9 +213,27 @@
+         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + attachmentIndex, GL_TEXTURE_2D, texture->TextureID(), 0);
+     }
+     UpdateDrawBuffers(framebufferIndex);
++    if (m_width > 0 && m_height > 0)
++    {
++        ClearBound();
++    }
+     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+ }
+ 
++// melo patch: new textures start black. glTexImage2D(nullptr) leaves them undefined,
++// and some drivers (virgl, Mesa) hand back memory still holding another window's frame.
++void Framebuffer::ClearBound()
++{
++    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
++    {
++        return;
++    }
++    glDisable(GL_SCISSOR_TEST);
++    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
++    glClear(GL_COLOR_BUFFER_BIT);
++}
++
+ void Framebuffer::RemoveColorAttachment(int framebufferIndex, int attachmentIndex)
+ {
+     RemoveAttachment(framebufferIndex,  GL_COLOR_ATTACHMENT0 + attachmentIndex);

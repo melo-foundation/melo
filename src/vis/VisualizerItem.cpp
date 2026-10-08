@@ -79,7 +79,9 @@ public:
                                       Qt::QueuedConnection, Q_ARG(int, switched));
         }
 
-        // Known state; the item's FBO is bound by QQuickFramebufferObject.
+        // Known state. Bound again: projectM's setup and preset loads leave framebuffer 0
+        // bound, and a frame drawn there never reaches the item's texture.
+        framebufferObject()->bind();
         f->glDisable(GL_BLEND);
         f->glDisable(GL_SCISSOR_TEST);
         f->glClearColor(0.f, 0.f, 0.f, 1.f);
