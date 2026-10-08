@@ -10,11 +10,15 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QClipboard>
+#include <QCursor>
+#include <QMouseEvent>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QQuickWindow>
+#include <QOpenGLContext>
+#include <memory>
 #include <QRegion>
 #include <QScreen>
 #include <QStandardPaths>
@@ -440,14 +444,18 @@ bool WindowController::alignForExpand(int barHeight, int width, int height) {
 
 // The popup host's rectangle for a side, shared with the glue script; and the
 // room above the bar, reported to melo.
-static QString popupHostJs(const QString& service) {
+// On X11 the host spans the work area: KWin shows a moved X window's old picture
+// until it redraws, so a host that moved at each drag's start and end flashed.
+static QString popupHostJs(const QString& service, bool wide) {
     return QStringLiteral(
+        "const wideHost = %2;\n"
         "function hostRect(side) {\n"
         "  const m = mini.frameGeometry;\n"
         "  const a = workspace.clientArea(KWin.MaximizeArea, mini);\n"
         "  const foot = m.y + m.height, h = Math.max(a.height, foot - a.y);\n"
         "  let x = m.x, w = m.width;\n"
-        "  if (side === \"left\") { x = Math.min(a.x, m.x); w = m.x + m.width - x; }\n"
+        "  if (wideHost) { x = Math.min(a.x, m.x); w = Math.max(a.x + a.width, m.x + m.width) - x; }\n"
+        "  else if (side === \"left\") { x = Math.min(a.x, m.x); w = m.x + m.width - x; }\n"
         "  else if (side === \"right\") { w = Math.max(a.x + a.width, m.x + m.width) - m.x; }\n"
         "  return { x: x, y: foot - h, width: w, height: h };\n"
         "}\n"
@@ -455,7 +463,7 @@ static QString popupHostJs(const QString& service) {
         "  const m = mini.frameGeometry, a = workspace.clientArea(KWin.MaximizeArea, mini);\n"
         "  callDBus(\"%1\", \"/melo/geometry\", \"com.melo.Geometry\", \"ReportPopupRoom\",\n"
         "           String(Math.round((m.y + m.height - a.y) / k)));\n"
-        "}\n").arg(service);
+        "}\n").arg(service, wide ? QStringLiteral("true") : QStringLiteral("false"));
 }
 
 // a caption as a JS string literal, from melo's own fixed set
@@ -549,10 +557,19 @@ bool WindowController::watchPopupWindows(bool on) {
         "}\n"
         "function hook(w) {\n"
         "  if (w && w.pid === %2 && [\"melo-queue\", \"melo-vis\", \"melo-video\"].includes(w.caption))\n"
+        "  {\n"
         "    w.interactiveMoveResizeFinished.connect(() => report(w));\n"
+        // MELO_GEOM_DEBUG: each size KWin asks for through a resize, for the trace
+        "    if (%3) w.interactiveMoveResizeStepped.connect((g) => callDBus(\"%1\", \"/melo/geometry\", \"com.melo.Geometry\", \"ReportStep\",\n"
+        "      [w.caption, Math.round(g.width / k), Math.round(g.height / k), Date.now()].join(\",\")));\n"
+        "    if (%3) w.frameGeometryChanged.connect(() => { if (!w.resize) return; const p = w.frameGeometry;\n"
+        "      callDBus(\"%1\", \"/melo/geometry\", \"com.melo.Geometry\", \"ReportPlace\",\n"
+        "        [w.caption, p.x / k, p.y / k, p.width / k, p.height / k, Date.now()].map((v, i) => i === 0 ? v : Math.round(v * 10) / 10).join(\",\")); });\n"
+        "  }\n"
         "}\n"
         "for (const c in pws) hook(pws[c]);\n"
-        "workspace.windowAdded.connect(hook);\n").arg(geoService_, QString::number(QCoreApplication::applicationPid()))).toUtf8());
+        "workspace.windowAdded.connect(hook);\n").arg(geoService_, QString::number(QCoreApplication::applicationPid()),
+                                                 qEnvironmentVariableIsSet("MELO_GEOM_DEBUG") ? QStringLiteral("true") : QStringLiteral("false"))).toUtf8());
     f.close();
     QDBusReply<int> id = scripting.call("loadScript", popupWatchPath_, popupWatchName_);
     if (!id.isValid() || id.value() < 0) {
@@ -568,8 +585,77 @@ bool WindowController::watchPopupWindows(bool on) {
 
 bool WindowController::fitPopupHost(const QString& side) {
     if (!kwinAvailable_) return false;
-    return runKwinScript(findWindowsPrelude() + popupHostJs(geoService_) + QStringLiteral(
+    return runKwinScript(findWindowsPrelude() + popupHostJs(geoService_, isX11_) + QStringLiteral(
         "if (main && mini) { main.frameGeometry = hostRect(\"%1\"); reportRoom(); }\n").arg(side));
+}
+
+void WindowController::restackBelow(QQuickWindow* win, QQuickWindow* sibling) {
+#ifdef MELO_X11
+    if (isX11_) x11RestackBelow(win, sibling);
+#else
+    Q_UNUSED(win) Q_UNUSED(sibling)
+#endif
+}
+
+QString WindowController::stackOrder(QQuickWindow* a, QQuickWindow* b) {
+#ifdef MELO_X11
+    if (isX11_) return x11StackOrder({a, b});
+#else
+    Q_UNUSED(a) Q_UNUSED(b)
+#endif
+    return QString();
+}
+
+// Qt 6.12's Wayland EGL context resizes the EGL window inside makeCurrent, after
+// eglMakeCurrent: on NVIDIA the frame being drawn keeps the old size's back buffer, and
+// it is committed with the new size's ack and viewport, so KWin scales the old picture
+// into the new place, the far edge deforming through a drag. Measured with WAYLAND_DEBUG
+// over a 760 px drag: 37 of 51 acked commits one size behind. A window-sized offscreen
+// pass (main's layers, projectM's FBO) made the window current a second time and hid it.
+// So when the size has changed since the last frame, make it current once more before
+// drawing, which takes the new buffer.
+void WindowController::keepBufferInStep(QQuickWindow* win) {
+    if (!win || !QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) return;
+    auto last = std::make_shared<QSize>();
+    connect(win, &QQuickWindow::beforeRendering, win, [win, last] {
+        const QSize now = win->size() * win->devicePixelRatio();
+        if (now == *last) return;
+        *last = now;
+        if (QOpenGLContext* c = QOpenGLContext::currentContext()) c->makeCurrent(win);
+    }, Qt::DirectConnection);
+}
+
+void WindowController::startSystemMove(QQuickWindow* win, QQuickWindow* from) {
+    if (!win) return;
+#ifdef MELO_X11
+    if (isX11_ && x11StartSystemResize(win, Qt::Edges())) {
+        if (from) {
+            const QPointF g = QCursor::pos();
+            QCoreApplication::postEvent(from, new QMouseEvent(QEvent::MouseButtonRelease,
+                from->mapFromGlobal(g), g, Qt::LeftButton, Qt::NoButton, Qt::NoModifier));
+        }
+        return;
+    }
+#else
+    Q_UNUSED(from)
+#endif
+    win->startSystemMove();
+}
+
+void WindowController::startSystemResize(QQuickWindow* win, int edges, QQuickWindow* from) {
+    if (!win) return;
+#ifdef MELO_X11
+    if (isX11_ && x11StartSystemResize(win, Qt::Edges(edges))) {
+        if (from) {
+            const QPointF g = QCursor::pos();
+            // posted: the press that called this is still being delivered
+            QCoreApplication::postEvent(from, new QMouseEvent(QEvent::MouseButtonRelease,
+                from->mapFromGlobal(g), g, Qt::LeftButton, Qt::NoButton, Qt::NoModifier));
+        }
+        return;
+    }
+#endif
+    win->startSystemResize(Qt::Edges(edges));
 }
 
 // N-window opacity in one script execution. Not findWindowsPrelude(), which
@@ -727,19 +813,34 @@ bool WindowController::setMiniQueueGlue(bool on) {
     QFile f(glueScriptPath_);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
     // Keeps main's foot on the bar's through moves and resizes. A host melo widened
-    // for a drag (fitPopupHost) stays put until the drag ends: the popup in it is
+    // for a drag (fitPopupHost) stays put through it and after it: the popup in it is
     // drawn against the bar's fixed side, from the bar's own width.
-    f.write((findWindowsPrelude() + popupHostJs(geoService_) + QStringLiteral(
+    f.write((findWindowsPrelude() + popupHostJs(geoService_, isX11_) + QStringLiteral(
+        "let lastBarX = null;\n"
         "function glue() {\n"
         "  if (!mini || !main) return;\n"
         "  const m = mini.frameGeometry;\n"
         "  const g = main.frameGeometry;\n"
-        "  if (mini.resize && g.width > m.width + 1) return;\n"
-        "  const nx = m.x, ny = m.y + m.height - g.height;\n"
+        // A move carries the host with the bar, so its picture never changes. A host
+        // fitted for a resize stays put through it; one that was not (a resize KWin
+        // started, Alt+drag) follows the bar per step.
+        "  const resizing = mini.resize;\n"
+        "  const dx = (lastBarX === null || resizing) ? 0 : m.x - lastBarX;\n"
+        "  lastBarX = m.x;\n"
+        "  if (resizing && g.width > m.width + 1) return;\n"
+        "  const nx = resizing ? m.x : g.x + dx, ny = m.y + m.height - g.height;\n"
         "  if (g.x === nx && g.y === ny) return;   // skip no-op moves\n"
         "  main.frameGeometry = { x: nx, y: ny, width: g.width, height: g.height };\n"
         "}\n"
-        "function settle() { if (mini && main) { main.frameGeometry = hostRect(\"\"); reportRoom(); } }\n"
+        // The host stays where the move or resize left it: fitting it back to the bar here
+        // moved it before melo drew there, and its old picture jumped (KWin shows a moved
+        // window's last frame). Only the room above the bar is refreshed.
+        "function settle() {\n"
+        "  if (!mini || !main) return;\n"
+        "  const g = main.frameGeometry, r = hostRect(\"\");\n"
+        "  if (r.height !== g.height || r.y !== g.y) main.frameGeometry = { x: g.x, y: r.y, width: g.width, height: r.height };\n"
+        "  reportRoom();\n"
+        "}\n"
         // KWin holds the pointer through the bar's resize, so a popup corner's
         // height comes from here: the cursor over the bar's top, once per pixel.
         "let lastAbove = null;\n"
@@ -950,6 +1051,11 @@ void WindowController::watchMainGeometry() {
         "  else if (w.caption === \"melo-mini\") mini = w;\n"
         "  else return;\n"
         "  w.interactiveMoveResizeFinished.connect(report);\n"
+        "  if (%4) w.interactiveMoveResizeStepped.connect((g) => callDBus(\"%2\", \"/melo/geometry\", \"com.melo.Geometry\", \"ReportStep\",\n"
+        "    [w.caption, Math.round(g.width / k), Math.round(g.height / k), Date.now()].join(\",\")));\n"
+        "  if (%4) w.frameGeometryChanged.connect(() => { if (!w.resize) return; const p = w.frameGeometry;\n"
+        "    callDBus(\"%2\", \"/melo/geometry\", \"com.melo.Geometry\", \"ReportPlace\",\n"
+        "      [w.caption, p.x / k, p.y / k, p.width / k, p.height / k, Date.now()].map((v, i) => i === 0 ? v : Math.round(v * 10) / 10).join(\",\")); });\n"
         // The handler is shared by melo and the compact bar, so it is told
         // which window raised it rather than assuming main.
         "  w.interactiveMoveResizeStarted.connect(() => started(w));\n"
@@ -958,7 +1064,7 @@ void WindowController::watchMainGeometry() {
         "for (const w of workspace.windowList()) arm(w);\n"
         "workspace.windowAdded.connect(arm);\n")
         .arg(QString::number(QCoreApplication::applicationPid()), geoService_,
-             kwinScaleJs())).toUtf8());
+             kwinScaleJs(), qEnvironmentVariableIsSet("MELO_GEOM_DEBUG") ? QStringLiteral("true") : QStringLiteral("false"))).toUtf8());
     f.close();
 
     const KWinObject scripting("/Scripting", "org.kde.kwin.Scripting");

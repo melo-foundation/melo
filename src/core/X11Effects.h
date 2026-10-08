@@ -2,7 +2,9 @@
 #include <QAbstractNativeEventFilter>
 #include <QHash>
 #include <QObject>
+#include <QList>
 #include <QRegion>
+#include <QString>
 
 class QWindow;
 
@@ -51,3 +53,16 @@ private:
 // window. null region = input everywhere the window is drawn. Kept on the
 // window and re-sent whenever Qt creates its X window. No-op off xcb.
 void x11SetInputShape(QWindow* w, const QRegion* region);
+
+// _NET_WM_MOVERESIZE from where the pointer is now. Qt's startSystemResize sends
+// the last pointer position that window itself saw, stale when the press was on
+// another window. No edges is a move. False off xcb.
+bool x11StartSystemResize(QWindow* w, Qt::Edges edges);
+
+// Each window's place in _NET_CLIENT_LIST_STACKING, bottom first ("melo@3"), for traces.
+// Empty off xcb.
+QString x11StackOrder(const QList<QWindow*>& windows);
+
+// Asks the window manager to put w directly under sibling (_NET_RESTACK_WINDOW).
+// False off xcb.
+bool x11RestackBelow(QWindow* w, QWindow* sibling);

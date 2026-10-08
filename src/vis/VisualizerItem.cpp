@@ -3,6 +3,7 @@
 #include "PcmQueue.h"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QDir>
 #include <QFileInfo>
 #include <QOpenGLFramebufferObject>
@@ -11,6 +12,7 @@
 #include <QQuickOpenGLUtils>
 #include <QQuickWindow>
 #include <cstdio>
+#include <cmath>
 #include <cstdlib>
 
 PcmQueue* VisualizerItem::s_pcm = nullptr;
@@ -70,7 +72,13 @@ public:
                                       Qt::QueuedConnection, Q_ARG(QStringList, names));
         }
         if (VisualizerItem::s_pcm)
-            VisualizerItem::s_pcm->drain([this](const float* d, std::size_t n) { pm_->feedPcm(d, n); });
+            VisualizerItem::s_pcm->drain([this](const float* d, std::size_t n) {
+                pm_->feedPcm(d, n);
+                if (trace_) {
+                    fed_ += n;
+                    for (std::size_t i = 0; i < n; ++i) peak_ = std::max(peak_, std::fabs(d[i]));
+                }
+            });
 
         const int switched = pm_->lastSwitchedPreset();
         if (switched != lastPresetSeen_) {
@@ -95,13 +103,29 @@ public:
         // something is playing (see pumpOn_/playing_ in the header;
         // itemChange() rekicks on re-show, setPlaying() on resume)
         if (item_->pumpOn_.load() && item_->playing_.load()) update();
+        // MELO_GEOM_DEBUG: what reached this projectM each 2 s; peak 0 is silence
+        if (trace_) {
+            ++frames_;
+            if (!statClock_.isValid()) statClock_.start();
+            if (statClock_.elapsed() >= 2000) {
+                std::fprintf(stderr, "[vispcm] %p frames %d fed %zu peak %.3f\n",
+                             static_cast<const void*>(this), frames_, fed_, double(peak_));
+                frames_ = 0; fed_ = 0; peak_ = 0; statClock_.restart();
+            }
+        }
     }
+    ~PMRenderer() override { if (trace_) std::fprintf(stderr, "[vispcm] %p gone\n", static_cast<const void*>(this)); }
 
 private:
     const VisualizerItem* item_;
     std::unique_ptr<ProjectMWrapper> pm_;
     QSize fbSize_;
     int lastPresetSeen_ = -1;
+    const bool trace_ = qEnvironmentVariableIsSet("MELO_GEOM_DEBUG");
+    int frames_ = 0;
+    std::size_t fed_ = 0;
+    float peak_ = 0;
+    QElapsedTimer statClock_;
 };
 } // namespace
 

@@ -147,6 +147,7 @@ Window {
     // part where the border goes round each part. What it frames moves in by
     // its widths; with the title in the frame the title bar spans the band's
     // top and sides, and the band starts under it.
+    readonly property bool isX11: Qt.platform.pluginName === "xcb"
     readonly property bool frameOff: (root.visibility === Window.Maximized || root.visibility === Window.FullScreen)
                                      && !Theme.borderMaximized
     readonly property real frL: frameOff ? 0 : Theme.borderLeft
@@ -402,6 +403,8 @@ Window {
             root.sysDragging = false   // KWin: interactive move/resize ended
             root.resizeFreeze = false
             root.ensureMainWideEnough()   // popup host after bar resizes
+            // the final width can land while still frozen, where onWidthChanged skips this
+            if (root.popupAnchorRight && Math.abs(root.width - miniWin.width) < 1) root.popupAnchorRight = false
             // no pointer enter is delivered until the mouse MOVES after the
             // grab ends — restore hover from KWin's authoritative answer
             hoverLingerTimer.stop()
@@ -437,7 +440,8 @@ Window {
     readonly property real fullBaseOpacity: fullContentOpacity
     readonly property real miniContentOpacity: ((kwinSwap || miniPlayer) ? miniHoverFade : 0) * _r
     readonly property bool fullBarVisible: !miniPlayer || toggling
-    readonly property bool miniVisible: (miniPlayer || toggling) && builtinMini
+    // expandReveal: the bar is still on screen until main has drawn at its full-size place
+    readonly property bool miniVisible: (miniPlayer || toggling || expandReveal) && builtinMini
     // main is opaque in full mode, and in mini mode while the popup is open (it
     // renders inside main); mini is opaque only in mini mode.
     // shellHidden: a plugin stands in for the compact bar. melo's window is placed
@@ -453,11 +457,11 @@ Window {
     }
 
     function applyWindowOpacity() {
-        const mainOp = shellHidden || popupSwap === -1 ? 0
+        const mainOp = shellHidden || popupSwap === -1 || revealPending ? 0
                      : ((!miniPlayer || miniQueueShown || popupSwap === 1) ? 1 : 0)
         const wins = [{ title: "melo",      opacity: mainOp },
                       { title: "melo-mini",
-                        opacity: (miniPlayer && builtinMini && !shellHidden && !hideMiniBar) ? 1 : 0 }]
+                        opacity: ((miniPlayer || expandReveal) && builtinMini && !shellHidden && !hideMiniBar) ? 1 : 0 }]
         // Plugin windows join this call so one KWin script execution swaps them all
         // (see kwinSwap); they report opacity 1 while their host is active.
         if (PluginWindows)
@@ -519,6 +523,10 @@ Window {
             // after the reveal (a 1-frame flash). The 50ms settle lets the move land.
             WindowCtl.alignForCollapse(root.barH)
         } else {
+            // X11: main, the popup's host, goes dark through the settle; the bar holds
+            // with the popup attached main is its tall host on Wayland too, and its first full-size
+            // frames landed at that height (1075 for 680 at 1.9)
+            if (isX11 || miniQueueShown) { expandReveal = true; revealPending = true; revealReady = false; applyWindowOpacity() }
             width = miniWin.width                     // main expands at the bar's width
         }
         // Enable the incoming window's blur during the settle: KWin gates blur by
@@ -556,8 +564,17 @@ Window {
         // hidden one taking the outgoing layout.
         playerBar.quiet = !miniPlayer     // collapsing: main is the one going dark
         miniBar.quiet = miniPlayer        // expanding: mini is
+        const expanding = miniPlayer
         miniPlayer = !miniPlayer
         toggling = false
+        // a frame at the full-size place; already there, no geometry arrives, so the next frame is it
+        if (expanding && expandReveal) {
+            revealReady = isX11 && x === miniWin.x && height === Math.round(lastFullHeight)
+                          && y === miniWin.y + barH - Math.round(lastFullHeight)
+            revealFallback.restart()
+        }
+        if (MELO_GEOM_DEBUG) console.warn("[swap] " + Date.now() + " to " + (miniPlayer ? "mini" : "full")
+                                          + " popup " + miniQueueShown + " blur " + (wantBlur || contrastGlass) + " barShown " + miniVisible)
         handoverLayout = ""
         handoverBacking = ""
         // The incoming blur was enabled during the settle; syncMiniQueue's
@@ -719,8 +736,17 @@ Window {
     property int popupSwap: 0   // 1 detaching, -1 reattaching
     property var swapWin: null
     property bool detachCarry: false
-    function detachFromPopup(kind, carry) {
+    // X11, a Ctrl+drag: the press in screen terms, so the window lands as far from the
+    // popup's place as the cursor has travelled (the drag threshold and the swap's frames)
+    property var detachPress: null
+    function detachFromPopup(kind, carry, pressAt) {
         const w = winOf(kind)
+        detachPress = carry && isX11 && pressAt ? Qt.point(x + pressAt.x, y + pressAt.y) : null
+        if (MELO_GEOM_DEBUG) {
+            const c = WindowCtl.cursorPos()
+            console.warn("[detach] " + Date.now() + " start cursor " + c.x + "," + c.y + " popup "
+                         + Math.round(root.x + miniQueueOverlay.x) + "," + Math.round(root.y + miniQueueOverlay.y))
+        }
         detachAt = Qt.point(miniQueueOverlay.x, miniQueueOverlay.y)
         w.width = miniQueueOverlay.width
         w.height = miniQueueOverlay.height
@@ -740,12 +766,24 @@ Window {
     function finishDetach(w) {
         popupSwap = 0
         swapWin = null
-        WindowCtl.placePopupWindowOverMain(w.title, Math.round(detachAt.x), Math.round(detachAt.y))
+        let tx = detachAt.x, ty = detachAt.y
+        if (detachPress) {
+            const c = WindowCtl.cursorPos()
+            tx += c.x - detachPress.x; ty += c.y - detachPress.y
+            detachPress = null
+        }
+        WindowCtl.placePopupWindowOverMain(w.title, Math.round(tx), Math.round(ty))
         WindowCtl.setInputEnabled(w, true)
         WindowCtl.setWindowOpacities([{ title: w.title, opacity: 1 },
                                       { title: "melo", opacity: !miniPlayer || miniQueueShown ? 1 : 0 }])
         applyMainHold()
-        if (detachCarry) { detachCarry = false; w.startSystemMove() }
+        if (MELO_GEOM_DEBUG) {
+            const c = WindowCtl.cursorPos()
+            console.warn("[detach] " + Date.now() + " swap cursor " + c.x + "," + c.y + " window " + w.x + "," + w.y
+                         + " placed " + Math.round(root.x + tx) + "," + Math.round(root.y + ty) + " carry " + detachCarry)
+        }
+        // the press was on main: the new window has none of its own to start from
+        if (detachCarry) { detachCarry = false; WindowCtl.startSystemMove(w, root) }
     }
     function showInPopup(kind) {
         if (kind === "queue") { miniVisWanted = false; PlayerState.showPanel = true; return }
@@ -784,11 +822,13 @@ Window {
     }
     Connections {
         target: root.popupSwap === -1 ? root : null
-        function onFrameSwapped() { root.finishReattach() }
+        // two frames can land before the target drops: only the first finishes
+        function onFrameSwapped() { if (root.popupSwap === -1) root.finishReattach() }
     }
     Connections {
         target: WindowCtl
         function onPopupWindow(caption, x, y, w, h, nearBar) {
+            if (root.detachedResizing) root.endDetachedResize()
             const win = caption === "melo-queue" ? queueWin : caption === "melo-vis" ? visWin
                       : caption === "melo-video" ? videoWin : null
             if (win) win.reported(x, y, w, h, nearBar && root.miniPlayer)
@@ -809,13 +849,76 @@ Window {
     property bool popupAnchorRight: false
     function beginPopupResize(edges) {
         if (!miniQueueShown) return
-        popupAnchorRight = (edges & Qt.LeftEdge) !== 0
-        WindowCtl.fitPopupHost(popupAnchorRight ? "left" : "right")
+        // X11's host spans the screen and the popup follows the bar's place; after a
+        // move carried it off, it is refitted here, hidden until drawn at its new place
+        if (isX11) {
+            const a = miniWin.screen ? miniWin.screen.availableGeometry : null
+            if (a && (x > a.x || x + width < a.x + a.width)) {
+                revealPending = true; revealReady = false
+                applyWindowOpacity()
+                revealFallback.restart()
+                WindowCtl.fitPopupHost("")
+            }
+            return
+        }
+        // The host stays widened after a drag, so a drag on the same side needs nothing.
+        // A refit that moves it (the other side, or onto the left) is hidden until drawn:
+        // KWin shows a moved window's last frame, the popup where it was.
+        const needRight = (edges & Qt.LeftEdge) !== 0
+        if (width > miniWin.width + 1 && needRight === popupAnchorRight) return
+        if (needRight || popupAnchorRight) {
+            revealPending = true; revealReady = false
+            applyWindowOpacity()
+            revealFallback.restart()
+        }
+        popupAnchorRight = needRight
+        WindowCtl.fitPopupHost(needRight ? "left" : "right")
     }
     // The popup renders inside main, so main is widened to the bar's width when
     // the popup opens and when a bar resize ends.
     function ensureMainWideEnough() {
         if (miniPlayer && width < miniWin.width) width = miniWin.width
+    }
+    property bool revealPending: false
+    // set when main's geometry is current: already the wide host, or a new geometry arrived
+    property bool revealReady: false
+    // the host covers the bar: drawn where it stands, so no old picture moves with it
+    readonly property bool hostOverBar: root.x <= miniWin.x && root.x + root.width >= miniWin.x + miniWin.width
+    Timer {   // in case no geometry ever arrives
+        id: revealFallback
+        interval: 150
+        onTriggered: if (root.revealPending) root.finishReveal()
+    }
+    // expanding on X11: the bar stays up until main has drawn at its full-size place
+    property bool expandReveal: false
+    function finishReveal() {
+        revealPending = false
+        expandReveal = false
+        if (MELO_GEOM_DEBUG) console.warn("[reveal] " + Date.now() + " main " + x + " w " + width)
+        applyWindowOpacity()
+        applyBlur()
+    }
+    Connections {
+        target: root.revealPending ? root : null
+        function onXChanged() { root.revealReady = true }
+        function onYChanged() { root.revealReady = true }
+        function onWidthChanged() { root.revealReady = true }
+        function onHeightChanged() { root.revealReady = true }
+        function onFrameSwapped() {
+            if (root.revealReady && (root.expandReveal ? !root.miniPlayer : !root.isX11 || root.hostOverBar)) root.finishReveal()
+        }
+    }
+    // X11: KWin raises only the bar on a click, so the attached popup is put directly under it
+    function raisePopupHost(why) {
+        if (!isX11 || !miniQueueShown) return
+        if (MELO_GEOM_DEBUG) console.warn("[stack] " + Date.now() + " " + why + " before " + WindowCtl.stackOrder(root, miniWin))
+        WindowCtl.restackBelow(root, miniWin)
+        if (MELO_GEOM_DEBUG) stackAfter.restart()
+    }
+    Timer {
+        id: stackAfter
+        interval: 150
+        onTriggered: console.warn("[stack] " + Date.now() + " after " + WindowCtl.stackOrder(root, miniWin))
     }
     function syncMiniQueue() {
         // no popup where melo cannot place windows: toggleQueue expands instead
@@ -824,9 +927,18 @@ Window {
                          || (miniVisWanted && !detached[popupVideoMode ? "video" : "vis"]))
         if (want) ensureMainWideEnough()
         if (want && !miniQueueShown) {
+            // X11 shows main's last picture at the host's new place until it draws
+            // again, so main stays clear until a frame at the new size lands
+            if (isX11) {
+                revealReady = hostOverBar && width > miniWin.width + 1
+                revealPending = true; revealFallback.restart(); requestUpdate()
+                if (MELO_GEOM_DEBUG) console.warn("[open] " + Date.now() + " ready " + revealReady + " main " + x + " w " + width)
+            }
+            popupAnchorRight = false               // the host is fitted to the bar's span
             WindowCtl.fitPopupHost("")             // blocking; invisible while it happens
             WindowCtl.setMiniQueueGlue(true)       // follow bar drags
         } else if (!want && miniQueueShown) {
+            if (!expandReveal) revealPending = false
             WindowCtl.setMiniQueueGlue(false)
         }
         miniQueueShown = want
@@ -874,6 +986,43 @@ Window {
         id: miniSyncTimer
         interval: 200
         onTriggered: if (!root.miniPlayer) miniWin.width = root.width
+    }
+    // MELO_GEOM_DEBUG=1: the popup's screen x on each frame main draws, against the bar's
+    // ("off" is popup x minus bar x: 0 is in place); the bar's own moves in between
+    Connections {
+        target: MELO_GEOM_DEBUG ? root : null
+        function onFrameSwapped() {
+            if (!root.miniQueueShown) return
+            const px = root.x + miniQueueOverlay.x
+            console.warn("[pop] " + Date.now() + " main " + root.x + "," + root.y + " " + root.width + "x" + root.height
+                         + " bar " + miniWin.x + "," + miniWin.y + " " + miniWin.width
+                         + " popX " + px + " off " + Math.round(px - miniWin.x)
+                         + " anchorR " + root.popupAnchorRight + " freeze " + root.resizeFreeze + " drag " + root.sysDragging
+                         + " hidden " + root.revealPending)
+        }
+        function onXChanged() { if (root.miniQueueShown) console.warn("[main] " + Date.now() + " x " + root.x + " w " + root.width) }
+    }
+    // MELO_GEOM_DEBUG: the queue window's right-hand edges, per frame it draws, in window
+    // coordinates; every one should sit at the body's right edge on every frame
+    Connections {
+        target: MELO_GEOM_DEBUG ? queueWin : null
+        function onFrameSwapped() {
+            if (!root.queueInWindow) return
+            const b = queueWin.body, q = popupQueuePanel
+            const r = (it) => it ? Math.round(it.mapToItem(null, it.width, 0).x * 10) / 10 : -1
+            console.warn("[qedge] " + Date.now() + " win " + queueWin.width + "x" + queueWin.height
+                         + " body " + r(b) + " panel " + r(q) + " " + q.edgeReport())
+        }
+    }
+    Connections {
+        target: MELO_GEOM_DEBUG ? miniWin : null
+        function onXChanged() { console.warn("[bar] " + Date.now() + " x " + miniWin.x + " w " + miniWin.width) }
+        function onWidthChanged() { console.warn("[bar] " + Date.now() + " x " + miniWin.x + " w " + miniWin.width) }
+    }
+    Connections {
+        target: MELO_GEOM_DEBUG ? WindowCtl : null
+        function onInteractiveStarted() { console.warn("[drag] " + Date.now() + " start") }
+        function onMainGeometry(x, y, w, h) { console.warn("[drag] " + Date.now() + " end main " + x + "," + y + " " + w + "x" + h) }
     }
 
     // KWin blur is a surface property, so a transparent mapped window still
@@ -941,14 +1090,15 @@ Window {
         // the window moves ("spawns in the wrong space")
         if (!ready) { glassOn(root, false); glassOn(miniWin, false); return }
         WindowCtl.setBlurRadius(root.cornerRadius)   // 0 when maximised
-        glassOn(miniWin, (wantBlur || contrastGlass) && miniPlayer && builtinMini)
+        // through an expand's reveal the bar is still up, so it keeps its glass
+        glassOn(miniWin, (wantBlur || contrastGlass) && (miniPlayer || expandReveal) && builtinMini)
         // Contrast needs glass: Plasma 6.5 merged background contrast into the blur
         // effect, so a surface that requests no blur gets no contrast. A non-default
         // contrast therefore requests blur too, at KWin's global strength.
         if (!wantBlur && !contrastGlass) { glassOn(root, false); return }
         if (!miniPlayer) glassOn(root, true)
         else if (miniQueueShown) {
-            WindowCtl.setBlurRegion(root, 0, miniQueueOverlay.y,
+            WindowCtl.setBlurRegion(root, miniQueueOverlay.x, miniQueueOverlay.y,
                                     miniQueueOverlay.width, miniQueueOverlay.height)
             WindowCtl.setBackgroundContrast(root, true, Theme.glassContrast, Theme.glassSaturation)
         } else glassOn(root, false)
@@ -1052,8 +1202,12 @@ Window {
         // the popup fades with the bar (shared mini hover state)
         opacity: root.miniPlayer ? root.miniHoverFade : 1
         // under the bar: from main's left, or through a drag from the left, from its
-        // right, where the bar's fixed edge is (see fitPopupHost)
-        x: root.popupAnchorRight ? root.width - width : 0
+        // right, where the bar's fixed edge is (see fitPopupHost). X11 gives both
+        // windows' places, so there it follows the bar itself: KWin moves and sizes the
+        // host in separate steps, and the anchor alone drew it 485 px off for a frame
+        x: root.isX11 && root.miniPlayer
+           ? Math.max(0, Math.min(root.width - width, miniWin.x - root.x))
+           : root.popupAnchorRight ? root.width - width : 0
         // width follows the BAR live — but ONLY while shown: a hidden overlay tracking the bar per drag
         // frame re-layouts its ListView, and the polish request schedules
         // real (empty) frames on main — sibling chatter during the resize
@@ -1136,7 +1290,7 @@ Window {
                 target: null
                 acceptedModifiers: Qt.ControlModifier
                 grabPermissions: PointerHandler.CanTakeOverFromAnything   // a queue row holds its press
-                onActiveChanged: if (active) root.detachFromPopup(root.popupKind, true)
+                onActiveChanged: if (active) root.detachFromPopup(root.popupKind, true, centroid.scenePressPosition)
             }
         }
         // The popup is a card in the bar's style: the theme's corners cut it and
@@ -1173,7 +1327,7 @@ Window {
                 onPressed: (m) => {
                     root.beginResizeHold()
                     root.beginPopupResize(modelData)
-                    miniWin.startSystemResize(modelData)
+                    WindowCtl.startSystemResize(miniWin, modelData, root)
                 }
             }
         }
@@ -1195,7 +1349,7 @@ Window {
                     miniWin.maximumHeight = miniWin.height
                     miniWin.minimumHeight = miniWin.height
                     root.beginPopupResize(modelData)
-                    miniWin.startSystemResize(modelData | Qt.TopEdge)
+                    WindowCtl.startSystemResize(miniWin, modelData | Qt.TopEdge, root)
                 }
             }
         }
@@ -1225,6 +1379,7 @@ Window {
             }
         }
         QueuePanel {
+            id: popupQueuePanel
             parent: root.queueInWindow ? queueWin.body : miniQueueOverlay
             anchors.fill: parent
             // inside the popup's frame, as the bar sits inside its own; the
@@ -1301,9 +1456,11 @@ Window {
     DetachedWindow {
         id: queueWin
         kind: "queue"
+        listEmpty: popupQueuePanel.empty
         defaultControls: root.detachedControls
         onFramed: root.windowFramed(queueWin)
         onReattachRequested: root.reattach(queueWin)
+        onResizeStarting: root.beginDetachedResize(queueWin)
         onMenuRequested: (x, y) => root.openWindowMenu(queueWin, x, y)
     }
     DetachedWindow {
@@ -1312,6 +1469,7 @@ Window {
         defaultControls: root.detachedControls
         onFramed: root.windowFramed(visWin)
         onReattachRequested: root.reattach(visWin)
+        onResizeStarting: root.beginDetachedResize(visWin)
         onMenuRequested: (x, y) => root.openWindowMenu(visWin, x, y)
         Item { id: visSlot; parent: visWin.body; anchors.fill: parent }   // the shared viz reparents in
         Row {   // on hover: Visualizer | Video while the video has no window
@@ -1347,6 +1505,7 @@ Window {
         defaultControls: root.detachedControls
         onFramed: root.windowFramed(videoWin)
         onReattachRequested: root.reattach(videoWin)
+        onResizeStarting: root.beginDetachedResize(videoWin)
         onMenuRequested: (x, y) => root.openWindowMenu(videoWin, x, y)
         Image {   // under the video, for stills and the first beat
             parent: videoWin.body
@@ -1362,7 +1521,7 @@ Window {
             parent: videoWin.body
             anchors.fill: parent
             running: videoWin.open && PlayerState.hasVideo
-            frozen: !PlayerState.isPlaying
+            frozen: root.resizeFreeze || !PlayerState.isPlaying
             fit: root.videoFit
             opacity: hasFrame ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 300 } }
@@ -1398,9 +1557,15 @@ Window {
 
     Window {
         id: miniWin
-        onActiveChanged: if (MELO_FOCUS_DEBUG)
-            console.log("[focus-debug] miniWin.active", active)
+        onActiveChanged: {
+            if (MELO_FOCUS_DEBUG) console.log("[focus-debug] miniWin.active", active)
+            if (active) root.raisePopupHost("active")
+        }
         transientParent: root
+        PointHandler {   // a press on the bar, active or not, brings the attached popup up with it
+            enabled: root.isX11 && root.miniQueueShown
+            onActiveChanged: if (active) root.raisePopupHost("press")
+        }
         width: 1000     // kept in sync with main while hidden (pure-move constraint)
         height: root.barH
         minimumWidth: 320
@@ -2231,7 +2396,7 @@ Window {
                         }
                         // Paused music is a still frame; there is nothing to
                         // animate and no reason to hold the GPU at 60fps.
-                        property bool playingHint: PlayerState.isPlaying
+                        property bool playingHint: PlayerState.isPlaying && !root.resizeFreeze   // holds through a resize
                         onPlayingHintChanged: viz.setPlaying(playingHint)
                         Component.onCompleted: { applyVisSettings(); viz.setPlaying(playingHint) }
                         Connections { target: Settings; function onChanged() { viz.applyVisSettings() } }
@@ -3272,6 +3437,31 @@ Window {
 
     // ---------- frameless window resize ----------
     // freeze tick UI + hold the hover fade the instant OUR handle is pressed
+    // A detached window's resize holds the same things still, and every other window in
+    // the process on its last frame, application-wide (AppHold): KWin resizes cleanly only
+    // while the rest of the process commits nothing (docs/mini-player-windowing.md §3,
+    // a4d09997). KWin's report of that window's new place (onPopupWindow) ends it.
+    property bool detachedResizing: false
+    property var resizingWin: null
+    function beginDetachedResize(w) {
+        resizingWin = w
+        w.resizing = true
+        detachedResizing = true
+        beginResizeHold()
+        holdOthers(true)
+    }
+    function endDetachedResize() {
+        detachedResizing = false
+        if (resizingWin) resizingWin.resizing = false
+        holdOthers(false)
+        resizingWin = null
+        sysDragging = false
+        resizeFreeze = false
+    }
+    function holdOthers(on) {
+        WindowCtl.holdAllBut(on ? resizingWin : null)
+        applyMainHold()
+    }
     function beginResizeHold() {
         sysDragging = true
         resizeFreeze = true          // carries the position freeze with it
@@ -3285,6 +3475,7 @@ Window {
         // keyboard, Alt-drag) arrive at onInteractiveStarted, and the clock and seek
         // thumb, in melo and in plugins reading MeloUi.player.position, must hold
         // still for both.
+        if (!resizeFreeze && detachedResizing) endDetachedResize()
         Player.setUiFrozen(resizeFreeze)
         Spectrum.setFrozen(resizeFreeze)
         if (PluginWindows) PluginWindows.setFrozen(resizeFreeze)
@@ -3298,7 +3489,8 @@ Window {
     property bool mainWaits: true
     onMainLockstepChanged: { mainWaits = true; applyMainHold() }
     function applyMainHold() {
-        WindowCtl.holdFrames(root, resizeFreeze && miniPlayer && (!miniQueueShown || mainWaits))
+        WindowCtl.holdFrames(root, detachedResizing
+                                   || (resizeFreeze && miniPlayer && (!miniQueueShown || mainWaits)))
     }
     function releaseMainFrame() {
         if (!mainWaits) return

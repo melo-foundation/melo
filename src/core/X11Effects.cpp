@@ -11,6 +11,7 @@
 #include <xcb/shape.h>
 #include <xcb/xcb.h>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -190,4 +191,91 @@ void x11SetInputShape(QWindow* w, const QRegion* region) {
     }
     w->setProperty("meloX11Input", region ? QVariant::fromValue(*region) : QVariant());
     applyInputShape(w);
+}
+
+bool x11StartSystemResize(QWindow* w, Qt::Edges edges) {
+    xcb_connection_t* c = connection();
+    if (!w || !c || !w->handle()) return false;
+    static const struct { Qt::Edges e; quint32 dir; } dirs[] = {
+        {Qt::TopEdge | Qt::LeftEdge, 0}, {Qt::TopEdge, 1}, {Qt::TopEdge | Qt::RightEdge, 2},
+        {Qt::RightEdge, 3}, {Qt::RightEdge | Qt::BottomEdge, 4}, {Qt::BottomEdge, 5},
+        {Qt::BottomEdge | Qt::LeftEdge, 6}, {Qt::LeftEdge, 7}};
+    quint32 dir = 99;
+    for (const auto& d : dirs) if (d.e == edges) dir = d.dir;
+    if (edges == Qt::Edges()) dir = 8;   // _NET_WM_MOVERESIZE_MOVE
+    if (dir == 99) return false;
+    const xcb_window_t win = xcb_window_t(w->winId());
+    xcb_query_pointer_reply_t* p = xcb_query_pointer_reply(c, xcb_query_pointer(c, win), nullptr);
+    if (!p) return false;
+    static const char name[] = "_NET_WM_MOVERESIZE";
+    xcb_intern_atom_reply_t* a = xcb_intern_atom_reply(
+        c, xcb_intern_atom(c, false, sizeof(name) - 1, name), nullptr);
+    if (!a) { std::free(p); return false; }
+    xcb_client_message_event_t ev{};
+    ev.response_type = XCB_CLIENT_MESSAGE;
+    ev.format = 32;
+    ev.window = win;
+    ev.type = a->atom;
+    ev.data.data32[0] = quint32(p->root_x);
+    ev.data.data32[1] = quint32(p->root_y);
+    ev.data.data32[2] = dir;
+    ev.data.data32[3] = XCB_BUTTON_INDEX_1;
+    const xcb_window_t root = p->root;
+    std::free(a);
+    std::free(p);
+    xcb_ungrab_pointer(c, XCB_CURRENT_TIME);
+    xcb_send_event(c, false, root,
+                   XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
+                   reinterpret_cast<const char*>(&ev));
+    xcb_flush(c);
+    return true;
+}
+
+namespace {
+xcb_atom_t internAtom(xcb_connection_t* c, const char* name) {
+    xcb_intern_atom_reply_t* a = xcb_intern_atom_reply(
+        c, xcb_intern_atom(c, false, quint16(std::strlen(name)), name), nullptr);
+    const xcb_atom_t r = a ? a->atom : XCB_ATOM_NONE;
+    std::free(a);
+    return r;
+}
+xcb_window_t rootOf(xcb_connection_t* c) { return xcb_setup_roots_iterator(xcb_get_setup(c)).data->root; }
+}  // namespace
+
+QString x11StackOrder(const QList<QWindow*>& windows) {
+    xcb_connection_t* c = connection();
+    if (!c) return QString();
+    xcb_get_property_reply_t* p = xcb_get_property_reply(c,
+        xcb_get_property(c, false, rootOf(c), internAtom(c, "_NET_CLIENT_LIST_STACKING"),
+                         XCB_ATOM_WINDOW, 0, 4096), nullptr);
+    if (!p) return QString();
+    const auto* ids = static_cast<const xcb_window_t*>(xcb_get_property_value(p));
+    const int n = xcb_get_property_value_length(p) / int(sizeof(xcb_window_t));
+    QString out = QStringLiteral("of %1:").arg(n);
+    for (QWindow* w : windows) {
+        if (!w || !w->handle()) continue;
+        int at = -1;
+        for (int i = 0; i < n; ++i) if (ids[i] == xcb_window_t(w->winId())) at = i;
+        out += QStringLiteral(" %1@%2").arg(w->title()).arg(at);
+    }
+    std::free(p);
+    return out;
+}
+
+bool x11RestackBelow(QWindow* w, QWindow* sibling) {
+    xcb_connection_t* c = connection();
+    if (!c || !w || !sibling || !w->handle() || !sibling->handle()) return false;
+    xcb_client_message_event_t ev{};
+    ev.response_type = XCB_CLIENT_MESSAGE;
+    ev.format = 32;
+    ev.window = xcb_window_t(w->winId());
+    ev.type = internAtom(c, "_NET_RESTACK_WINDOW");
+    ev.data.data32[0] = 2;   // a pager's request: KWin applies it without focus-stealing checks
+    ev.data.data32[1] = xcb_window_t(sibling->winId());
+    ev.data.data32[2] = XCB_STACK_MODE_BELOW;
+    xcb_send_event(c, false, rootOf(c),
+                   XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
+                   reinterpret_cast<const char*>(&ev));
+    xcb_flush(c);
+    return true;
 }

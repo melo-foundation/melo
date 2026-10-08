@@ -1,6 +1,6 @@
 From: melo-foundation <333192008+melo-foundation@users.noreply.github.com>
 Subject: [PATCH] render into the caller-bound FBO instead of binding one;
- new framebuffer textures start black
+ new framebuffer textures start black; a resize keeps the picture
 
 Modified by melo-foundation for melo on 2026-09-02.
 
@@ -58,15 +58,71 @@ diff --git a/src/libprojectM/Renderer/Framebuffer.hpp b/src/libprojectM/Renderer
 diff --git a/src/libprojectM/Renderer/Framebuffer.cpp b/src/libprojectM/Renderer/Framebuffer.cpp
 --- a/src/libprojectM/Renderer/Framebuffer.cpp
 +++ b/src/libprojectM/Renderer/Framebuffer.cpp
-@@ -97,6 +97,7 @@
+@@ -86,17 +86,62 @@
+         return false;
+     }
+ 
++    const int oldWidth = m_width;
++    const int oldHeight = m_height;
+     m_width = width;
+     m_height = height;
+ 
++    // melo patch: a resize carries the picture over, scaled; first allocations start black.
++    const GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
++    GLuint copyFbos[2] = {0, 0};
++    if (oldWidth > 0 && oldHeight > 0)
++    {
++        glGenFramebuffers(2, copyFbos);
++    }
++    glDisable(GL_SCISSOR_TEST);
++
+     for (auto& attachments : m_attachments)
+     {
+-        Bind(attachments.first);
+         for (auto& texture : attachments.second)
+         {
++            // kept alive until copied: SetSize allocates a new texture
++            const auto oldTexture = texture.second->Texture();
              texture.second->SetSize(width, height);
++            const bool color = texture.first >= GL_COLOR_ATTACHMENT0 && texture.first <= GL_COLOR_ATTACHMENT15;
++            if (copyFbos[0] != 0 && color && oldTexture && oldTexture->TextureID() != 0 &&
++                oldTexture != texture.second->Texture())
++            {
++                glBindFramebuffer(GL_READ_FRAMEBUFFER, copyFbos[0]);
++                glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, oldTexture->TextureID(), 0);
++                glReadBuffer(GL_COLOR_ATTACHMENT0);
++                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, copyFbos[1]);
++                glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture.second->Texture()->TextureID(), 0);
++                const GLenum drawBuffer = GL_COLOR_ATTACHMENT0;
++                glDrawBuffers(1, &drawBuffer);
++                if (glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE &&
++                    glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE)
++                {
++                    glBlitFramebuffer(0, 0, oldWidth, oldHeight, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
++                }
++                glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
++                glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
++            }
++            Bind(attachments.first);
              glFramebufferTexture2D(GL_FRAMEBUFFER, texture.first, GL_TEXTURE_2D, texture.second->Texture()->TextureID(), 0);
          }
-+        ClearBound();
++        if (copyFbos[0] == 0)
++        {
++            Bind(attachments.first);
++            ClearBound();
++        }
++    }
++    if (copyFbos[0] != 0)
++    {
++        glDeleteFramebuffers(2, copyFbos);
++    }
++    if (scissor)
++    {
++        glEnable(GL_SCISSOR_TEST);
      }
      glBindFramebuffer(GL_FRAMEBUFFER, 0);
  
-@@ -212,9 +213,27 @@
+@@ -212,9 +257,32 @@
          glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + attachmentIndex, GL_TEXTURE_2D, texture->TextureID(), 0);
      }
      UpdateDrawBuffers(framebufferIndex);
@@ -85,10 +141,15 @@ diff --git a/src/libprojectM/Renderer/Framebuffer.cpp b/src/libprojectM/Renderer
 +    {
 +        return;
 +    }
++    const GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
 +    glDisable(GL_SCISSOR_TEST);
 +    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 +    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 +    glClear(GL_COLOR_BUFFER_BIT);
++    if (scissor)
++    {
++        glEnable(GL_SCISSOR_TEST);
++    }
 +}
 +
  void Framebuffer::RemoveColorAttachment(int framebufferIndex, int attachmentIndex)

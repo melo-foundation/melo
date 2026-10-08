@@ -14,6 +14,8 @@ Window {
     property string heading: ""
     // false: no title bar, the body runs up to the frame
     property bool titled: true
+    // a resize from this window's own edges is starting: what animates holds still through it
+    signal resizeStarting()
     // edges that resize the window
     property bool resizable: false
     readonly property Item body: bodyItem
@@ -26,6 +28,7 @@ Window {
     // false: the window decides what closing means (one that stays mapped)
     property bool hideOnClose: true
     onCloseRequested: if (hideOnClose) visible = false
+    Component.onCompleted: if (typeof WindowCtl !== "undefined") WindowCtl.keepBufferInStep(win)
 
     visible: false
     color: "transparent"
@@ -204,7 +207,7 @@ Window {
             cursorShape: (l && t) || (r && b) ? Qt.SizeFDiagCursor
                        : (r && t) || (l && b) ? Qt.SizeBDiagCursor
                        : (l || r) ? Qt.SizeHorCursor : Qt.SizeVerCursor
-            onPressed: win.startSystemResize(modelData)
+            onPressed: { win.resizeStarting(); win.startSystemResize(modelData) }
         }
     }
 

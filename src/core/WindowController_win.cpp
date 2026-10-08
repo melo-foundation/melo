@@ -30,6 +30,13 @@ void WindowController::setInputRegion(QQuickWindow*, int, int, int, int) {}
 bool WindowController::alignForCollapse(int) { return false; }
 bool WindowController::alignForExpand(int, int, int) { return false; }
 bool WindowController::fitPopupHost(const QString&) { return false; }
+void WindowController::restackBelow(QQuickWindow*, QQuickWindow*) {}
+QString WindowController::stackOrder(QQuickWindow*, QQuickWindow*) { return QString(); }
+void WindowController::keepBufferInStep(QQuickWindow*) {}
+void WindowController::startSystemMove(QQuickWindow* win, QQuickWindow*) { if (win) win->startSystemMove(); }
+void WindowController::startSystemResize(QQuickWindow* win, int edges, QQuickWindow*) {
+    if (win) win->startSystemResize(Qt::Edges(edges));
+}
 bool WindowController::setWindowKeepAbove(QQuickWindow* win, bool on) {
     if (!win) return false;
     win->setFlag(Qt::WindowStaysOnTopHint, on);

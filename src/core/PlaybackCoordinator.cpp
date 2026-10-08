@@ -38,7 +38,10 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
         applySync();
         connect(settings_, &SettingsStore::changed, this, applySync);
     }
-    state_->setVideoSupported(!engine_->videoCodecs().isEmpty());
+    const QStringList codecs = engine_->videoCodecs();
+    state_->setVideoSupported(!codecs.isEmpty());
+    std::fprintf(stderr, "[video] decoders: %s\n",
+                 codecs.isEmpty() ? "none, video off" : qPrintable(codecs.join(QLatin1Char(' '))));
     // Decks no surface wants stay 30 s, so coming back shows the picture at once.
     videoGraceTimer_.setSingleShot(true);
     videoGraceTimer_.setInterval(30000);

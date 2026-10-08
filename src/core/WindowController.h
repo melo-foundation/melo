@@ -1,5 +1,7 @@
 #pragma once
 #include <QColor>
+#include <cstdio>
+#include <QCursor>
 #include "FrameHold.h"
 #include <QEvent>
 #include <QGuiApplication>
@@ -81,6 +83,22 @@ public slots:
         for (const bool b : ok) if (!b) return;
         emit popupWindowReported(p[0], int(v[0]), int(v[1]), int(v[2]), int(v[3]), p[5].toInt() == 1);
     }
+    // MELO_GEOM_DEBUG: a size KWin asked a window for during an interactive resize,
+    // "caption,w,h,kwinMs", printed to line up with the frame log
+    void ReportStep(const QString& step) {
+        const QStringList p = step.split(',');
+        if (p.size() == 4)
+            std::fprintf(stderr, "[req] %s %s %s %s\n", qPrintable(p[3]), qPrintable(p[0]),
+                         qPrintable(p[1]), qPrintable(p[2]));
+    }
+    // MELO_GEOM_DEBUG: where KWin has a window on screen, on every change during a
+    // resize, "caption,x,y,w,h,kwinMs"
+    void ReportPlace(const QString& place) {
+        const QStringList p = place.split(',');
+        if (p.size() == 6)
+            std::fprintf(stderr, "[place] %s %s x %s y %s w %s h %s\n", qPrintable(p[5]), qPrintable(p[0]),
+                         qPrintable(p[1]), qPrintable(p[2]), qPrintable(p[3]), qPrintable(p[4]));
+    }
 signals:
     void reported(int x, int y, int w, int h, bool cursorInside);
     void resizeStarted();
@@ -134,6 +152,11 @@ public:
 
     // on: the window renders nothing until released (FrameHold)
     Q_INVOKABLE void holdFrames(QQuickWindow* win, bool on) { frameHold_.hold(win, on); }
+    // every window but keep holds its last frame (null releases); see AppHold
+    Q_INVOKABLE void holdAllBut(QQuickWindow* keep) { if (keep) appHold_.holdAllBut(keep); else appHold_.release(); }
+    // Qt 6.12 Wayland: a frame drawn after a resize lands in the new size's buffer. See the
+    // definition; a window that renders no window-sized offscreen pass needs it.
+    Q_INVOKABLE void keepBufferInStep(QQuickWindow* win);
 
     // enabled=false: input region moved off-surface -> window is click-through.
     // Writes the whole mask, so plugin windows must not use it: a skin's
@@ -198,6 +221,18 @@ public:
     // from that side; the glue leaves a widened host alone until the drag ends and
     // then fits it back. One configure, so position and size land with one frame.
     Q_INVOKABLE bool fitPopupHost(const QString& side);
+    // win's system resize from a press on `from`, another of melo's windows. X11:
+    // from the pointer's position now, and `from` gets the release the
+    // compositor's grab takes.
+    Q_INVOKABLE void startSystemResize(QQuickWindow* win, int edges, QQuickWindow* from);
+    // The same for a move: a window that has not had a press of its own, on X11, moves from where the pointer is.
+    Q_INVOKABLE void startSystemMove(QQuickWindow* win, QQuickWindow* from);
+    // X11: puts win directly under sibling, as one with it. No-op elsewhere.
+    Q_INVOKABLE void restackBelow(QQuickWindow* win, QQuickWindow* sibling);
+    // the pointer's global position, for traces
+    Q_INVOKABLE QPoint cursorPos() const { return QCursor::pos(); }
+    // X11: each window's place in the stacking order, for traces. Empty elsewhere.
+    Q_INVOKABLE QString stackOrder(QQuickWindow* a, QQuickWindow* b);
     // The detached windows ("melo-queue", "melo-vis", "melo-video").
     // placePopupWindowBeside: a window with no place of its own goes right, left,
     // above or below one already open, else stepped down from the last; with none
@@ -345,6 +380,7 @@ protected:
     bool dprArmed_ = false;
 private:
     FrameHold frameHold_;
+    AppHold appHold_;
     bool contrastAvailable_ = false;
     // last values announced, so a change to one does not re-announce the other
     bool lastBlur_ = false, lastContrast_ = false;

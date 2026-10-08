@@ -1,5 +1,6 @@
 #pragma once
 #include <QEvent>
+#include <QGuiApplication>
 #include <QObject>
 #include <QQuickWindow>
 #include <QSet>
@@ -38,4 +39,43 @@ protected:
 
 private:
     QSet<QObject*> held_;
+};
+
+// Every window in the process but one renders nothing while it is on: an
+// application-wide filter, since a list misses windows made later (menus, tips,
+// plugin windows). On the basic render loop any other window's frame lands between
+// the compositor's configure and the resized window's answer, and the compositor
+// stretches that window's stale buffer: the playlist deform, bisected in a4d09997.
+class AppHold : public QObject {
+public:
+    using QObject::QObject;
+
+    void holdAllBut(QWindow* keep) {
+        if (keep == keep_ && on_) return;
+        keep_ = keep;
+        if (!on_) { qApp->installEventFilter(this); on_ = true; }
+    }
+    void release() {
+        if (!on_) return;
+        on_ = false;
+        keep_ = nullptr;
+        qApp->removeEventFilter(this);
+        // the frames that were refused; update(), as FrameHold says, for the basic loop
+        for (QWindow* w : QGuiApplication::topLevelWindows()) {
+            if (!w->isVisible()) continue;
+            if (auto* q = qobject_cast<QQuickWindow*>(w)) q->update();
+            else w->requestUpdate();
+        }
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::UpdateRequest && watched != keep_ && qobject_cast<QWindow*>(watched))
+            return true;
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    QWindow* keep_ = nullptr;
+    bool on_ = false;
 };

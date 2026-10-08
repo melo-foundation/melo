@@ -16,7 +16,11 @@ MeloWindow {
     property string defaultControls: "bar"
     property string controls: ""
     readonly property bool overlay: kind !== "queue" && (controls || defaultControls) === "over"
-    readonly property bool hovered: hover.hovered
+    // a resize takes the pointer, so hover reads false: held through it, or every fade
+    // that follows hover animates mid-resize (docs/mini-player-windowing.md §3)
+    property bool resizing: false
+    property bool hovered: false
+    Binding on hovered { value: hover.hovered; when: !dw.resizing; restoreMode: Binding.RestoreNone }
     // set by a Ctrl+drag; let go next to the bar, the window asks to go back under it
     property bool reattachArmed: false
     // armed by whoever waits on this window's next frame (a swap)
@@ -81,6 +85,10 @@ MeloWindow {
     }
     // KWin's report after a user move or resize
     function reported(x, y, w, h, nearBar) {
+        if (MELO_GEOM_DEBUG) {
+            const c = WindowCtl.cursorPos()
+            console.warn("[detach] " + Date.now() + " " + kind + " end cursor " + c.x + "," + c.y + " window " + x + "," + y)
+        }
         remember({ x: x, y: y, w: w, h: h })
         const back = reattachArmed && nearBar
         reattachArmed = false
@@ -116,16 +124,22 @@ MeloWindow {
             onActiveChanged: if (active) dw.startSystemMove()
         }
     }
+    // on the body, not an item over it: one over the content takes its hover (the visualizer's gear)
+    HoverHandler { id: hover; parent: dw.body }
+    // the queue has no rows: a drag anywhere moves it
+    property bool listEmpty: false
     Item {   // the queue's list scrolls with a drag: it moves from its top edge, or its title bar
         parent: dw.body
         width: parent.width
-        height: 44
-        z: 29
-        enabled: dw.kind === "queue" && !dw.titled
+        height: dw.listEmpty ? parent.height : 44
+        // under the header, not over it: over it, it took the tabs' and buttons' presses
+        z: -1
+        enabled: dw.kind === "queue" && (!dw.titled || dw.listEmpty)
         DragHandler {
             target: null
             acceptedModifiers: Qt.NoModifier
-            grabPermissions: PointerHandler.CanTakeOverFromAnything   // over the header's buttons
+            // never from an item: a press a tab or a button took stays theirs, however far it wanders
+            grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType | PointerHandler.ApprovesTakeOverByAnything
             onActiveChanged: if (active) dw.startSystemMove()
         }
     }
@@ -133,7 +147,6 @@ MeloWindow {
         parent: dw.body
         anchors.fill: parent
         z: 30
-        HoverHandler { id: hover }
         TapHandler {
             acceptedButtons: Qt.RightButton
             onTapped: (ev) => {

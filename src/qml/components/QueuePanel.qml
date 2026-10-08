@@ -42,6 +42,8 @@ Rectangle {
     Component.onCompleted: if (PlayerState.panelMode === 2) PlayerState.panelMode = 0
     readonly property bool hasQueue: Queue.count > 1
     readonly property bool queueMode: hasQueue && PlayerState.panelMode === 1
+    // no rows to scroll or drag
+    readonly property bool empty: list.count === 0
 
     function fmtDur(s) {
         if (!s) return ""
@@ -55,6 +57,18 @@ Rectangle {
     Surface { visible: !panel.fullWidth; anchors.left: parent.left
               width: 1; height: parent.height; role: "border"; z: 5 }
 
+    // The panel starts hidden in the popup under the bar, where a Row or a Column lays out no
+    // hidden child; shown in its own window they kept that, the list over the tabs and the tabs
+    // on each other. Each showing and each move lays them out again.
+    function relayout() {
+        const walk = (o) => {
+            if (typeof o.forceLayout === "function") o.forceLayout()
+            for (let i = 0; i < o.children.length; i++) walk(o.children[i])
+        }
+        if (visible) walk(panel)
+    }
+    onVisibleChanged: Qt.callLater(relayout)
+    onWindowChanged: Qt.callLater(relayout)
     Column {
         anchors.fill: parent
 
@@ -144,6 +158,8 @@ Rectangle {
             height: parent.height - y
             clip: true
             model: panel.queueMode ? Queue : Suggestions
+            // no rows: a drag goes through to what is under the list (the queue window's move)
+            interactive: count > 0
             // the rows a drag passes slide out of its way; the dragged row
             // itself takes its new slot instantly (no `move` transition) —
             // the handler's offset already carries it across the swap
@@ -500,6 +516,12 @@ Rectangle {
     }
     // the Column sits at the panel's origin, so the list's y is the panel's
     MScrollBar { id: listBar; scroller: list }
+    // MELO_GEOM_DEBUG: right edges in window coordinates, for the per-frame trace
+    function edgeReport() {
+        const r = (it) => it ? Math.round(it.mapToItem(null, it.width, 0).x * 10) / 10 : -1
+        const row = list.itemAtIndex(list.indexAt(list.width / 2, list.contentY + list.height / 2))
+        return "list " + r(list) + " row " + r(row) + " bar " + (listBar.visible ? r(listBar) : "off")
+    }
     InkText {
         anchors.top: parent.top
         anchors.topMargin: panel.emptyTop
