@@ -93,9 +93,13 @@ private slots:
         w.show();
         QVERIFY(QTest::qWaitForWindowExposed(&w));
         QSignalSpy spy(&a, &UiActivity::inputWoke);
+        QSignalSpy pressed(&a, &UiActivity::windowPressed);
         QTest::mousePress(&w, Qt::LeftButton, Qt::NoModifier, QPoint(20, 20));
         QCOMPARE(spy.count(), 1);
+        QCOMPARE(pressed.count(), 1);
+        QCOMPARE(pressed.at(0).at(0).value<QObject*>(), &w);
         QTest::mouseRelease(&w, Qt::LeftButton, Qt::NoModifier, QPoint(20, 20));
+        QCOMPARE(pressed.count(), 1);
     }
     // The window's cursor blanks at once and comes back on unhide; a null window is ignored.
     void windowCursorHides() {

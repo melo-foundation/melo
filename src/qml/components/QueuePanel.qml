@@ -31,6 +31,7 @@ Rectangle {
     border.width: (fullWidth && Theme.windowBorder) ? Theme.windowBorderWidth : 0
 
     property var contextMenu: null   // ContextMenu instance from Main
+    property var menuTail: null      // returns the host's entries, after each row's own
     property bool fullWidth: false   // mini queue popup: spans the bar, no side border
 
     // the mini popup has no app tab bar, so now playing lives here for it;
@@ -363,6 +364,8 @@ Rectangle {
                                 acts.push({ label: "Copy link",
                                             act: () => WindowCtl.copyToClipboard(
                                                 "https://www.youtube.com/watch?v=" + t.id) })
+                            if (panel.menuTail)
+                                panel.menuTail().forEach((a, k) => acts.push(k === 0 ? Object.assign({ rule: true }, a) : a))
                             panel.contextMenu.open(p.x, p.y, acts)
                             return
                         }

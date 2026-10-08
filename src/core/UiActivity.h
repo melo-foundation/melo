@@ -19,6 +19,8 @@ signals:
     void idleChanged();
     // a key or a button press, sent before it wakes the clock
     void inputWoke();
+    // a button press in any of the app's windows, before the window delivers it
+    void windowPressed(QObject* window);
 protected:
     bool eventFilter(QObject* watched, QEvent* e) override;
 private:

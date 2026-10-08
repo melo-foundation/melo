@@ -50,7 +50,10 @@ bool UiActivity::eventFilter(QObject* watched, QEvent* e) {
     }
     case QEvent::MouseButtonPress:
         // Qt Quick re-sends a press to each item that takes it: the window's is the one press
-        if (watched->isWindowType()) emit inputWoke();
+        if (watched->isWindowType()) {
+            emit inputWoke();
+            emit windowPressed(watched);
+        }
         wake();
         break;
     case QEvent::KeyPress:

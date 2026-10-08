@@ -4,9 +4,8 @@ import ".."
 // Context menu driven by open(x, y, actions:[{label, act}]).
 // A real window (xdg-popup on Wayland) so it can extend past the app window, but
 // non-grabbing (ToolTip, not Popup): a popup grab swallows the press that
-// dismisses it, so right-clicking another row would take two clicks. This Item
-// catches in-window outside clicks and lets them fall through; clicks outside
-// the app deactivate the host window (see the Connections below).
+// dismisses it, so right-clicking another row would take two clicks. Presses in
+// melo's windows and clicks outside the app close it (see the Connections below).
 Item {
     id: menuLayer
     anchors.fill: parent
@@ -58,12 +57,16 @@ Item {
         visible = false
     }
 
-    MouseArea {   // in-window outside click / right-click closes
-        anchors.fill: parent
-        acceptedButtons: Qt.AllButtons
-        // let the press fall through: a right-click on ANOTHER row must
-        // close this menu AND reach that row so it re-opens in one click
-        onPressed: (m) => { menuLayer.close(); m.accepted = false }
+    // A press in any melo window but the menu closes it before that window gets it,
+    // so a right-click on another row re-opens in one click. melo's windows go
+    // active together, so activation never sees these presses.
+    property QtObject presses: typeof UiActivity !== "undefined" ? UiActivity : null
+    Connections {
+        target: menuLayer.presses
+        enabled: menuLayer.visible
+        function onWindowPressed(window) {
+            if (window !== pop && !menuLayer.subOpen) menuLayer.close()
+        }
     }
 
     TextMetrics {
@@ -72,8 +75,8 @@ Item {
         font.family: Theme.fontFamily
     }
 
-    // clicks outside the app can't reach the MouseArea above — but they
-    // deactivate the host window (the menu itself never takes focus)
+    // clicks outside the app deactivate the host window (the menu itself never
+    // takes focus)
     // set while a submenu is up: it is a focus-taking popup, so the host
     // window goes inactive and the rule below would shut the menu under it
     property bool subOpen: false

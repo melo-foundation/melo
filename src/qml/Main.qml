@@ -1213,6 +1213,17 @@ Window {
                 miniWin.maximumHeight = 16777215   // QWINDOWSIZE_MAX
             }
         }
+        Item {   // under the queue: a right click its rows leave opens the popup's menu
+            anchors.fill: parent
+            visible: !root.miniVisWanted && !root.queueInWindow
+            TapHandler {
+                acceptedButtons: Qt.RightButton
+                onTapped: (ev) => {
+                    const g = parent.mapToItem(null, ev.position.x, ev.position.y)
+                    root.openPopupMenu(g.x, g.y)
+                }
+            }
+        }
         QueuePanel {
             parent: root.queueInWindow ? queueWin.body : miniQueueOverlay
             anchors.fill: parent
@@ -1226,6 +1237,7 @@ Window {
             fullWidth: true
             miniHost: true
             contextMenu: contextMenu   // main-window overlays work in mini mode
+            menuTail: root.queueInWindow ? null : root.popupActs
         }
         Surface {   // visualizer popup backing (the shared viz reparents in)
             id: miniVisSlot
@@ -1510,7 +1522,6 @@ Window {
             id: miniBar
             objectName: "miniBar"
             barMenu: (sx, sy, host) => root.openBarMenu(sx, sy, host)
-            dismissMenus: () => contextMenu.close()
             anchors.fill: parent
             // inside a frame round the mini window; a framed card moves in itself
             readonly property bool framedWindow: !(Theme.windowBorderFit === "parts" && shownBacking === "floating")
@@ -1558,7 +1569,6 @@ Window {
     // ---------- layout (opacity-gated by mini state; window never unmaps) ----------
     PlayerBar {
         barMenu: (sx, sy, host) => root.openBarMenu(sx, sy, host)
-        dismissMenus: () => contextMenu.close()
         // the now-playing page shows the track at every size the bar could;
         // its transport is the only part not already on screen
         objectName: "playerBar"
@@ -1820,13 +1830,14 @@ Window {
                     return v
                 }
                 label: labelFor(value)
-                menu: contextMenu
+                menu: filterMenu
                 onClicked: {
-                    const p = fs.mapToItem(null, 0, fs.height)
-                    contextMenu.open(p.x, p.y, fs.options.map(o =>
-                        ({ label: o.label, act: () => fs.picked(o.value) })), undefined, fs)
+                    const p = fs.mapToItem(null, 0, fs.height + 2)
+                    filterMenu.openAt(root, p.x, p.y, fs.options.map(o =>
+                        ({ label: o.label, act: () => fs.picked(o.value) })), fs)
                 }
             }
+            DropMenu { id: filterMenu }
             Row {
                 y: searchBarRect.rowH + 2
                 anchors.left: parent.left
@@ -2758,6 +2769,18 @@ Window {
             acts.push({ label: "Attach to mini player", rule: acts.length > 0, act: () => root.reattach(w) })
         acts.push({ label: "Close", rule: !root.miniPlayer && acts.length > 0, act: () => w.hide() })
         contextMenu.open(sx, sy, acts, w)
+    }
+    // the mini player's queue popup: the queue window's entries, for the popup
+    function openPopupMenu(sx, sy) { contextMenu.open(sx, sy, popupActs(), root) }
+    function popupActs() {
+        const acts = []
+        if (WindowCtl.canPlaceWindows)
+            acts.push({ label: "Open in a window", act: () => root.detachFromPopup("queue", false) })
+        if (root.pinToggles)
+            acts.push({ label: "Keep melo above", check: root.alwaysOnTop, rule: acts.length > 0,
+                        act: () => CommandMap.invoke("togglePin") })
+        acts.push({ label: "Close", rule: acts.length > 0, act: () => CommandMap.invoke("toggleQueue") })
+        return acts
     }
     // Quality and fit, on the picture itself. Flat, with a check on the
     // current value: the menu has no submenus of its own.

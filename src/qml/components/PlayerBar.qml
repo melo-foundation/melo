@@ -135,9 +135,6 @@ Rectangle {
     // false: the vis button is not drawn (WindowCtl.canPlaceWindows)
     property bool visAllowed: true
     property var barMenu: null   // shared Main.openBarMenu(sx, sy, host)
-    // the mini bar is its own toplevel, so the main window's outside-click
-    // layer never sees a press here — the bar closes the menu itself
-    property var dismissMenus: null
 
     // Layout and backing, two choices a theme makes per place. rows: thumb and title
     // over transport, scrub and buttons. centre: transport in the middle, buttons a
@@ -225,7 +222,6 @@ Rectangle {
         function stamp() { return new Date().toISOString().substr(11, 12) }
         property double pressedAt: 0
         onPressed: (m) => {
-            if (bar.dismissMenus) bar.dismissMenus()
             pressPos = Qt.point(m.x, m.y); moveStarted = false
             pressedAt = Date.now()
             if (typeof MELO_FOCUS_DEBUG !== "undefined" && MELO_FOCUS_DEBUG)

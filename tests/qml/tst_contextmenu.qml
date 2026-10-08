@@ -73,7 +73,16 @@ Item {
         }
     }
 
-    ContextMenu { id: cm }
+    // stands in for UiActivity.windowPressed, which qmltestrunner does not have
+    QtObject { id: pressSource; signal windowPressed(var window) }
+    MouseArea {
+        anchors.fill: parent
+        z: 2000
+        acceptedButtons: Qt.AllButtons
+        onPressed: (m) => { pressSource.windowPressed(root.Window.window); m.accepted = false }
+    }
+
+    ContextMenu { id: cm; presses: pressSource }
 
     TestCase {
         name: "RightClickMenu"
@@ -121,6 +130,18 @@ Item {
             wait(50)
             verify(cm.visible, "menu reopened by a single right-click on row 2")
             compare(root.lastRow, 2)
+        }
+
+        // a press anywhere else in the window closes it, and reaches what is there
+        function test_d_press_outside_closes() {
+            mouseClick(row, 20, 20, Qt.RightButton)
+            wait(30)
+            verify(cm.visible, "menu open")
+            pressSource.windowPressed(cm.menuItem.Window.window)
+            verify(cm.visible, "a press on the menu itself leaves it open")
+            mouseClick(root, 350, 250, Qt.LeftButton)
+            wait(30)
+            verify(!cm.visible, "a press elsewhere closes it")
         }
     }
 }
