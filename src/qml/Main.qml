@@ -89,13 +89,21 @@ Window {
         const d = WindowCtl.dprOf(root)
         if (d > 0) { GridUi.dpr = d; dprSeen = true }
     }
+    // in mini mode main is the popup's host, sized by KWin to the bar
+    function sizeStep() {
+        if (!gridSnap || miniPlayer || typeof WindowCtl === "undefined") return 1
+        if (visibility === Window.Maximized || visibility === Window.FullScreen) return 1
+        const d = WindowCtl.dprOf(root)
+        return d > 0 ? snapGrain(d) : 1
+    }
+    // X11: the window manager steps the drag itself; a resize of our own
+    // mid-drag fights its configures and the edges wobble
+    function applySizeStep() { if (isX11 && typeof WindowCtl !== "undefined") WindowCtl.setSizeStep(root, sizeStep()) }
+    onMiniPlayerChanged: applySizeStep()
     function snapSize() {
-        // in mini mode main is the popup's host, sized by KWin to the bar
-        if (!gridSnap || miniPlayer) return
-        if (visibility === Window.Maximized || visibility === Window.FullScreen) return
-        if (typeof WindowCtl === "undefined") return
-        const d = WindowCtl.dprOf(root); if (!(d > 0)) return
-        const g = snapGrain(d); if (g <= 1) return
+        applySizeStep()
+        const g = sizeStep()
+        if (g <= 1 || (isX11 && sysDragging)) return
         const w = Math.max(Math.ceil(minimumWidth / g) * g, Math.round(width / g) * g)
         const h = Math.max(Math.ceil(minimumHeight / g) * g, Math.round(height / g) * g)
         if (w !== width) width = w
@@ -205,7 +213,7 @@ Window {
     onReadyChanged: if (ready) applyBlur()   // enable glass once positioned
     // maximise and restore change the corner radius, and the radius is what
     // the glass is rounded to
-    onVisibilityChanged: if (ready) applyBlur()
+    onVisibilityChanged: { if (ready) applyBlur(); applySizeStep() }
     property bool alwaysOnTop: false
     // the modes where melo sets the state itself and so can show it
     readonly property bool pinToggles: WindowCtl.pinMode === "kwin" || WindowCtl.pinMode === "flag"
@@ -456,8 +464,16 @@ Window {
         updateMainInput()
     }
 
+    // X11 shows a mapped window before anything is drawn in it, black; KWin starts
+    // main at 0 there (watchPopupWindows) and it is revealed after its first frame
+    property bool firstFrame: !isX11
+    Connections {
+        target: root
+        enabled: !root.firstFrame
+        function onFrameSwapped() { root.firstFrame = true; root.applyWindowOpacity() }
+    }
     function applyWindowOpacity() {
-        const mainOp = shellHidden || popupSwap === -1 || revealPending ? 0
+        const mainOp = shellHidden || popupSwap === -1 || revealPending || !firstFrame ? 0
                      : ((!miniPlayer || miniQueueShown || popupSwap === 1) ? 1 : 0)
         const wins = [{ title: "melo",      opacity: mainOp },
                       { title: "melo-mini",
@@ -613,6 +629,7 @@ Window {
     }
 
     Component.onCompleted: {
+        if (Qt.platform.pluginName === "xcb") { WindowCtl.keepBufferInStep(root); WindowCtl.keepBufferInStep(miniWin) }
         if (Settings.loaded) applySavedSettings()
         // Once at startup, or it never runs at all: the window opens at the
         // size it was saved with, so nothing resizes it, and dprGeneration
@@ -641,11 +658,10 @@ Window {
             // so just re-place a fixed number of times across the first ~1s —
             // by then both windows are mapped and a late retry lands. Stop if
             // the user toggles first (don't move the mini out from under them).
-            if (root.miniPlayer || root.toggling || ++root.prewarmTries > 8) { stop(); return }
-            // Re-assert opacity too: the onCompleted applyWindowOpacity() can race
-            // mapping and leave mini at KWin's default opacity 1, doubling the bar on the
-            // first collapse.
-            WindowCtl.alignForCollapse(root.barH)
+            if (root.toggling || ++root.prewarmTries > 8) { stop(); return }
+            // Re-assert opacity too, in either mode: the onCompleted applyWindowOpacity()
+            // can race mapping, and KWin starts the bar at 0 (watchPopupWindows).
+            if (!root.miniPlayer) WindowCtl.alignForCollapse(root.barH)
             applyWindowOpacity()
         }
     }

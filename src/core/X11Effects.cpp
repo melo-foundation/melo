@@ -2,14 +2,21 @@
 #include "BlurSupport.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDynamicPropertyChangeEvent>
 #include <QEvent>
 #include <QGuiApplication>
 #include <QPlatformSurfaceEvent>
 #include <QWindow>
+#include <QElapsedTimer>
+#include <QTimer>
+#include <QQuickWindow>
 
 #include <xcb/shape.h>
 #include <xcb/xcb.h>
+#include <xcb/sync.h>
+#include <xcb/present.h>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -278,4 +285,159 @@ bool x11RestackBelow(QWindow* w, QWindow* sibling) {
                    reinterpret_cast<const char*>(&ev));
     xcb_flush(c);
     return true;
+}
+
+namespace {
+// MELO_GEOM_DEBUG on X11: each _NET_WM_SYNC_REQUEST and ConfigureNotify a melo window
+// receives, with wall-clock ms, to line up with the frame log's swaps
+class SyncTrace : public QAbstractNativeEventFilter {
+public:
+    explicit SyncTrace(xcb_connection_t* c)
+        : protocols_(internAtom(c, "WM_PROTOCOLS")), sync_(internAtom(c, "_NET_WM_SYNC_REQUEST")) {}
+    bool nativeEventFilter(const QByteArray& type, void* message, qintptr*) override {
+        if (type != "xcb_generic_event_t") return false;
+        auto* ev = static_cast<xcb_generic_event_t*>(message);
+        const uint8_t kind = ev->response_type & 0x7f;
+        if (kind == XCB_CLIENT_MESSAGE) {
+            auto* cm = reinterpret_cast<xcb_client_message_event_t*>(ev);
+            if (cm->type == protocols_ && cm->data.data32[0] == sync_)
+                std::fprintf(stderr, "[xsync] %lld %s value %u\n", now(), name(cm->window).constData(),
+                             cm->data.data32[2]);
+        } else if (kind == XCB_CONFIGURE_NOTIFY) {
+            auto* cn = reinterpret_cast<xcb_configure_notify_event_t*>(ev);
+            const QByteArray n = name(cn->window);
+            if (!n.isEmpty())
+                std::fprintf(stderr, "[xconf] %lld %s %ux%u\n", now(), n.constData(), cn->width, cn->height);
+        }
+        return false;
+    }
+private:
+    static long long now() { return QDateTime::currentMSecsSinceEpoch(); }
+    static QByteArray name(xcb_window_t id) {
+        for (QWindow* w : QGuiApplication::topLevelWindows())
+            if (w->handle() && xcb_window_t(w->winId()) == id) return w->title().toUtf8();
+        return QByteArray();
+    }
+    xcb_atom_t protocols_, sync_;
+};
+}  // namespace
+
+void x11InstallSyncTrace() {
+    static SyncTrace* trace = nullptr;
+    xcb_connection_t* c = connection();
+    if (trace || !c) return;
+    trace = new SyncTrace(c);
+    QCoreApplication::instance()->installNativeEventFilter(trace);
+}
+
+namespace {
+// Answers the window manager's _NET_WM_SYNC_REQUEST only once Present CompleteNotify
+// says the first frame swapped after the configure has reached the window; Qt answers
+// when glXSwapBuffers returns, before the copy lands (24-38% of resize frames stale -> 0%).
+// MELO_X11_PRESENT_SYNC=0 turns it off, MELO_X11_PRESENT_LOG=1 logs each answer.
+class PresentSync : public QObject, public QAbstractNativeEventFilter {
+public:
+    PresentSync(QQuickWindow* w, xcb_connection_t* c) : QObject(w), m_c(c), m_xid(xcb_window_t(w->winId())) {
+        m_log = qEnvironmentVariableIsSet("MELO_X11_PRESENT_LOG");
+        const auto* pq = xcb_get_extension_data(m_c, &xcb_present_id);
+        if (!pq || !pq->present) return;
+        m_presentOp = pq->major_opcode;
+        std::free(xcb_present_query_version_reply(m_c, xcb_present_query_version(m_c, 1, 2), nullptr));
+        m_protocols = internAtom(m_c, "WM_PROTOCOLS");
+        m_syncRequest = internAtom(m_c, "_NET_WM_SYNC_REQUEST");
+        const xcb_atom_t aCounter = internAtom(m_c, "_NET_WM_SYNC_REQUEST_COUNTER");
+        auto* r = xcb_get_property_reply(m_c, xcb_get_property(m_c, 0, m_xid, aCounter, XCB_ATOM_ANY, 0, 1), nullptr);
+        if (r && xcb_get_property_value_length(r) >= 4) m_counter = *static_cast<uint32_t*>(xcb_get_property_value(r));
+        std::free(r);
+        if (!m_counter) return;
+        xcb_present_select_input(m_c, xcb_generate_id(m_c), m_xid, XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY);
+        xcb_flush(m_c);
+        connect(w, &QQuickWindow::frameSwapped, this, [this] { onSwapped(); }, Qt::DirectConnection);
+        m_timeout.setSingleShot(true);
+        m_timeout.setInterval(100);   // never hold the window manager longer than this
+        connect(&m_timeout, &QTimer::timeout, this, [this] { answer("timeout"); });
+        QCoreApplication::instance()->installNativeEventFilter(this);
+        m_clock.start();
+        m_on = true;
+        m_name = w->title();
+        if (m_log) std::fprintf(stderr, "[presentsync] %s on\n", qPrintable(w->title()));
+    }
+    ~PresentSync() override { if (m_on) QCoreApplication::instance()->removeNativeEventFilter(this); }
+
+    bool nativeEventFilter(const QByteArray& type, void* message, qintptr*) override {
+        if (type != "xcb_generic_event_t") return false;
+        auto* e = static_cast<xcb_generic_event_t*>(message);
+        const uint8_t t = e->response_type & 0x7f;
+        if (t == XCB_CLIENT_MESSAGE) {
+            auto* cm = reinterpret_cast<xcb_client_message_event_t*>(e);
+            if (cm->window == m_xid && cm->type == m_protocols && cm->data.data32[0] == m_syncRequest) {
+                m_serial.lo = cm->data.data32[2];
+                m_serial.hi = int32_t(cm->data.data32[3]);
+                m_pending = true;
+                m_configured = false;
+                m_target = -1;
+                m_timeout.start();   // a request no configure follows is answered by this
+                if (m_log) std::fprintf(stderr, "[presentsync] %s request %u at %lld ms\n", qPrintable(m_name), m_serial.lo,
+                                        static_cast<long long>(m_clock.elapsed()));
+                return true;   // Qt never sees it, so it never sets the counter itself
+            }
+        } else if (t == XCB_CONFIGURE_NOTIFY) {
+            auto* ce = reinterpret_cast<xcb_configure_notify_event_t*>(e);
+            if (ce->window == m_xid && m_pending && !m_configured) {
+                m_configured = true;
+                m_timeout.start();
+            }
+        } else if (t == XCB_GE_GENERIC) {
+            auto* ge = reinterpret_cast<xcb_ge_generic_event_t*>(e);
+            if (ge->extension == m_presentOp && ge->event_type == XCB_PRESENT_EVENT_COMPLETE_NOTIFY) {
+                auto* pe = reinterpret_cast<xcb_present_complete_notify_event_t*>(e);
+                if (pe->window == m_xid && pe->kind == XCB_PRESENT_COMPLETE_KIND_PIXMAP) {
+                    ++m_completes;
+                    if (m_target >= 0 && m_completes >= m_target) answer("present");
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+private:
+    void onSwapped() {
+        ++m_swaps;
+        // the first frame swapped after the configure is the one the window manager waits for
+        if (m_pending && m_configured && m_target < 0) {
+            m_target = m_swaps;
+            if (m_completes >= m_target) answer("present");
+        }
+    }
+    void answer(const char* why) {
+        if (!m_pending) return;
+        xcb_sync_set_counter(m_c, m_counter, m_serial);
+        xcb_flush(m_c);
+        if (m_log) std::fprintf(stderr, "[presentsync] %s answer %u via %s at %lld ms\n", qPrintable(m_name), m_serial.lo, why,
+                                static_cast<long long>(m_clock.elapsed()));
+        m_pending = false; m_configured = false; m_target = -1;
+        m_timeout.stop();
+    }
+
+    xcb_connection_t* m_c;
+    xcb_window_t m_xid;
+    QString m_name;
+    xcb_sync_counter_t m_counter = 0;
+    xcb_atom_t m_protocols = 0, m_syncRequest = 0;
+    uint8_t m_presentOp = 0;
+    xcb_sync_int64_t m_serial {0, 0};
+    bool m_pending = false, m_configured = false, m_log = false, m_on = false;
+    qint64 m_swaps = 0, m_completes = 0, m_target = -1;
+    QTimer m_timeout;
+    QElapsedTimer m_clock;
+};
+}  // namespace
+
+void x11PresentSync(QQuickWindow* w) {
+    xcb_connection_t* c = connection();
+    if (!w || !c || qEnvironmentVariable("MELO_X11_PRESENT_SYNC") == QLatin1String("0")) return;
+    if (w->property("meloPresentSync").toBool()) return;
+    w->setProperty("meloPresentSync", true);
+    new PresentSync(w, c);
 }

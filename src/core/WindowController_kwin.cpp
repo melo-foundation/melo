@@ -90,6 +90,9 @@ WindowController::WindowController(QObject* parent) : QObject(parent) {
     initFocusTracking();
     isWayland_ = QGuiApplication::platformName().contains("wayland");
     isX11_ = QGuiApplication::platformName() == QLatin1String("xcb");
+#ifdef MELO_X11
+    if (isX11_ && qEnvironmentVariableIsSet("MELO_GEOM_DEBUG")) x11InstallSyncTrace();
+#endif
     if (isWayland_ || isX11_) {
         // Ask the bus, not KWin: whether a name is on the bus is a question
         // for the bus daemon, which always answers, so "is KWin here?" cannot
@@ -167,6 +170,8 @@ WindowController::WindowController(QObject* parent) : QObject(parent) {
             this, &WindowController::popupWindow);
     connect(geoReceiver_, &GeometryReceiver::popupRoomReported,
             this, &WindowController::popupRoom);
+    // loaded before any window exists, so none reaches the taskbar
+    if (kwinAvailable_) watchPopupWindows(true);
 }
 
 // KWin's script registry is session-global and keyed by plugin name, not path.
@@ -201,6 +206,13 @@ WindowController::~WindowController() {
     unload(glueScriptId_, glueScriptPath_, glueScriptName_);
 }
 
+#ifdef MELO_X11
+// the shape WindowShapeItem holds back while a resize is in progress is the whole plane
+static QRegion heldShape(QQuickWindow* win) {
+    return win->property("meloShapeHeld").toBool() ? QRegion() : win->property("meloShape").value<QRegion>();
+}
+#endif
+
 void WindowController::setInputEnabled(QQuickWindow* win, bool enabled) {
     if (!win) return;
 #ifdef MELO_X11
@@ -209,7 +221,7 @@ void WindowController::setInputEnabled(QQuickWindow* win, bool enabled) {
     // would show nothing until its mask call reached the X server.
     if (isX11_ && kwinAvailable_) {
         win->setProperty("meloInputOff", false);
-        win->setMask(meloWindowMask(win->property("meloShape").value<QRegion>()));
+        win->setMask(meloWindowMask(heldShape(win)));
         const QRegion none;
         x11SetInputShape(win, enabled ? nullptr : &none);
         return;
@@ -228,7 +240,7 @@ void WindowController::setInputRegion(QQuickWindow* win, int x, int y, int w, in
 #ifdef MELO_X11
     if (isX11_ && kwinAvailable_) {   // see setInputEnabled
         win->setProperty("meloInputOff", false);
-        win->setMask(meloWindowMask(win->property("meloShape").value<QRegion>()));
+        win->setMask(meloWindowMask(heldShape(win)));
         const QRegion r(x, y, w, h);
         x11SetInputShape(win, &r);
         return;
@@ -555,7 +567,13 @@ bool WindowController::watchPopupWindows(bool on) {
         "  callDBus(\"%1\", \"/melo/geometry\", \"com.melo.Geometry\", \"ReportPopupWindow\",\n"
         "           [w.caption].concat([p.x / k, p.y / k, p.width / k, p.height / k, near].map(Math.round)).join(\",\"));\n"
         "}\n"
+        // melo is the one taskbar entry; a transparent window stays out of Alt+Tab too
+        "function list(w) { w.skipTaskbar = true; w.skipPager = true; w.skipSwitcher = w.opacity < 0.5; }\n"
         "function hook(w) {\n"
+        "  if (w && w.pid === %2 && [\"melo-mini\", \"melo-queue\", \"melo-vis\", \"melo-video\"].includes(w.caption)) {\n"
+        "    list(w);\n"
+        "    w.opacityChanged.connect(() => list(w));\n"
+        "  }\n"
         "  if (w && w.pid === %2 && [\"melo-queue\", \"melo-vis\", \"melo-video\"].includes(w.caption))\n"
         "  {\n"
         "    w.interactiveMoveResizeFinished.connect(() => report(w));\n"
@@ -567,9 +585,18 @@ bool WindowController::watchPopupWindows(bool on) {
         "        [w.caption, p.x / k, p.y / k, p.width / k, p.height / k, Date.now()].map((v, i) => i === 0 ? v : Math.round(v * 10) / 10).join(\",\")); });\n"
         "  }\n"
         "}\n"
-        "for (const c in pws) hook(pws[c]);\n"
-        "workspace.windowAdded.connect(hook);\n").arg(geoService_, QString::number(QCoreApplication::applicationPid()),
-                                                 qEnvironmentVariableIsSet("MELO_GEOM_DEBUG") ? QStringLiteral("true") : QStringLiteral("false"))).toUtf8());
+        "for (const w of workspace.windowList()) hook(w);\n"
+        // The bar and the detached windows map hidden; on X11 a window shows black
+        // until melo has drawn it and set its opacity, so they start at 0 and melo
+        // reveals them. Only for a new window: this script reloads at startup over
+        // windows already shown.
+        "workspace.windowAdded.connect((w) => {\n"
+        "  if (w && w.pid === %2 && [\"melo-mini\", \"melo-queue\", \"melo-vis\", \"melo-video\"].includes(w.caption)) w.opacity = 0;\n"
+        "  if (w && w.pid === %2 && w.caption === \"melo\" && %4) w.opacity = 0;\n"
+        "  hook(w);\n"
+        "});\n").arg(geoService_, QString::number(QCoreApplication::applicationPid()),
+                                                 qEnvironmentVariableIsSet("MELO_GEOM_DEBUG") ? QStringLiteral("true") : QStringLiteral("false"),
+                                                 isX11_ ? QStringLiteral("true") : QStringLiteral("false"))).toUtf8());
     f.close();
     QDBusReply<int> id = scripting.call("loadScript", popupWatchPath_, popupWatchName_);
     if (!id.isValid() || id.value() < 0) {
@@ -613,15 +640,29 @@ QString WindowController::stackOrder(QQuickWindow* a, QQuickWindow* b) {
 // over a 760 px drag: 37 of 51 acked commits one size behind. A window-sized offscreen
 // pass (main's layers, projectM's FBO) made the window current a second time and hid it.
 // So when the size has changed since the last frame, make it current once more before
-// drawing, which takes the new buffer.
+// drawing, which takes the new buffer. X11 (Mesa) draws the first frame after a resize in
+// the old buffer too, and GLX skips a bind to what is already current: it unbinds first.
+// MELO_X11_REBIND=0 leaves X11 to the present sync alone.
 void WindowController::keepBufferInStep(QQuickWindow* win) {
-    if (!win || !QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) return;
+    if (!win) return;
+    bool rebind = false;
+#ifdef MELO_X11
+    if (isX11_) {
+        x11PresentSync(win);
+        if (qEnvironmentVariable("MELO_X11_REBIND") == QLatin1String("0")) return;
+        rebind = true;
+    }
+#endif
+    if (!rebind && !QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) return;
     auto last = std::make_shared<QSize>();
-    connect(win, &QQuickWindow::beforeRendering, win, [win, last] {
+    connect(win, &QQuickWindow::beforeRendering, win, [win, last, rebind] {
         const QSize now = win->size() * win->devicePixelRatio();
         if (now == *last) return;
         *last = now;
-        if (QOpenGLContext* c = QOpenGLContext::currentContext()) c->makeCurrent(win);
+        QOpenGLContext* c = QOpenGLContext::currentContext();
+        if (!c) return;
+        if (rebind) c->doneCurrent();
+        c->makeCurrent(win);
     }, Qt::DirectConnection);
 }
 

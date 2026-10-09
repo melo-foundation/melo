@@ -179,6 +179,7 @@ private:
     bool exact_ = false;
     QSize fieldFor_;             // the size the exact field was measured at
     class QTimer* resize_ = nullptr;
+    class QTimer* shapeHold_ = nullptr;   // X11: the shape is cut once a resize settles
     qreal grabRing_ = 6;
     mutable class ShapeEdgeRing* ring_ = nullptr;
     void measureField(const QImage& from, qreal dpr, bool drawOutMiddle);

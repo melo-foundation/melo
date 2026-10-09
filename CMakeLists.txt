@@ -128,7 +128,7 @@ if(UNIX AND NOT APPLE)
 
     # X11 clients of KWin (src/core/X11Effects.h): the blur-behind window
     # property and input-only shapes. Qt's xcb plugin loads the same libraries.
-    pkg_check_modules(XCB IMPORTED_TARGET xcb xcb-shape)
+    pkg_check_modules(XCB IMPORTED_TARGET xcb xcb-shape xcb-present xcb-sync)
     if(XCB_FOUND)
         set(MELO_X11 ON)
         message(STATUS "melo: X11 blur and input shapes via xcb")

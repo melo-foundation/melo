@@ -66,3 +66,11 @@ QString x11StackOrder(const QList<QWindow*>& windows);
 // Asks the window manager to put w directly under sibling (_NET_RESTACK_WINDOW).
 // False off xcb.
 bool x11RestackBelow(QWindow* w, QWindow* sibling);
+
+// MELO_GEOM_DEBUG: logs each sync request and ConfigureNotify melo's windows get. No-op off xcb.
+void x11InstallSyncTrace();
+
+// w answers the window manager's resize sync only once its frame
+// has reached the window (Present CompleteNotify). No-op off xcb.
+class QQuickWindow;
+void x11PresentSync(QQuickWindow* w);

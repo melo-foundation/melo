@@ -148,6 +148,15 @@ public:
         if (!dprArmed_ && qGuiApp) { qGuiApp->installEventFilter(this); dprArmed_ = true; }
         return win ? win->effectiveDevicePixelRatio() : 0.0;
     }
+    // The window manager steps an interactive resize by `step` logical px; 0 clears it.
+    Q_INVOKABLE void setSizeStep(QQuickWindow* win, int step) {
+        if (!win) return;
+        const QSize s = step > 1 ? QSize(step, step) : QSize();
+        if (win->sizeIncrement() == s) return;
+        // Qt sends no base of 0, and without one ICCCM counts steps from the minimum size
+        win->setBaseSize(s);
+        win->setSizeIncrement(s);
+    }
     ~WindowController() override;   // unloads persistent KWin scripts
 
     // on: the window renders nothing until released (FrameHold)

@@ -7,6 +7,7 @@
 #include <QPainter>
 #include <QRunnable>
 #include <QTimer>
+#include <QGuiApplication>
 #include <QSGTextureProvider>
 #include <vector>
 #include <QQuickWindow>
@@ -866,6 +867,7 @@ void WindowShapeItem::applyMask() {
     if (!w || !input_ || !isComponentComplete() || refused_) return;
     const QRegion r = active_ && kind_ != Kind::None ? regionAt(int(width()), int(height())) : QRegion();
     w->setProperty("meloShape", QVariant::fromValue(r));
+    w->setProperty("meloShapeHeld", false);
     // a window made click-through keeps that until it is given input back
     if (!w->property("meloInputOff").toBool()) w->setMask(meloWindowMask(r));
     ++generation_;
@@ -877,7 +879,26 @@ void WindowShapeItem::geometryChange(const QRectF& now, const QRectF& before) {
     QQuickItem::geometryChange(now, before);
     if (now.size() == before.size()) return;
     update();
-    applyMask();
+    // X11 applies a shape at once but the matching frame later, so a shape cut per
+    // resize step clips the old frame and the far edge jumps (31% of frames -> 0%).
+    // The corners are transparent in the content, so the whole plane stands in.
+    QQuickWindow* w = window();
+    if (w && !before.isEmpty() && QGuiApplication::platformName() == QLatin1String("xcb")
+        && !qEnvironmentVariableIsSet("MELO_X11_SHAPE_PER_STEP")) {
+        if (!shapeHold_) {
+            shapeHold_ = new QTimer(this);
+            shapeHold_->setSingleShot(true);
+            shapeHold_->setInterval(250);
+            connect(shapeHold_, &QTimer::timeout, this, [this] { applyMask(); });
+        }
+        if (!shapeHold_->isActive() && input_ && !refused_) {
+            w->setProperty("meloShapeHeld", true);   // WindowController's input calls use the whole plane too
+            if (!w->property("meloInputOff").toBool()) w->setMask(meloWindowMask(QRegion()));
+        }
+        shapeHold_->start();
+    } else {
+        applyMask();
+    }
     // A field measured at size is measured again when the size settles, not on
     // every step of a drag: it is a distance transform of the whole window.
     if (exact_) {
