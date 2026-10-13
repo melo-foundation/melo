@@ -12,6 +12,7 @@ MeloWindow {
     id: picker
     title: "melo colour"
     heading: "Colour"
+    flags: Qt.Dialog | Qt.FramelessWindowHint   // a child of settings: above it, no taskbar entry
     onCloseRequested: picker.reject()
     minimumWidth: Theme.sp(300)
     minimumHeight: Math.round(chromeHeight + dialog.fullHeight)

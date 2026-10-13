@@ -172,6 +172,18 @@ WindowController::WindowController(QObject* parent) : QObject(parent) {
             this, &WindowController::popupRoom);
     // loaded before any window exists, so none reaches the taskbar
     if (kwinAvailable_) watchPopupWindows(true);
+#ifdef MELO_X11
+    // the windows KWin's scripts set the opacity of are left to them
+    if (isX11_)
+        x11HideUntilDrawn(kwinAvailable_ ? QStringList{QStringLiteral("melo"), QStringLiteral("melo-mini"),
+                                                      QStringLiteral("melo-queue"), QStringLiteral("melo-vis"),
+                                                      QStringLiteral("melo-video")}
+                                         : QStringList{});
+    // without KWin's script, melo stays one taskbar entry through the EWMH hint
+    if (isX11_ && !kwinAvailable_)
+        x11SkipTaskbar({QStringLiteral("melo-mini"), QStringLiteral("melo-queue"),
+                        QStringLiteral("melo-vis"), QStringLiteral("melo-video")});
+#endif
 }
 
 // KWin's script registry is session-global and keyed by plugin name, not path.
@@ -570,7 +582,8 @@ bool WindowController::watchPopupWindows(bool on) {
         // melo is the one taskbar entry; a transparent window stays out of Alt+Tab too
         "function list(w) { w.skipTaskbar = true; w.skipPager = true; w.skipSwitcher = w.opacity < 0.5; }\n"
         "function hook(w) {\n"
-        "  if (w && w.pid === %2 && [\"melo-mini\", \"melo-queue\", \"melo-vis\", \"melo-video\"].includes(w.caption)) {\n"
+        "  if (w && w.pid === %2 && ([\"melo-mini\", \"melo-queue\", \"melo-vis\", \"melo-video\"].includes(w.caption)\n"
+        "                            || w.caption.startsWith(\"melo-plugin-\"))) {\n"
         "    list(w);\n"
         "    w.opacityChanged.connect(() => list(w));\n"
         "  }\n"
@@ -777,6 +790,18 @@ bool WindowController::moveWindows(const QVariantList& windows) {
         "  w.frameGeometry = { x: p.x * k, y: p.y * k, width: g.width, height: g.height };\n"
         "}\n")
         .arg(json, QString::number(QCoreApplication::applicationPid()), kwinScaleJs()));
+}
+
+bool WindowController::raisePopupWindow(const QString& caption) {
+    if (!kwinAvailable_ || caption.isEmpty()) return false;
+    QString lit = QString::fromUtf8(QJsonDocument(QJsonArray{caption}).toJson(QJsonDocument::Compact));
+    lit.replace(QChar(0x2028), QLatin1String("\\u2028"));
+    lit.replace(QChar(0x2029), QLatin1String("\\u2029"));
+    return runKwinScript(QStringLiteral(
+        "const cap = %1[0];\n"
+        "for (const w of workspace.windowList())\n"
+        "  if (w.pid === %2 && w.caption === cap) workspace.raiseWindow(w);\n")
+        .arg(lit, QString::number(QCoreApplication::applicationPid())));
 }
 
 bool WindowController::setKeepAbove(bool on) {

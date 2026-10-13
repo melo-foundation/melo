@@ -17,6 +17,7 @@ MeloWindow {
     // without one, X11 captions it "melo" and the KWin scripts take it for the
     // main window
     title: "melo setup"
+    flags: Qt.Dialog | Qt.FramelessWindowHint   // a child of main: above it, no taskbar entry
     // As tall as the tallest page, and no page changes height: accounts are a
     // dropdown, and a row that depends on another setting is disabled in
     // place rather than hidden. So the window never resizes and no page

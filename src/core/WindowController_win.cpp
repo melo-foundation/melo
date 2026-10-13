@@ -45,6 +45,7 @@ bool WindowController::setWindowKeepAbove(QQuickWindow* win, bool on) {
 bool WindowController::placePopupWindowOverMain(const QString&, int, int) { return false; }
 bool WindowController::watchPopupWindows(bool) { return false; }
 bool WindowController::placePopupWindowBeside(const QString&) { return false; }
+bool WindowController::raisePopupWindow(const QString&) { return false; }
 bool WindowController::swapPopupWindows(const QString&, const QString&) { return false; }
 bool WindowController::setWindowOpacities(const QVariantList&) { return false; }
 // false: the caller's own QWindow::setPosition already performed the move on

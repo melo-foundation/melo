@@ -4,6 +4,7 @@
 #include <QGuiApplication>
 #include <QKeySequence>
 #include <QShortcut>
+#include <cstdio>
 #include <utility>
 
 static bool hasCursorPosition(QObject* obj) {
@@ -101,6 +102,8 @@ void CommandMap::setKey(const QString& commandId, const QString& qtSequence) {
         sc->setObjectName(commandId);
         sc->setContext(Qt::ApplicationShortcut);
         QObject::connect(sc, &QShortcut::activated, this, [this, commandId]() {
+            if (qEnvironmentVariableIsSet("MELO_GEOM_DEBUG"))
+                std::fprintf(stderr, "[shortcut] %s\n", qPrintable(commandId));
             invoke(commandId);
         });
         shortcuts_.insert(commandId, sc);

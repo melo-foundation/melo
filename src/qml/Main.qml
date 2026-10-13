@@ -96,8 +96,9 @@ Window {
         const d = WindowCtl.dprOf(root)
         return d > 0 ? snapGrain(d) : 1
     }
-    // X11: the window manager steps the drag itself; a resize of our own
-    // mid-drag fights its configures and the edges wobble
+    // X11: a resize of our own mid-drag fights the window manager's configures and
+    // the edges wobble, so the snap waits for the drag to end. The size step is for
+    // window managers that honour it; KWin 6 does not.
     function applySizeStep() { if (isX11 && typeof WindowCtl !== "undefined") WindowCtl.setSizeStep(root, sizeStep()) }
     onMiniPlayerChanged: applySizeStep()
     function snapSize() {
@@ -2823,6 +2824,7 @@ Window {
         active: false
         sourceComponent: SettingsWindow {
             objectName: "settingsWin"
+            transientParent: root
             onImportPaths: (paths) => root.importAndEdit(paths)
             onGuestReset: homeView.refresh()
             mainAreaRatio: (root.lastFullWidth * root.lastFullHeight) / 2073600
@@ -2832,7 +2834,7 @@ Window {
     Loader {
         id: eqLoader
         active: false
-        sourceComponent: EqWindow { objectName: "eqWin" }
+        sourceComponent: EqWindow { objectName: "eqWin"; transientParent: root }
     }
     function eqWindow() { eqLoader.active = true; return eqLoader.item }
     MetadataEditor { id: metadataEditor }

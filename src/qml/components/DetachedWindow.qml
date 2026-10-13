@@ -75,6 +75,7 @@ MeloWindow {
         if (p.x !== undefined && p.y !== undefined) WindowCtl.moveWindows([{ title: dw.title, x: p.x, y: p.y }])
         else WindowCtl.placePopupWindowBeside(dw.title)
         if (keepAbove) WindowCtl.setWindowKeepAbove(dw, true)
+        WindowCtl.raisePopupWindow(dw.title)
         reveal(true)
     }
     function hide() {

@@ -26,6 +26,7 @@
 #include <QDBusInterface>
 #include <QFileInfo>
 #include <cstdio>
+#include <QDateTime>
 #include <gst/gst.h>
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -498,6 +499,11 @@ int main(int argc, char** argv) {
     qml.rootContext()->setContextProperty("BarButtons", &barButtons);
     auto* frameClock = new FrameClock(&app);
     qml.rootContext()->setContextProperty("FrameClock", frameClock);
+    if (qEnvironmentVariableIsSet("MELO_GEOM_DEBUG"))
+        QObject::connect(&app, &QGuiApplication::focusWindowChanged, &app, [](QWindow* w) {
+            std::fprintf(stderr, "[focus] %lld %s\n", static_cast<long long>(QDateTime::currentMSecsSinceEpoch()),
+                         w ? qPrintable(w->title()) : "(none)");
+        });
     // every window that exists after load, and any that appears later
     QObject::connect(&app, &QGuiApplication::focusWindowChanged, frameClock, [frameClock](QWindow* w) {
         if (auto* qw = qobject_cast<QQuickWindow*>(w)) if (!qw->property("frameClockWatched").toBool()) { qw->setProperty("frameClockWatched", true); frameClock->watch(qw); }

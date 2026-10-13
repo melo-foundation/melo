@@ -16,6 +16,7 @@
 #include <xcb/xcb.h>
 #include <xcb/sync.h>
 #include <xcb/present.h>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -440,4 +441,95 @@ void x11PresentSync(QQuickWindow* w) {
     if (w->property("meloPresentSync").toBool()) return;
     w->setProperty("meloPresentSync", true);
     new PresentSync(w, c);
+}
+
+namespace {
+// A window starts at _NET_WM_WINDOW_OPACITY 0 and loses it with its first frame:
+// an X window shows from its map, before anything is drawn in it, black.
+class FirstFrameGate : public QObject {
+public:
+    FirstFrameGate(xcb_connection_t* c, QStringList skip) : m_c(c), m_skip(std::move(skip)) {
+        m_opacity = internAtom(c, "_NET_WM_WINDOW_OPACITY");
+    }
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (e->type() != QEvent::PlatformSurface
+            || static_cast<QPlatformSurfaceEvent*>(e)->surfaceEventType() != QPlatformSurfaceEvent::SurfaceCreated)
+            return false;
+        auto* w = qobject_cast<QQuickWindow*>(o);
+        if (!w || m_skip.contains(w->title())) return false;
+        const xcb_window_t xid = xcb_window_t(w->winId());
+        const uint32_t zero = 0;
+        xcb_change_property(m_c, XCB_PROP_MODE_REPLACE, xid, m_opacity, XCB_ATOM_CARDINAL, 32, 1, &zero);
+        xcb_flush(m_c);
+        auto* once = new QObject(w);
+        auto reveal = [c = m_c, a = m_opacity, xid, once] {
+            xcb_delete_property(c, xid, a);
+            xcb_flush(c);
+            once->deleteLater();
+        };
+        connect(w, &QQuickWindow::frameSwapped, once, reveal, Qt::QueuedConnection);
+        QTimer::singleShot(1000, once, reveal);   // never left hidden
+        return false;
+    }
+
+private:
+    xcb_connection_t* m_c;
+    QStringList m_skip;
+    xcb_atom_t m_opacity = 0;
+};
+}  // namespace
+
+namespace {
+// Adds SKIP_TASKBAR and SKIP_PAGER to _NET_WM_STATE between QShowEvent and the map:
+// Qt merges what is there when it writes its own states, and the window manager
+// clears the property on every unmap.
+class TaskbarSkip : public QObject {
+public:
+    TaskbarSkip(xcb_connection_t* c, QStringList titles) : m_c(c), m_titles(std::move(titles)) {
+        m_state = internAtom(c, "_NET_WM_STATE");
+        m_add[0] = internAtom(c, "_NET_WM_STATE_SKIP_TASKBAR");
+        m_add[1] = internAtom(c, "_NET_WM_STATE_SKIP_PAGER");
+    }
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (e->type() != QEvent::Show) return false;
+        auto* w = qobject_cast<QWindow*>(o);
+        if (!w || !w->handle() || !(m_titles.contains(w->title()) || w->title().startsWith(QLatin1String("melo-plugin-"))))
+            return false;
+        const xcb_window_t xid = xcb_window_t(w->winId());
+        std::vector<xcb_atom_t> atoms;
+        if (auto* r = xcb_get_property_reply(m_c, xcb_get_property(m_c, false, xid, m_state, XCB_ATOM_ATOM, 0, 1024), nullptr)) {
+            const auto* a = static_cast<const xcb_atom_t*>(xcb_get_property_value(r));
+            atoms.assign(a, a + xcb_get_property_value_length(r) / int(sizeof(xcb_atom_t)));
+            std::free(r);
+        }
+        for (xcb_atom_t a : m_add)
+            if (std::find(atoms.begin(), atoms.end(), a) == atoms.end()) atoms.push_back(a);
+        xcb_change_property(m_c, XCB_PROP_MODE_REPLACE, xid, m_state, XCB_ATOM_ATOM, 32,
+                            quint32(atoms.size()), atoms.data());
+        xcb_flush(m_c);
+        return false;
+    }
+
+private:
+    xcb_connection_t* m_c;
+    QStringList m_titles;
+    xcb_atom_t m_state = 0;
+    xcb_atom_t m_add[2] = {};
+};
+}  // namespace
+
+void x11SkipTaskbar(const QStringList& titles) {
+    static TaskbarSkip* skip = nullptr;
+    xcb_connection_t* c = connection();
+    if (skip || !c) return;
+    skip = new TaskbarSkip(c, titles);
+    QCoreApplication::instance()->installEventFilter(skip);
+}
+
+void x11HideUntilDrawn(const QStringList& skip) {
+    static FirstFrameGate* gate = nullptr;
+    xcb_connection_t* c = connection();
+    if (gate || !c || qEnvironmentVariable("MELO_X11_DRAW_GATE") == QLatin1String("0")) return;
+    gate = new FirstFrameGate(c, skip);
+    QCoreApplication::instance()->installEventFilter(gate);
 }

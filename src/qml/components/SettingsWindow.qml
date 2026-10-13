@@ -149,7 +149,7 @@ Window {
     visible: false
     color: "transparent"
     title: "melo settings"
-    flags: Qt.Window | Qt.FramelessWindowHint
+    flags: Qt.Dialog | Qt.FramelessWindowHint   // a child of main: above it, no taskbar entry
 
     property string tab: "general"
     // main window area vs the 1920x1080 reference — the count row shows the

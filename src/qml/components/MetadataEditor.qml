@@ -17,7 +17,7 @@ Window {
     visible: false
     color: "transparent"
     title: "melo metadata"
-    flags: Qt.Window | Qt.FramelessWindowHint
+    flags: Qt.Dialog | Qt.FramelessWindowHint   // a child window: above its parent, no taskbar entry
 
     // its own surface, so it takes the same glass the other windows do
     // instead of riding on whatever the main window happened to be doing

@@ -5,6 +5,7 @@
 #include <QList>
 #include <QRegion>
 #include <QString>
+#include <QStringList>
 
 class QWindow;
 
@@ -74,3 +75,12 @@ void x11InstallSyncTrace();
 // has reached the window (Present CompleteNotify). No-op off xcb.
 class QQuickWindow;
 void x11PresentSync(QQuickWindow* w);
+
+// Each window, except those titled in skip, stays transparent until its first
+// frame. No-op off xcb.
+void x11HideUntilDrawn(const QStringList& skip);
+
+// The windows titled in titles, and every "melo-plugin-" window, stay off the
+// taskbar and pager (_NET_WM_STATE_SKIP_TASKBAR/SKIP_PAGER), set on each show.
+// No-op off xcb.
+void x11SkipTaskbar(const QStringList& titles);

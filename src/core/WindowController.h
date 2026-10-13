@@ -250,6 +250,8 @@ public:
     // attached popup was.
     // watchPopupWindows: each reports through popupWindow() after a user move or resize.
     Q_INVOKABLE bool placePopupWindowBeside(const QString& caption);
+    // to the top of its layer: a window kept mapped while closed keeps its launch place
+    Q_INVOKABLE bool raisePopupWindow(const QString& caption);
     Q_INVOKABLE bool placePopupWindowOverMain(const QString& caption, int rx, int ry);
     Q_INVOKABLE bool watchPopupWindows(bool on);
     // One detached window for another in one compositor step: `to` takes `from`'s

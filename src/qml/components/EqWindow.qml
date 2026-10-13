@@ -50,7 +50,7 @@ Window {
     visible: false
     color: "transparent"
     title: "melo equalizer"
-    flags: Qt.Window | Qt.FramelessWindowHint
+    flags: Qt.Dialog | Qt.FramelessWindowHint   // a child window: above its parent, no taskbar entry
 
     property var bands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     property bool eqEnabled: true
