@@ -1729,6 +1729,7 @@ QtObject {
         pageTabs: [8, 0, 8, 5],      // the settings window's tab strip; unset, it takes `tabs`
         title:   [10, 0, 4, 0],      // a title bar's label and buttons
         player:  [0, 6, 0, 6],       // added to the bar layout's own pad and top
+        miniPlayer: [0, 6, 0, 6],    // the mini player's bar; unset, it takes `player`
         panel:   [12, 6, 12, 6],     // the queue panel's rows and header
         row:     [6, 6, 16, 6],      // a list row's thumbnail and text; the
                                      // right holds a right-aligned duration
@@ -1756,6 +1757,7 @@ QtObject {
         if (v !== null && typeof v === "object" && v[side] !== undefined) return Number(v[side])
         if (name === "input" && insetMap.field !== undefined) return insetOf_(insetMap.field, side, d[i])   // its first name
         if (name === "pageTabs") return insetOf("tabs", side)
+        if (name === "miniPlayer") return insetOf("player", side)
         // the card's first cut was one number each, under its own keys
         if (name === "cardArt" && ts.cardArtInset !== undefined) return Number(ts.cardArtInset)
         if (name === "cardText" && ts.cardTextInset !== undefined && side !== "top") return Number(ts.cardTextInset)
@@ -2090,6 +2092,8 @@ QtObject {
         for (const b of frameBands) at += Math.max(0, Number(b.width) || 0)
         return at
     }
+    // the top of a frame with no title in it is drawn at least frameDepth deep, whatever borderTop says
+    function frameTopUntitled(frT) { return frT > 0 || frameDepth > 0 ? Math.max(frT, Math.ceil(frameDepth)) : frT }
     // How soft the frame's own edges are, in px: the outer one at the window's
     // rim, the inner one where it gives way to what it frames. The edges
     // between the bands stay hard.

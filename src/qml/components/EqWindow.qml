@@ -40,6 +40,9 @@ Window {
     readonly property real frR: frameOff ? 0 : Theme.borderRight
     readonly property real frB: frameOff ? 0 : Theme.borderBottom
     readonly property bool framed: frL > 0 || frT > 0 || frR > 0 || frB > 0
+    // a frame with no title in it draws all its bands at the top, deeper than a thin top side
+    // (Translucent Aqua: 10 px of bands, a 4 px top): what it frames starts below them
+    readonly property real frTop: frameOff || Theme.borderTitle ? frT : Theme.frameTopUntitled(frT)
     readonly property real titleGap: Theme.borderTitle ? frT : 0
     readonly property real titleCap: framed && !Theme.borderTitle ? Math.max(0, Theme.windowRadius - Math.max(frL, frT)) : Theme.windowRadius
 
@@ -192,7 +195,7 @@ Window {
     Surface {   // title bar
         id: titleBar
         x: Theme.borderTitle ? 0 : win.frL
-        y: Theme.borderTitle ? 0 : win.frT
+        y: Theme.borderTitle ? 0 : win.frTop
         width: parent.width - (Theme.borderTitle ? 0 : win.frL + win.frR)
         height: Theme.titleBarH
         role: "title"

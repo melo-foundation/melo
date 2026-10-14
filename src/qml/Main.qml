@@ -163,6 +163,9 @@ Window {
     readonly property real frT: frameOff ? 0 : Theme.borderTop
     readonly property real frR: frameOff ? 0 : Theme.borderRight
     readonly property real frB: frameOff ? 0 : Theme.borderBottom
+    // a frame with no title in it draws all its bands at the top, deeper than a thin top side
+    // (Translucent Aqua: 10 px of bands, a 4 px top): what it frames starts below them
+    readonly property real frTop: frameOff ? 0 : Theme.frameTopUntitled(frT)
     readonly property bool framed: frL > 0 || frT > 0 || frR > 0 || frB > 0
     readonly property bool frameDrawn: framed || (!frameOff && Theme.frameDepth > 0)
     readonly property bool barCard: playerBar.shownBacking === "floating"
@@ -174,7 +177,7 @@ Window {
     readonly property real barInB: borderInParts && barCard ? 0 : frB
     readonly property real barRingTop: borderInParts && !barCard ? frT : 0
     readonly property real upperFoot: borderInParts ? frB : 0
-    readonly property real contentTop: Theme.borderTitle ? 0 : frT
+    readonly property real contentTop: Theme.borderTitle ? 0 : frTop
     readonly property real barFoot: shaped ? 0 : barInB   // a shaped window's bar covers its own band
     readonly property real upperH: height - playerBar.settledHeight - barFoot - barRingTop
     // the title bar's corners inside the frame: the band holds the window's
@@ -1402,7 +1405,7 @@ Window {
             // inside the popup's frame, as the bar sits inside its own; the
             // window's body is inside its frame already
             anchors.leftMargin: root.queueInWindow ? 0 : root.frL
-            anchors.topMargin: root.queueInWindow ? 0 : root.frT
+            anchors.topMargin: root.queueInWindow ? 0 : root.frTop
             anchors.rightMargin: root.queueInWindow ? 0 : root.frR
             anchors.bottomMargin: root.queueInWindow ? 0 : root.frB
             visible: root.queueInWindow ? queueWin.open : !root.miniVisWanted
@@ -1712,7 +1715,7 @@ Window {
             // the frame left the cut corners empty
             readonly property bool shaped: miniShape.active && miniShape.hasShape
             anchors.leftMargin: framedWindow && !shaped ? root.frL : 0
-            anchors.topMargin: framedWindow && !shaped ? root.frT : 0
+            anchors.topMargin: framedWindow && !shaped ? root.frTop : 0
             anchors.rightMargin: framedWindow && !shaped ? root.frR : 0
             anchors.bottomMargin: framedWindow && !shaped ? root.frB : 0
             edgeRadius: shaped ? 0
@@ -1720,7 +1723,7 @@ Window {
             mini: true
             cutLeft: shaped ? Math.max(root.frL, root.miniCutL) : 0
             cutRight: shaped ? Math.max(root.frR, root.miniCutR) : 0
-            cutTop: framedWindow && shaped ? root.frT : 0
+            cutTop: framedWindow && shaped ? root.frTop : 0
             cutBottom: framedWindow && shaped ? root.frB : 0
             layout: root.handoverLayout.length && !root.miniPlayer ? root.handoverLayout : "barMini:" + Theme.barMini
             backing: root.handoverBacking.length && !root.miniPlayer ? root.handoverBacking : Theme.backMini

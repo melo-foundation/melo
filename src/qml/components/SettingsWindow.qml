@@ -111,6 +111,9 @@ Window {
     readonly property real frR: frameOff ? 0 : Theme.borderRight
     readonly property real frB: frameOff ? 0 : Theme.borderBottom
     readonly property bool framed: frL > 0 || frT > 0 || frR > 0 || frB > 0
+    // a frame with no title in it draws all its bands at the top, deeper than a thin top side
+    // (Translucent Aqua: 10 px of bands, a 4 px top): what it frames starts below them
+    readonly property real frTop: frameOff || Theme.borderTitle ? frT : Theme.frameTopUntitled(frT)
     readonly property real titleGap: Theme.borderTitle ? frT : 0
     readonly property real titleCap: framed && !Theme.borderTitle ? Math.max(0, Theme.windowRadius - Math.max(frL, frT)) : Theme.windowRadius
 
@@ -667,7 +670,7 @@ Window {
                                          transparency: "Transparency", behaviour: "Behaviour", size: "Size",
                                          background: "Background", controls: "Controls", player: "Player",
                                          insets: "Insets", glyphs: "Glyphs", layout: "Layout" })
-    readonly property var insetLabels: ({ page: "Page", pageHeader: "Page header", header: "Search bar", tabs: "View tabs", pageTabs: "Page tabs", title: "Title bar", player: "Player bar",
+    readonly property var insetLabels: ({ page: "Page", pageHeader: "Page header", header: "Search bar", tabs: "View tabs", pageTabs: "Page tabs", title: "Title bar", player: "Player bar", miniPlayer: "Mini player",
                                           panel: "Panel", row: "List row", input: "Text input", menu: "Menu", dialog: "Dialog",
                                           toast: "Toast", tooltip: "Tooltip", cardArt: "Card art", cardText: "Card text",
                                           settings: "Settings rows", settingsHover: "Settings hover", tool: "Tool windows", scrollbar: "Scrollbar" })
@@ -926,7 +929,7 @@ Window {
     Surface {
         id: titleBar
         x: Theme.borderTitle ? 0 : win.frL
-        y: Theme.borderTitle ? 0 : win.frT
+        y: Theme.borderTitle ? 0 : win.frTop
         width: parent.width - (Theme.borderTitle ? 0 : win.frL + win.frR)
         height: Theme.titleBarH
         role: win.headShared ? "" : "title"      // a title bar, as the main window's is

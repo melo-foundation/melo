@@ -99,10 +99,12 @@ Item {
     property real frozenEdgeR: -1
     // Side padding: the document's `padLeft`/`padRight`, else `pad`, else 12, plus
     // the theme's player inset; the floating card's inset is added on top.
+    // the theme's inset for this bar: the mini player's has its own
+    readonly property string insetName: bar && bar.mini ? "miniPlayer" : "player"
     function docPad(side) {
         const own = side === "left" ? doc.padLeft : doc.padRight
         const layoutPad = own !== undefined ? Number(own) : doc.pad !== undefined ? Number(doc.pad) : 12
-        return layoutPad + Theme.inset("player", side)
+        return layoutPad + Theme.inset(insetName, side)
     }
     function sideEdge(side) {
         return docPad(side)
@@ -117,13 +119,13 @@ Item {
     // theme's bottom inset below. On top of it what covers the bar there: a
     // floating card's own inset, and the window frame's band where a shaped window
     // draws it over the bar (cutTop, cutBottom, as cutLeft is at the ends).
-    readonly property real mainTop: (doc.top !== undefined ? Number(doc.top) : 0) + Theme.inset("player", "top")
-    readonly property real altTop: altDoc && altDoc.top !== undefined ? Number(altDoc.top) + Theme.inset("player", "top") : mainTop
+    readonly property real mainTop: (doc.top !== undefined ? Number(doc.top) : 0) + Theme.inset(insetName, "top")
+    readonly property real altTop: altDoc && altDoc.top !== undefined ? Number(altDoc.top) + Theme.inset(insetName, "top") : mainTop
     readonly property bool onCard: bar && bar.backing === "floating"
     function coverTop() { return (onCard ? bar.cardTop : 0) + (bar ? bar.cutTop : 0) }
     function coverBottom() { return (onCard ? bar.cardBottom : 0) + (bar ? bar.cutBottom : 0) }
     function minAbove(top) { return coverTop() + top }
-    function minBelow() { return coverBottom() + Theme.inset("player", "bottom") }
+    function minBelow() { return coverBottom() + Theme.inset(insetName, "bottom") }
     readonly property real rowGap: Theme.bar(doc.rowGap !== undefined ? doc.rowGap : 4)
     readonly property bool vcenter: doc.vcenter === true
     readonly property real vOffset: doc.vOffset || 0

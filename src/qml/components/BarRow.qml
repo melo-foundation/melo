@@ -19,10 +19,10 @@ Item {
     // where the others are and still pull its right end in.
     readonly property real pad: doc.padLeft !== undefined ? Number(doc.padLeft)
                               : doc.pad !== undefined ? Number(doc.pad)
-                              : (layout ? layout.edge : 12 + Theme.inset("player", "left"))
+                              : (layout ? layout.edge : 12 + Theme.inset(bar && bar.mini ? "miniPlayer" : "player", "left"))
     readonly property real padRight: doc.padRight !== undefined ? Number(doc.padRight)
                                    : doc.pad !== undefined ? Number(doc.pad)
-                                   : (layout ? layout.edgeRight : 12 + Theme.inset("player", "right"))
+                                   : (layout ? layout.edgeRight : 12 + Theme.inset(bar && bar.mini ? "miniPlayer" : "player", "right"))
     // in the bar's scale, as the bar's own height is: the cells grow with the UI
     readonly property real rowH: Theme.bar(doc.height || 24)
     // A row may be a panel. The players this bar comes from put their readout
