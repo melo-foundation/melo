@@ -667,10 +667,15 @@ Window {
                                          transparency: "Transparency", behaviour: "Behaviour", size: "Size",
                                          background: "Background", controls: "Controls", player: "Player",
                                          insets: "Insets", glyphs: "Glyphs", layout: "Layout" })
-    readonly property var insetLabels: ({ page: "Page", pageHeader: "Page header", header: "Search bar", tabs: "Tabs", title: "Title bar", player: "Player bar",
+    readonly property var insetLabels: ({ page: "Page", pageHeader: "Page header", header: "Search bar", tabs: "View tabs", pageTabs: "Page tabs", title: "Title bar", player: "Player bar",
                                           panel: "Panel", row: "List row", input: "Text input", menu: "Menu", dialog: "Dialog",
                                           toast: "Toast", tooltip: "Tooltip", cardArt: "Card art", cardText: "Card text",
                                           settings: "Settings rows", settingsHover: "Settings hover", tool: "Tool windows", scrollbar: "Scrollbar" })
+    // a tab strip's gap, 0 … 16 spacing units: the view tabs' or the page tabs'
+    function setTabGap(name, v) {
+        const n = Math.max(0, Math.min(16, Math.round(Number(v) || 0)))
+        ThemeBackend.setThemeSetting(name === "pageTabs" ? "pageTabGap" : "tabGap", n)
+    }
     // one side of one structure's inset, the other three kept as they are
     function setInset(name, side, v) {
         const all = Object.assign({}, Theme.insetMap), cur = {}
@@ -963,23 +968,22 @@ Window {
         x: win.shaped ? 0 : win.frL
         width: parent.width - (win.shaped ? 0 : win.frL + win.frR)
         // the tabs plus the inset above and below, as the main window's strip
-        readonly property real tabH: Theme.pageTabs === "underline" ? 34 : (Theme.pageTabs === "button" ? Theme.btnH : Theme.tabHeight)
+        readonly property real tabH: Theme.pageTabs === "underline" ? 30 : (Theme.pageTabs === "button" ? Theme.btnH : Theme.tabHeight)
         // the segment track sits a pad outside the tabs: room for it, as the
         // main window's strip makes (AppTabBar)
         readonly property real trackPad: Theme.pageTabs === "segment" ? Theme.tabTrackPad : 0
-        height: tabH + 2 * trackPad + Theme.inset("tabs", "top") + Theme.inset("tabs", "bottom")
+        height: tabH + 2 * trackPad + Theme.inset("pageTabs", "top") + Theme.inset("pageTabs", "bottom")
         role: win.headShared ? "" : "chrome"     // a tab strip, as the main window's header is
         SegmentTrack { strip: tabsRow; style: Theme.pageTabs }
         Row {
             id: tabsRow
             anchors.left: parent.left
-            anchors.leftMargin: Theme.inset("tabs", "left") + parent.trackPad   // the same strip as the main window's
+            anchors.leftMargin: Theme.inset("pageTabs", "left") + parent.trackPad
             anchors.top: parent.top
-            anchors.topMargin: Theme.inset("tabs", "top") + parent.trackPad
+            anchors.topMargin: Theme.inset("pageTabs", "top") + parent.trackPad
             height: parent.tabH
-            // underlined tabs share the strip and segments share a track;
-            // blocks and pills stand apart, as the header's do
-            spacing: (Theme.pageTabs === "underline" || Theme.pageTabs === "segment") ? 0 : Theme.gap(Theme.tabGap)
+            // segments share a track, every other style takes the page tab gap
+            spacing: Theme.pageTabs === "segment" ? 0 : Theme.gap(Theme.pageTabGap)
             component STab: SelectTab {
                 property string key
                 active: win.tab === key
@@ -3019,13 +3023,6 @@ Window {
                                   onPicked: (v) => ThemeBackend.setThemeSetting("toggles", v) }
                     }
                     SRow {
-                        name: "Tab gap"
-                        desc: Math.round(tabGapS.shown)
-                        SSlider { id: tabGapS; from: 0; to: 16; step: 1
-                                  value: Theme.tabGap
-                                  onCommitted: (v) => ThemeBackend.setThemeSetting("tabGap", Math.round(v)) }
-                    }
-                    SRow {
                         name: "Tab height"
                         desc: Math.round(tabHS.shown) + " px"
                         SSlider { id: tabHS; from: 16; to: 40; step: 1
@@ -3330,16 +3327,24 @@ Window {
                         SRow {
                             id: insRow
                             required property string modelData
+                            // the tab strips carry their gap as a box ahead of the sides
+                            readonly property bool tabStrip: modelData === "tabs" || modelData === "pageTabs"
                             name: win.insetLabels[modelData] || modelData
-                            reserve: Theme.sp(200)
+                            reserve: Theme.sp(tabStrip ? 250 : 200)
                             Row {
                                 anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                                 spacing: Theme.gap(4)
                                 Repeater {
-                                    model: Theme.insetSides
+                                    model: insRow.tabStrip ? ["gap"].concat(Theme.insetSides) : Theme.insetSides
                                     Surface {
                                         required property string modelData
-                                        readonly property real held: (Theme.ts, Theme.insetOf(insRow.modelData, modelData))
+                                        readonly property real held: (Theme.ts, modelData === "gap"
+                                            ? (insRow.modelData === "pageTabs" ? Theme.pageTabGap : Theme.tabGap)
+                                            : Theme.insetOf(insRow.modelData, modelData))
+                                        function put(v) {
+                                            if (modelData === "gap") win.setTabGap(insRow.modelData, v)
+                                            else win.setInset(insRow.modelData, modelData, v)
+                                        }
                                         width: Theme.sp(44); height: Theme.sp(24)
                                         radius: Theme.radiusMd
                                         role: "input"
@@ -3361,7 +3366,7 @@ Window {
                                                 wheelAcc -= steps * 120
                                                 const v = Math.max(-64, Math.min(64, (parseInt(text) || 0) + steps))
                                                 text = String(v)
-                                                win.setInset(insRow.modelData, parent.modelData, v)
+                                                parent.put(v)
                                             }
                                             anchors.fill: parent
                                             anchors.leftMargin: Theme.gap(14); anchors.rightMargin: Theme.gap(4)
@@ -3371,7 +3376,7 @@ Window {
                                             validator: IntValidator { bottom: -64; top: 64 }
                                             font { pixelSize: Theme.fs(11); family: "monospace" }
                                             text: activeFocus ? text : String(parent.held)
-                                            onEditingFinished: win.setInset(insRow.modelData, parent.modelData, text)
+                                            onEditingFinished: parent.put(text)
                                         }
                                     }
                                 }

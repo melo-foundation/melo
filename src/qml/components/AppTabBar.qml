@@ -55,7 +55,7 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             active: PlayerState.view === view
             hover: tabMa.containsMouse; pressed: tabMa.pressed
-            fontSize: 12
+            fontSize: 13
 
             // Keyboard and screen-reader access.
             activeFocusOnTab: available

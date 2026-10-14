@@ -69,7 +69,7 @@ static QJsonObject defaultSettingsJson() {
         {"spacingScale", 1}, {"controlScale", 1}, {"artScale", 1}, {"barScale", 1},
         {"fontWeight", 400}, {"titleFontSize", 12}, {"titleFontWeight", 0},
         {"viewTabs", "filled"}, {"chips", "pill"}, {"pageTabs", "underline"}, {"toggles", "segment"},
-        {"tabGap", 2}, {"tabHeight", 22}, {"tabTrackPad", 4}, {"buttonGap", 2}, {"inputSelects", false}, {"buttonHeight", 22}, {"iconButtonSize", 26}, {"titleButtonSize", 0}, {"glyphSize", 14}, {"buttonPress", "none"},
+        {"tabGap", 2}, {"pageTabGap", -1}, {"tabHeight", 22}, {"tabTrackPad", 4}, {"buttonGap", 2}, {"inputSelects", false}, {"buttonHeight", 22}, {"iconButtonSize", 26}, {"titleButtonSize", 0}, {"glyphSize", 14}, {"buttonPress", "none"},
         {"sliderTrackHeight", 4}, {"sliderKnobSize", 12}, {"sliderKnobShape", "round"}, {"sliderKnobAspect", 1}, {"volumeTrackHeight", 0}, {"volumeKnobSize", 0}, {"volumeKnobAspect", 0}, {"volumeKnobShape", ""}, {"volumeTrackShape", ""}, {"volumeKnobInset", -1}, {"sliderTrackShape", "round"}, {"scrollbars", "bar"}, {"scrollbarGrip", "none"}, {"scrollbarWidth", 0}, {"skeletonStyle", "shimmer"}, {"scrubberShape", "round"}, {"scrubberHover", "grow"}, {"scrubberKnobSize", 0}, {"scrubberKnobShape", "round"}, {"scrubberKnobAspect", 1},
         {"toggleWidth", 36}, {"toggleHeight", 20}, {"toggleKnobShape", "round"},
         {"titleButtons", "bare"}, {"toolButtons", "bare"}, {"transportButtons", "bare"},
@@ -288,7 +288,7 @@ static const char* kAppearanceKeys[] = {
     "windowOverBackground", "header", "pageCorners", "windowBorderFit", "headerGroup",
     "borderSides", "borderLeft", "borderTop", "borderRight", "borderBottom", "borderOuterWidth", "borderInnerWidth", "borderSoftOuter", "borderSoftInner", "borderSoftBands", "borderSoftCurve", "borderTitle", "borderTitleRim", "borderTitleFade", "windowShape", "windowFrame", "borderMaximized", "windowRadiusBottom",
     "background",
-    "viewTabs", "chips", "pageTabs", "toggles", "tabGap", "tabHeight", "tabTrackPad", "buttonGap", "inputSelects", "buttonHeight", "iconButtonSize", "titleButtonSize", "glyphSize", "buttonPress",
+    "viewTabs", "chips", "pageTabs", "toggles", "tabGap", "pageTabGap", "tabHeight", "tabTrackPad", "buttonGap", "inputSelects", "buttonHeight", "iconButtonSize", "titleButtonSize", "glyphSize", "buttonPress",
     "sliderTrackHeight", "sliderKnobSize", "sliderKnobShape", "sliderKnobAspect", "sliderTrackShape", "volumeTrackHeight", "volumeKnobSize", "volumeKnobAspect", "volumeKnobShape", "volumeTrackShape", "volumeKnobInset", "sliderKnobInset", "scrollbars", "scrollbarGrip", "scrollbarWidth", "skeletonStyle", "scrubberShape", "scrubberHover", "scrubberKnobSize", "scrubberKnobShape", "scrubberKnobAspect", "scrubberKnobInset", "toggleWidth", "toggleHeight", "toggleKnobShape",
     "titleButtons", "toolButtons", "transportButtons", "lockStyle", "lockPlace", "popupFrame", "cardArtCorners", "insets",
     "glyphs",
@@ -319,7 +319,7 @@ static const char* kBehaviourKeys[] = {
 // How a strip draws its selected one: the header's view tabs, the chips
 // on the home and library pages, the page tabs of the settings window and
 // the queue panel. Each takes filled, pill or underline.
-static const char* kControlsKeys[] = { "viewTabs", "chips", "pageTabs", "toggles", "tabGap", "tabHeight", "tabTrackPad", "buttonGap",
+static const char* kControlsKeys[] = { "viewTabs", "chips", "pageTabs", "toggles", "tabGap", "pageTabGap", "tabHeight", "tabTrackPad", "buttonGap",
                                       "inputSelects", "buttonPress", "cardArtCorners", "buttonHeight", "iconButtonSize", "titleButtonSize", "glyphSize", "titleButtons", "toolButtons",
                                       "transportButtons", "lockStyle", "lockPlace", "popupFrame", "sliderTrackHeight", "sliderKnobSize", "sliderKnobShape", "sliderKnobAspect", "volumeTrackHeight", "volumeKnobSize", "volumeKnobAspect", "volumeKnobShape", "volumeTrackShape", "volumeKnobInset",
                                       "sliderTrackShape", "sliderKnobInset", "scrollbars", "scrollbarGrip", "scrollbarWidth", "skeletonStyle", "scrubberShape", "scrubberHover", "scrubberKnobSize", "scrubberKnobShape", "scrubberKnobAspect", "scrubberKnobInset", "toggleWidth", "toggleHeight", "toggleKnobShape" };

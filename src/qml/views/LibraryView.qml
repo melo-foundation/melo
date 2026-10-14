@@ -305,9 +305,10 @@ Item {
             width: parent.width
             spacing: Theme.gap(4)
             // title row: Library · n/m downloaded · Play All
+            // Home's toolbar height, so Play All sits on the chips' line
             Item {
                 width: parent.width
-                height: 30
+                height: 40
                 Row {
                     spacing: Theme.gap(10)
                     anchors.verticalCenter: parent.verticalCenter

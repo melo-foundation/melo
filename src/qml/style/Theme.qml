@@ -1614,6 +1614,8 @@ QtObject {
     readonly property string transportButtons: ts.transportButtons || "bare"
     // the air between two tabs, in spacing units; none between segments
     readonly property real tabGap: ts.tabGap !== undefined ? Number(ts.tabGap) : 2
+    // the settings window's page tabs; below 0 they take tabGap
+    readonly property real pageTabGap: ts.pageTabGap !== undefined && Number(ts.pageTabGap) >= 0 ? Number(ts.pageTabGap) : tabGap
     // the tabs' height in the filled, pill and segment styles — the header's,
     // the settings window's and the queue's — and a segment track's padding
     // around the tabs it holds
@@ -1724,6 +1726,7 @@ QtObject {
         pageHeader: [10, 10, 10, 10],
         header:  [10, 5, 10, 5],     // the search row's field and toggle
         tabs:    [8, 0, 8, 5],       // the tab bar's first tab from its left; below, the air above it (header bottom + tabs top)
+        pageTabs: [8, 0, 8, 5],      // the settings window's tab strip; unset, it takes `tabs`
         title:   [10, 0, 4, 0],      // a title bar's label and buttons
         player:  [0, 6, 0, 6],       // added to the bar layout's own pad and top
         panel:   [12, 6, 12, 6],     // the queue panel's rows and header
@@ -1752,6 +1755,7 @@ QtObject {
         if (typeof v === "number") return v
         if (v !== null && typeof v === "object" && v[side] !== undefined) return Number(v[side])
         if (name === "input" && insetMap.field !== undefined) return insetOf_(insetMap.field, side, d[i])   // its first name
+        if (name === "pageTabs") return insetOf("tabs", side)
         // the card's first cut was one number each, under its own keys
         if (name === "cardArt" && ts.cardArtInset !== undefined) return Number(ts.cardArtInset)
         if (name === "cardText" && ts.cardTextInset !== undefined && side !== "top") return Number(ts.cardTextInset)
