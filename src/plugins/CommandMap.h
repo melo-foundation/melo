@@ -13,6 +13,9 @@ class QShortcut;
 // Main.qml. Keys install as QShortcut with Qt::ApplicationShortcut.
 class CommandMap : public QObject {
     Q_OBJECT
+    // A field in a Qt.Popup has the keyboard: X11 never makes a popup the focus
+    // window, so the focus object alone shows nobody typing and Backspace fires.
+    Q_PROPERTY(bool popupTyping READ popupTyping WRITE setPopupTyping NOTIFY popupTypingChanged)
 public:
     explicit CommandMap(QObject* parent = nullptr);
     Q_INVOKABLE void setGesture(const QString& gestureId, const QString& commandId);
@@ -24,12 +27,15 @@ public:
     Q_INVOKABLE void setTyping(bool on);
     // SettingsWindow keyCatcher: ApplicationShortcut would steal recorded keys.
     Q_INVOKABLE void setCapturing(bool on);
+    bool popupTyping() const { return popupTyping_; }
+    void setPopupTyping(bool on);
     // Same path as QGuiApplication::focusObjectChanged. Public so tests can
     // synthesize a cursorPosition object without a real window.
     void handleFocusObjectChanged(QObject* focusObject);
     void setPluginInvoker(std::function<bool(const QString& pluginId, const QString& id)> fn);
 signals:
     void invoked(const QString& commandId); // builtins; Main.qml handles
+    void popupTypingChanged();
 private:
     void applyShortcutEnabled(QShortcut* sc, const QString& commandId) const;
     void syncShortcutEnabled();
@@ -40,5 +46,6 @@ private:
     bool capturing_ = false;
     bool haveFocusObject_ = false;
     bool focusTyping_ = false;
+    bool popupTyping_ = false;
     std::function<bool(const QString&, const QString&)> pluginInvoker_;
 };

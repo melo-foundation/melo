@@ -13,6 +13,8 @@ Window {
     visible: false
     width: 260
     height: box.implicitHeight
+    // X11 shortcuts would take Backspace from the field otherwise
+    Binding { target: typeof CommandMap !== "undefined" ? CommandMap : null; property: "popupTyping"; value: filterField.activeFocus; when: pop.visible }
 
     property var track: null
     property bool download: false
@@ -40,6 +42,29 @@ Window {
         filterField.forceActiveFocus()
     }
     function close() { visible = false }
+
+    // clicking away closes it. X11 may never make the flyout the focus window, so
+    // it closes once neither it nor its window is active, on a press in any other
+    // melo window, and when its window changes size or place.
+    property QtObject presses: typeof UiActivity !== "undefined" ? UiActivity : null
+    function closeIfAway() {
+        if (visible && !active && !(transientParent && transientParent.active)) visible = false
+    }
+    onActiveChanged: Qt.callLater(closeIfAway)
+    Connections {
+        target: pop.transientParent
+        enabled: pop.visible
+        function onActiveChanged() { Qt.callLater(pop.closeIfAway) }
+        function onWidthChanged() { pop.close() }
+        function onHeightChanged() { pop.close() }
+        function onXChanged() { pop.close() }
+        function onYChanged() { pop.close() }
+    }
+    Connections {
+        target: pop.presses
+        enabled: pop.visible
+        function onWindowPressed(window) { if (window !== pop) pop.close() }
+    }
 
     function pick(playlistId) {
         close()

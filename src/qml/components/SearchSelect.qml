@@ -66,6 +66,8 @@ Rectangle {
         height: filterBox.height + 4 + list.height
 
         property var model: []
+        // X11 shortcuts would take Backspace from the field otherwise
+        Binding { target: typeof CommandMap !== "undefined" ? CommandMap : null; property: "popupTyping"; value: filterField.activeFocus; when: popup.visible }
 
         function applyGlass() {
             if (!popup.visible) return

@@ -25,11 +25,34 @@ Window {
         WindowCtl.setBlurBehind(panel, Theme.menuBlur)
         WindowCtl.setBackgroundContrast(panel, Theme.menuBlur, Theme.glassContrast, Theme.glassSaturation)
     }
-    onVisibleChanged: applyGlass()
+    onVisibleChanged: { if (!visible) closedAt = Date.now(); applyGlass() }
     onWidthChanged: applyGlass()
     onHeightChanged: applyGlass()
-    // clicking away closes it
-    onActiveChanged: if (!active && visible) visible = false
+    // clicking away closes it. X11 may never make the panel the focus window, so
+    // it closes once neither it nor its window is active, on a press in any other
+    // melo window, and when its window changes size or place.
+    property double closedAt: 0
+    property QtObject presses: typeof UiActivity !== "undefined" ? UiActivity : null
+    function closeIfAway() {
+        if (visible && !active && !(transientParent && transientParent.active)) visible = false
+    }
+    onActiveChanged: Qt.callLater(closeIfAway)
+    Connections {
+        target: panel.transientParent
+        enabled: panel.visible
+        function onActiveChanged() { Qt.callLater(panel.closeIfAway) }
+        function onWidthChanged() { panel.visible = false }
+        function onHeightChanged() { panel.visible = false }
+        function onXChanged() { panel.visible = false }
+        function onYChanged() { panel.visible = false }
+    }
+    Connections {
+        target: panel.presses
+        enabled: panel.visible
+        function onWindowPressed(window) { if (window !== panel) panel.visible = false }
+    }
+    // X11 shortcuts would take Backspace from the search otherwise
+    Binding { target: typeof CommandMap !== "undefined" ? CommandMap : null; property: "popupTyping"; value: presetSearch.activeFocus; when: panel.visible }
 
     // the panel's ground: the window itself is transparent
     Surface {
@@ -58,12 +81,15 @@ Window {
     // global: Wayland reports the host at 0,0 so the add is a no-op there; on
     // X11 it contributes the real position.
     function open(anchor) {
+        // the press on the gear closed it: that click closes, not reopens
+        if (Date.now() - closedAt < 300) return
         lock = Settings.uiGet("visPresetLocked", false) === true
         beatSlider.value = Number(Settings.uiGet("visBeatSensitivity", 1))
         durSlider.value = Number(Settings.uiGet("visPresetDuration", 30))
         shuffleToggle.checked = Settings.uiGet("visShuffle", true) !== false
         randClickToggle.checked = Settings.uiGet("visRandomClick", false) === true
         presetSearch.text = ""
+        presetSearch.focus = false   // it takes keys once clicked, not from the last open
         const host = anchor.Window.window
         const below = anchor.mapToItem(null, anchor.width, anchor.height + Theme.gap(6))
         panel.transientParent = host

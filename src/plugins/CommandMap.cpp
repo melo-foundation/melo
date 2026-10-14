@@ -56,6 +56,8 @@ static bool sequenceHasModifier(const QKeySequence& seq) {
 }
 
 bool CommandMap::effectivelyTyping() const {
+    if (popupTyping_)
+        return true;
     // A live focus object is application-wide (plugin windows included).
     // Main.qml's setTyping is window-local and must not keep ApplicationShortcut
     // dead after another window takes focus.
@@ -120,6 +122,14 @@ void CommandMap::clearKeys() {
 void CommandMap::setTyping(bool on) {
     typing_ = on;
     syncShortcutEnabled();
+}
+
+void CommandMap::setPopupTyping(bool on) {
+    if (popupTyping_ == on)
+        return;
+    popupTyping_ = on;
+    syncShortcutEnabled();
+    emit popupTypingChanged();
 }
 
 void CommandMap::setCapturing(bool on) {
