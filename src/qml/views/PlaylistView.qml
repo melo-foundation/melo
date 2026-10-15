@@ -369,7 +369,7 @@ Item {
             required property var model
             readonly property bool active: PlayerState.hasTrack
                                            && PlayerState.currentTrack.id === model.vid
-            width: Math.max(0, list.width - Theme.scrollGutter)
+            width: Math.max(0, list.width - Theme.mainScrollGutter)
             height: Theme.sp(list.compact ? 26 : GridUi.rowH(width))
             radius: Theme.radiusMd
             role: active ? "selected" : ma.containsMouse ? "hover" : ""
@@ -529,7 +529,7 @@ Item {
             }
         }
     }
-    MScrollBar { id: listBar; scroller: list }
+    MScrollBar { id: listBar; scroller: list; mainWindow: true }
 
     // ---------- grid ----------
     GridView {
@@ -553,13 +553,13 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: GridUi.padBottom
         anchors.horizontalCenter: parent.horizontalCenter
-        readonly property int availW: parent.width - GridUi.padX - Theme.scrollGutter
+        readonly property int availW: parent.width - GridUi.padX - Theme.mainScrollGutter
         readonly property int gcols: GridUi.colsFor(availW, GridUi.growth)
         cellWidth: GridUi.cellWFor(availW, GridUi.growth)
         readonly property int slack: GridUi.slackOf(availW, gcols, cellWidth)
         // the whole box, not gcols * cellWidth: the slack is handed out per
         // column below, so an exact-fit width would only move the right edge
-        width: availW + Theme.scrollGutter
+        width: availW + Theme.mainScrollGutter
         visible: view.layout === "grid"
         model: plModel
         clip: true
@@ -607,7 +607,7 @@ Item {
             }
         }
     }
-    MScrollBar { id: gridBar; scroller: grid }
+    MScrollBar { id: gridBar; scroller: grid; mainWindow: true }
 
     // ONE handler, on the view rather than inside a list: a handler that
     // fills a column-width list only takes the wheel while the pointer is

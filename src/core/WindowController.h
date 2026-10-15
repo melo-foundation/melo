@@ -36,6 +36,12 @@ public slots:
         if (geo == QLatin1String("start")) { emit resizeStarted(); return; }
         if (geo == QLatin1String("startMove")) { emit moveStarted(); return; }
         const QStringList p = geo.split(',');
+        // "x,y,w,h,inside[,miniX,miniY]": the bar's place rides along once it exists
+        if (p.size() >= 7) {
+            bool okX = false, okY = false;
+            const double mx = p[5].toDouble(&okX), my = p[6].toDouble(&okY);
+            if (okX && okY) emit miniReported(int(mx), int(my));
+        }
         if (p.size() >= 4)
             emit reported(int(p[0].toDouble()), int(p[1].toDouble()),
                           int(p[2].toDouble()), int(p[3].toDouble()),
@@ -101,6 +107,7 @@ public slots:
     }
 signals:
     void reported(int x, int y, int w, int h, bool cursorInside);
+    void miniReported(int x, int y);
     void resizeStarted();
     void moveStarted();
     void windowReported(const QString& caption, int x, int y, int w, int h);
@@ -253,7 +260,8 @@ public:
     // to the top of its layer: a window kept mapped while closed keeps its launch place
     Q_INVOKABLE bool raisePopupWindow(const QString& caption);
     Q_INVOKABLE bool placePopupWindowOverMain(const QString& caption, int rx, int ry);
-    Q_INVOKABLE bool watchPopupWindows(bool on);
+    // hideMain: main maps at opacity 0 as well (always on X11)
+    Q_INVOKABLE bool watchPopupWindows(bool on, bool hideMain = false);
     // One detached window for another in one compositor step: `to` takes `from`'s
     // place and size, then `from` goes to opacity 0 and `to` to 1.
     Q_INVOKABLE bool swapPopupWindows(const QString& from, const QString& to);
@@ -311,7 +319,11 @@ public:
     // later (a plugin window host) would not learn the main window's position
     // until the user drags melo. false = no KWin, or no bus name.
     Q_INVOKABLE bool reportMainGeometry();
-    Q_INVOKABLE bool applyMainPosition(int x, int y);
+    // maximize: maximised once there, so it maximises on that screen
+    Q_INVOKABLE bool applyMainPosition(int x, int y, bool maximize = false);
+    // The mini bar at (x, y) and w x h in one step, clamped into the work area like
+    // applyMainPosition: a move after alignForCollapse's resize loses to it.
+    Q_INVOKABLE bool applyMiniGeometry(int x, int y, int w, int h);
     // Position AND size in one compositor step, the way a drag on the left or
     // top edge lands: a test hook, not clamped.
     Q_INVOKABLE bool applyMainGeometry(int x, int y, int w, int h);
@@ -351,6 +363,8 @@ signals:
     void contrastAvailableChanged();
     void pinModeChanged();
     void mainGeometry(int x, int y, int w, int h, bool cursorInside);
+    // where the mini bar is, with each mainGeometry once the bar exists
+    void miniPosition(int x, int y);
     // the cursor's height above the bar during a bar resize with the popup open
     void popupCursor(int above);
     // a detached window let go at (x, y, w, h); nearBar: just above the bar

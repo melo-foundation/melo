@@ -630,7 +630,7 @@ Item {
             id: rrow
             required property int index
             required property var model
-            width: Math.max(0, recList.width - Theme.scrollGutter)
+            width: Math.max(0, recList.width - Theme.mainScrollGutter)
             height: Theme.sp(recList.compact ? 26 : GridUi.rowH(width))
             radius: Theme.radiusMd
             role: rma.containsMouse ? "hover" : ""
@@ -745,7 +745,7 @@ Item {
             }
         }
     }
-    MScrollBar { id: recListBar; scroller: recList }
+    MScrollBar { id: recListBar; scroller: recList; mainWindow: true }
 
     // ---------- YouTube: recommended grid ----------
     GridView {
@@ -773,13 +773,13 @@ Item {
         // the whole grid by ±cols/2 px per resize step)
         anchors.left: parent.left
         anchors.leftMargin: GridUi.padLeft
-        readonly property int availW: parent.width - GridUi.padX - Theme.scrollGutter
+        readonly property int availW: parent.width - GridUi.padX - Theme.mainScrollGutter
         readonly property int cols: GridUi.colsFor(availW, GridUi.growth)
         cellWidth: GridUi.cellWFor(availW, GridUi.growth)
         readonly property int slack: GridUi.slackOf(availW, cols, cellWidth)
         // the whole box, not cols * cellWidth: the slack is handed out per
         // column below, so an exact-fit width would only move the right edge
-        width: availW + Theme.scrollGutter
+        width: availW + Theme.mainScrollGutter
         visible: !view.ytMusic && view.layout === "grid"
         model: recModel
         clip: true
@@ -846,7 +846,7 @@ Item {
             }
         }
     }
-    MScrollBar { id: recGridBar; scroller: recGrid }
+    MScrollBar { id: recGridBar; scroller: recGrid; mainWindow: true }
 
     // ---------- YouTube Music: mix sections ----------
     Flickable {
@@ -866,7 +866,7 @@ Item {
 
         Column {
             id: ytmCol
-            width: parent.width - Theme.scrollGutter
+            width: parent.width - Theme.mainScrollGutter
             spacing: Theme.gap(8)
 
             Repeater {
@@ -1072,7 +1072,7 @@ Item {
 
         }
     }
-    MScrollBar { id: ytmFlickBar; scroller: ytmFlick }
+    MScrollBar { id: ytmFlickBar; scroller: ytmFlick; mainWindow: true }
 
     Column {
         anchors.centerIn: parent

@@ -57,8 +57,10 @@ Window {
         const titleH = Theme.titleBarH
         cutTitleL = shaped ? Math.max(frL, sh.intrusion("left", 0, titleH)) : frL
         cutTitleR = shaped ? Math.max(frR, sh.intrusion("right", 0, titleH)) : frR
-        cutBodyL = shaped ? Math.max(frL, sh.intrusion("left", titleH, height)) : frL
-        cutBodyR = shaped ? Math.max(frR, sh.intrusion("right", titleH, height)) : frR
+        // above the bottom corners: a rounded corner is the shape's to clip, not a side to clear
+        const bodyEnd = Math.max(titleH, height - Theme.windowRadiusBottom)
+        cutBodyL = shaped ? Math.max(frL, sh.intrusion("left", titleH, bodyEnd)) : frL
+        cutBodyR = shaped ? Math.max(frR, sh.intrusion("right", titleH, bodyEnd)) : frR
     }
     onShapedChanged: readCuts()
     readonly property bool frameOff: (win.visibility === Window.Maximized || win.visibility === Window.FullScreen)

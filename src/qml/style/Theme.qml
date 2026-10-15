@@ -1690,6 +1690,8 @@ QtObject {
     // the content.
     readonly property real scrollGutter: inset("scrollbar", "left")
         + (scrollbars === "slider" ? ctl(Math.max(sliderTrackHeight, sliderKnobSize)) + inset("scrollbar", "right") : 0)
+    readonly property real mainScrollGutter: mainInset("scrollbar", "left")
+        + (scrollbars === "slider" ? ctl(Math.max(sliderTrackHeight, sliderKnobSize)) + mainInset("scrollbar", "right") : 0)
     readonly property real toggleWidth: ts.toggleWidth !== undefined ? Number(ts.toggleWidth) : 36
     readonly property real toggleHeight: ts.toggleHeight !== undefined ? Number(ts.toggleHeight) : 20
     readonly property string toggleKnobShape: ts.toggleKnobShape || "round"
@@ -1711,6 +1713,11 @@ QtObject {
                                       + inset("title", "top") + inset("title", "bottom")
     readonly property real titleBtnH: Number(ts.titleButtonSize) > 0 ? titleBtn
                                       : Math.min(iconBtn, ctl(20) + inset("title", "top") + inset("title", "bottom"))
+    // the main window's title bar, which takes the maximised title inset
+    readonly property real mainTitleBarH: (Number(ts.titleButtonSize) > 0 ? titleBtn : 24)
+                                          + mainInset("title", "top") + mainInset("title", "bottom")
+    readonly property real mainTitleBtnH: Number(ts.titleButtonSize) > 0 ? titleBtn
+                                          : Math.min(iconBtn, ctl(20) + mainInset("title", "top") + mainInset("title", "bottom"))
     function glyph(base) { return ctl(base * glyphSize / 14) }
     readonly property string viewTabs: ts.viewTabs || "filled"
     // Content inset from a surface's edge, per structure and side, in interface
@@ -1794,7 +1801,39 @@ QtObject {
             for (const side of insetSides) e[side] = Math.round(insetOf(name, side) * sc)
             out[name] = e
         }
+        if (maximized) for (const name of insetMainOnly) out[name] = insetPxMax[name]
         return out
+    }
+    // The main window's, set by Main: maximised or fullscreen. `insets.maximized`
+    // gives these names their maximised values; a name without one keeps its own.
+    property bool maximized: false
+    readonly property var insetMaxNames: ["title", "header", "tabs", "player", "page", "panel", "scrollbar"]
+    // only the main window draws these, so inset() switches them; title,
+    // scrollbar and panel are drawn by other windows too, and the main
+    // window's uses of them read mainInset()
+    readonly property var insetMainOnly: ["header", "tabs", "player", "page"]
+    readonly property var insetMaxMap: insetMap.maximized !== null && typeof insetMap.maximized === "object"
+                                       ? insetMap.maximized : ({})
+    function insetMaxOf(name, side) {   // unscaled; unset is the normal value
+        return insetOf_(insetMaxMap[name], side, insetOf(name, side))
+    }
+    function insetMaxSet(name, side) {
+        const v = insetMaxMap[name]
+        return typeof v === "number" || (v !== null && typeof v === "object" && v[side] !== undefined)
+    }
+    readonly property var insetPxMax: {
+        const out = ({}), sc = uiScale
+        for (const name of insetMaxNames) {
+            const e = ({})
+            for (const side of insetSides) e[side] = Math.round(insetMaxOf(name, side) * sc)
+            out[name] = e
+        }
+        return out
+    }
+    // an inset as the main window draws it: the maximised value while maximised
+    function mainInset(name, side) {
+        const e = maximized ? insetPxMax[name] : undefined
+        return e === undefined ? inset(name, side) : e[side]
     }
     // A list row's inset in the compact layout: tighter by `by`, and never
     // past what the theme asked for; a negative inset (rows bleeding over the

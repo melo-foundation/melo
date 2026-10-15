@@ -883,9 +883,17 @@ void PlaybackCoordinator::startRadioPlaylist(const QString& playlistId, int star
     QJsonObject params{{"playlistId", playlistId}};
     if (startIndex >= 0) params["startIndex"] = startIndex;
     auto* c = sidecar_->call("radio/start", params, 45000);
-    connect(c, &RpcCall::finished, this, [this, seedId](const QJsonValue& r) {
+    setFetching(radioStarting_, true);
+    // the panel shows the queue's skeleton under its tab while the list comes
+    const int modeBefore = state_->panelMode();
+    state_->setPanelMode(PlayerState::Queue);
+    connect(c, &RpcCall::finished, this, [this, seedId, modeBefore](const QJsonValue& r) {
+        setFetching(radioStarting_, false);
         const QJsonObject o = r.toObject();
-        if (!o["ok"].toBool()) { state_->setRadioActive(false); state_->setError(o["error"].toString()); return; }
+        if (!o["ok"].toBool()) {
+            state_->setPanelMode(modeBefore);
+            state_->setRadioActive(false); state_->setError(o["error"].toString()); return;
+        }
         QList<Track> q;
         for (const auto& v : o["tracks"].toArray()) q.append(Track::fromJson(v.toObject()));
         // The sidecar returns the whole mix and a start index, so earlier rows
@@ -903,7 +911,9 @@ void PlaybackCoordinator::startRadioPlaylist(const QString& playlistId, int star
         state_->setShowPanel(true);
         state_->setPanelMode(PlayerState::Queue);
     });
-    connect(c, &RpcCall::failed, this, [this](int, const QString& m) {
+    connect(c, &RpcCall::failed, this, [this, modeBefore](int, const QString& m) {
+        setFetching(radioStarting_, false);
+        state_->setPanelMode(modeBefore);
         state_->setRadioActive(false);
         state_->setError(m);
     });

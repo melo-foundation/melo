@@ -651,6 +651,23 @@ private slots:
         QCOMPARE(reported.count(), 1);      // nor a geometry report
     }
 
+    // The mini bar's place rides on the main report as two more fields.
+    void theMainReportCarriesTheMiniBarsPlace() {
+        GeometryReceiver rx;
+        QSignalSpy reported(&rx, &GeometryReceiver::reported);
+        QSignalSpy mini(&rx, &GeometryReceiver::miniReported);
+        rx.Report(QStringLiteral("810,242,275,116,1,640,900"));
+        QCOMPARE(reported.count(), 1);
+        QCOMPARE(reported.at(0), (QList<QVariant>{810, 242, 275, 116, true}));
+        QCOMPARE(mini.count(), 1);
+        QCOMPARE(mini.at(0), (QList<QVariant>{640, 900}));
+        rx.Report(QStringLiteral("810,242,275,116,0"));
+        QCOMPARE(mini.count(), 1);
+        rx.Report(QStringLiteral("810,242,275,116,0,x,900"));
+        QCOMPARE(mini.count(), 1);
+        QCOMPARE(reported.count(), 3);
+    }
+
     // 8. The whole landing pad, over a real session bus: the object is exported
     //    under com.melo.Geometry, ReportWindow takes ONE STRING, and a
     //    five-argument call — which is what callDBus would produce if the

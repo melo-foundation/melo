@@ -4,7 +4,7 @@ import ".."
 // Custom draggable title bar: app name left; search, settings, pin, min/max/close right.
 Rectangle {
     id: titleBar
-    height: Theme.titleBarH
+    height: Theme.mainTitleBarH
     // Transparent, with the ground drawn by Surface behind everything else —
     // that is what lets a theme make the header a blend mode rather than a
     // colour. See Theme.blendOf.
@@ -104,9 +104,9 @@ Rectangle {
 
     InkText {
         anchors.verticalCenter: parent.verticalCenter
-        anchors.verticalCenterOffset: (Theme.inset("title", "top") - Theme.inset("title", "bottom")) / 2
+        anchors.verticalCenterOffset: (Theme.mainInset("title", "top") - Theme.mainInset("title", "bottom")) / 2
         anchors.left: parent.left
-        anchors.leftMargin: Theme.inset("title", "left") + titleBar.cutLeft
+        anchors.leftMargin: Theme.mainInset("title", "left") + titleBar.cutLeft
         text: "melo"
         ink: "textOnTitle"
         font { pixelSize: Theme.fs(Theme.titleFontSize); family: Theme.fontFamily; weight: Theme.titleWeight }
@@ -120,8 +120,8 @@ Rectangle {
         // On whole pixels: centring a button in a bar whose height differs
         // from it by an odd number puts the faces and their glyphs on a half
         // pixel, which softens a pixel-drawn glyph
-        y: Math.round((parent.height - height + Theme.inset("title", "top") - Theme.inset("title", "bottom")) / 2)
-        anchors.rightMargin: Theme.inset("title", "right") + titleBar.cutRight
+        y: Math.round((parent.height - height + Theme.mainInset("title", "top") - Theme.mainInset("title", "bottom")) / 2)
+        anchors.rightMargin: Theme.mainInset("title", "right") + titleBar.cutRight
         spacing: Theme.gap(Theme.buttonGap)
 
         component TbBtn: Item {
@@ -180,7 +180,7 @@ Rectangle {
                 pressed: ma.pressed
                 // the button's own box: the bar is 24 high, so a ctl(26)
                 // square face would not fit in it
-                frameWidth: Theme.titleBtn; frameHeight: Theme.titleBtnH
+                frameWidth: Theme.titleBtn; frameHeight: Theme.mainTitleBtnH
             }
             MouseArea {
                 id: ma

@@ -10,25 +10,31 @@ Rectangle {
     id: panel
     width: 320
     color: "transparent"   // the ground is the Surface below
+    // the main window's panel takes the maximised panel and scrollbar insets
+    property bool mainWindow: false
+    function ins(side) { return mainWindow ? Theme.mainInset("panel", side) : Theme.inset("panel", side) }
+    readonly property real gutter: mainWindow ? Theme.mainScrollGutter : Theme.scrollGutter
 
     // A row sits closer in than the header does (6 against the header's 12)
     // because its thumbnail carries an edge of its own. It keeps that half
     // step as the inset moves.
-    readonly property real rowLeft: Math.max(0, Theme.inset("panel", "left") - Theme.gap(6))
+    readonly property real rowLeft: Math.max(0, panel.ins("left") - Theme.gap(6))
 
     // The panel's ground as a role, so a theme can blend or adapt it like any
     // other surface rather than only colour it.
     Surface { anchors.fill: parent; z: -1; role: "panel" }
+    // a window of its own with no blur behind it: the window colour, opaque,
+    // under the ground, so the desktop does not show through unblurred
+    property bool solid: false
+    Rectangle {
+        anchors.fill: parent; z: -2
+        visible: panel.solid
+        readonly property color w: Theme.roleColour("window")
+        color: Qt.rgba(w.r, w.g, w.b, 1)
+    }
     clip: true
-    // mini popup: a separate rounded card (all four corners) floating above
-    // the bar with a gap — reads as its own element, not fused to the bar
-    topLeftRadius: fullWidth ? Theme.windowRadius : 0
-    topRightRadius: fullWidth ? Theme.windowRadius : 0
-    bottomLeftRadius: fullWidth ? Theme.windowRadius : 0
-    bottomRightRadius: fullWidth ? Theme.windowRadius : 0
-    // the appearance window-border outline, on the mini popup card
-    border.color: (fullWidth && Theme.windowBorder) ? Theme.windowBorderColor : "transparent"
-    border.width: (fullWidth && Theme.windowBorder) ? Theme.windowBorderWidth : 0
+    // no corners or outline of its own: the popup and the queue window draw the
+    // theme's corners and frame round it
 
     property var contextMenu: null   // ContextMenu instance from Main
     property var menuTail: null      // returns the host's entries, after each row's own
@@ -42,6 +48,8 @@ Rectangle {
     Component.onCompleted: if (PlayerState.panelMode === 2) PlayerState.panelMode = 0
     readonly property bool hasQueue: Queue.count > 1
     readonly property bool queueMode: hasQueue && PlayerState.panelMode === 1
+    // the Queue tab: a queue, or a radio's on its way
+    readonly property bool queueTab: hasQueue || Player.radioStarting
     // no rows to scroll or drag
     readonly property bool empty: list.count === 0
 
@@ -78,7 +86,7 @@ Rectangle {
             // at least the tabs and a segment track's pad around them
             readonly property real trackPad: Theme.pageTabs === "segment" ? Theme.tabTrackPad : 0
             height: Math.max(Theme.sp(32), Theme.tabHeight + 2 * trackPad)
-            visible: panel.hasQueue || (panel.miniHost && PlayerState.hasTrack)
+            visible: panel.hasQueue || (panel.miniHost && PlayerState.hasTrack) || Player.radioStarting
             Surface { anchors.fill: parent; z: -1; role: "panelHeader" }
 
             component QTab: SelectTab {
@@ -99,13 +107,13 @@ Rectangle {
                 // underlined tabs share the strip; filled ones and pills sit
                 // at their own width from the left, segments on their track
                 readonly property bool full: Theme.pageTabs === "underline"
-                readonly property int tabs: panel.hasQueue ? 2 : 1
+                readonly property int tabs: panel.queueTab ? 2 : 1
                 anchors.leftMargin: full ? 0 : Theme.gap(8) + parent.trackPad
                 spacing: (full || Theme.pageTabs === "segment") ? 0 : Theme.gap(2)
                 QTab { label: "Suggestions"; mode: 0; width: parent.full ? parent.width / parent.tabs : implicitWidth }
-                QTab { label: "Queue (" + Queue.count + ")"; mode: 1
-                       visible: panel.hasQueue
-                       width: !panel.hasQueue ? 0 : parent.full ? parent.width / parent.tabs : implicitWidth }
+                QTab { label: Player.radioStarting ? "Queue" : "Queue (" + Queue.count + ")"; mode: 1
+                       visible: panel.queueTab
+                       width: !panel.queueTab ? 0 : parent.full ? parent.width / parent.tabs : implicitWidth }
             }
         }
 
@@ -113,7 +121,7 @@ Rectangle {
         Item {
             width: parent.width
             height: 44
-            visible: panel.queueMode
+            visible: panel.queueMode || Player.radioStarting
             Surface { anchors.fill: parent; z: -1; role: "panelHeader" }
 
             // the panel's own tools: framed icon buttons, the square the theme gives them
@@ -134,16 +142,23 @@ Rectangle {
             }
             Row {
                 anchors.right: parent.right
-                anchors.rightMargin: Theme.inset("panel", "right")
+                anchors.rightMargin: panel.ins("right")
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.gap(8)
+                Skeleton {
+                    visible: Player.radioStarting
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Theme.sp(40); height: 10; radius: 3
+                }
                 InkText {
+                    visible: !Player.radioStarting
                     anchors.verticalCenter: parent.verticalCenter
                     text: (Queue.currentIndex + 1) + " / " + Queue.count
                     ink: "textDim"
                     font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
                 }
-                QBtn { glyph: "shuffle"; visible: Queue.count - Queue.currentIndex > 2
+                // a radio's queue comes with more than enough to shuffle
+                QBtn { glyph: "shuffle"; visible: Player.radioStarting || Queue.count - Queue.currentIndex > 2
                        onClicked: Player.shuffleQueue() }
                 QBtn { glyph: "close"; onClicked: Player.clearQueue() }
             }
@@ -187,7 +202,7 @@ Rectangle {
             footer: Item {
                 readonly property bool busy: panel.queueMode ? Player.queueLoading
                                                              : (Player.suggestionsLoading && list.count > 0)
-                width: list.width - Theme.scrollGutter
+                width: list.width - panel.gutter
                 height: busy ? 44 : 0
                 Spinner { anchors.centerIn: parent; running: parent.busy; implicitWidth: 18 }
             }
@@ -196,14 +211,14 @@ Rectangle {
             section.property: (!panel.queueMode && !panel.hasQueue) ? "isAutoplay" : ""
             section.criteria: ViewSection.FullString
             section.delegate: Item {
-                width: list.width - Theme.scrollGutter
+                width: list.width - panel.gutter
                 height: Theme.sp(26)
                 // the header rows of a panel with no queue: what the tab strip
                 // is once there is one
                 Surface { anchors.fill: parent; z: -1; role: "panelHeader" }
                 InkText {
                     anchors.left: parent.left; anchors.bottom: parent.bottom
-                    anchors.leftMargin: Theme.inset("panel", "left"); anchors.bottomMargin: Theme.gap(4)
+                    anchors.leftMargin: panel.ins("left"); anchors.bottomMargin: Theme.gap(4)
                     text: section === "true" ? "AUTOPLAY" : "SUGGESTIONS"
                     ink: "textFaint"
                     font { pixelSize: Theme.fs(11); weight: Theme.weightBold
@@ -217,7 +232,7 @@ Rectangle {
                 required property var model
                 readonly property bool autoplayItem: !panel.queueMode && !panel.hasQueue
                                                      && (model.isAutoplay === true)
-                width: list.width - Theme.scrollGutter
+                width: list.width - panel.gutter
                 height: 48
                 // a dragged row rides above its neighbours and follows the
                 // cursor; the rows it passes settle into place behind it
@@ -246,8 +261,8 @@ Rectangle {
                     visible: content.status !== Loader.Ready
                     anchors.fill: parent
                     anchors.leftMargin: panel.rowLeft + (panel.queueMode ? 24 + Theme.gap(10) : 0)
-                    anchors.rightMargin: Theme.inset("panel", "right")
-                    anchors.topMargin: Theme.inset("panel", "top"); anchors.bottomMargin: Theme.inset("panel", "bottom")
+                    anchors.rightMargin: panel.ins("right")
+                    anchors.topMargin: panel.ins("top"); anchors.bottomMargin: panel.ins("bottom")
                     spacing: Theme.gap(10)
                     Skeleton { width: 64; height: 36; radius: Theme.radiusSm; anchors.verticalCenter: parent.verticalCenter }
                     Column {
@@ -267,8 +282,8 @@ Rectangle {
                     id: rowContent
                     Row {
                         anchors.fill: parent
-                        anchors.leftMargin: panel.rowLeft; anchors.rightMargin: Theme.inset("panel", "right")
-                        anchors.topMargin: Theme.inset("panel", "top"); anchors.bottomMargin: Theme.inset("panel", "bottom")
+                        anchors.leftMargin: panel.rowLeft; anchors.rightMargin: panel.ins("right")
+                        anchors.topMargin: panel.ins("top"); anchors.bottomMargin: panel.ins("bottom")
                         spacing: Theme.gap(10)
 
                         Item {   // queue position, and the reorder grip on hover
@@ -487,35 +502,75 @@ Rectangle {
 
     }
 
-    // While suggestions load, rows of skeleton in the rows' own shape (the
-    // thumb, a title bar, a meta bar), as every other list shows; the empty
-    // message is only for a fetch that finished with nothing.
+    // While suggestions load, the list's own shape in skeleton: with no queue,
+    // the AUTOPLAY label, its row, the SUGGESTIONS label and rows, as they land.
+    // The empty message is only for a fetch that finished with nothing.
     readonly property real emptyTop: Theme.gap(24) + ((panel.hasQueue || (panel.miniHost && PlayerState.hasTrack)) ? 32 : 0)
-    Column {
-        anchors.top: parent.top
-        anchors.topMargin: panel.emptyTop - Theme.gap(12)
-        width: parent.width
-        visible: !panel.queueMode && list.count === 0 && Player.suggestionsLoading
-        Repeater {
-            model: 4
-            Item {
-                width: parent.width; height: 52
-                Row {
-                    anchors.fill: parent; anchors.margins: Theme.gap(10)
-                    spacing: Theme.gap(10)
-                    Skeleton { width: 64; height: 36; radius: Theme.radiusSm; anchors.verticalCenter: parent.verticalCenter }
-                    Column {
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: Theme.gap(6)
-                        Skeleton { width: 150; height: 10; radius: 3 }
-                        Skeleton { width: 90; height: 8; radius: 3 }
-                    }
-                }
+    component SkelHead: Item {   // the section delegate's band and label
+        property string label
+        visible: skel.heads
+        width: parent.width; height: Theme.sp(26)
+        Surface { anchors.fill: parent; role: "panelHeader" }
+        InkText {
+            anchors.left: parent.left; anchors.bottom: parent.bottom
+            anchors.leftMargin: panel.ins("left"); anchors.bottomMargin: Theme.gap(4)
+            text: parent.label
+            ink: "textFaint"
+            font { pixelSize: Theme.fs(11); weight: Theme.weightBold
+                   family: Theme.fontFamily; letterSpacing: 0.5 }
+        }
+    }
+    component SkelRow: Item {    // a row's height, insets and thumb
+        property int n: 0            // a radio's queue rows show their number
+        width: parent.width; height: 48
+        InkText {
+            visible: skel.radio
+            x: panel.rowLeft; width: 24
+            anchors.verticalCenter: parent.verticalCenter
+            horizontalAlignment: Text.AlignRight
+            text: parent.n
+            ink: "textFaint"
+            font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
+        }
+        Row {
+            anchors.fill: parent
+            // a radio's queue rows carry their number column
+            anchors.leftMargin: panel.rowLeft + (skel.radio ? 24 + Theme.gap(10) : 0)
+            anchors.rightMargin: panel.ins("right")
+            anchors.topMargin: panel.ins("top"); anchors.bottomMargin: panel.ins("bottom")
+            spacing: Theme.gap(10)
+            Skeleton { width: 64; height: 36; radius: Theme.radiusSm; anchors.verticalCenter: parent.verticalCenter }
+            Column {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Theme.gap(6)
+                Skeleton { width: 150; height: 10; radius: 3 }
+                Skeleton { width: 90; height: 8; radius: 3 }
+            }
+        }
+    }
+    // A radio starting covers the list it replaces; rows fill the panel's height.
+    Item {
+        id: skel
+        readonly property bool radio: Player.radioStarting
+        readonly property bool heads: !panel.hasQueue && !radio
+        y: list.y
+        width: list.width - panel.gutter
+        height: panel.height - list.y
+        visible: radio || (!panel.queueMode && list.count === 0 && Player.suggestionsLoading)
+        Surface { anchors.fill: parent; role: "panel"; visible: skel.radio }
+        Column {
+            width: parent.width
+            SkelHead { label: "AUTOPLAY" }
+            SkelRow { visible: skel.heads }
+            SkelHead { label: "SUGGESTIONS" }
+            Repeater {
+                model: Math.max(0, Math.ceil((skel.height - (skel.heads ? 2 * Theme.sp(26) + 48 : 0)) / 48))
+                SkelRow { required property int index; n: index + 1 }
             }
         }
     }
     // the Column sits at the panel's origin, so the list's y is the panel's
-    MScrollBar { id: listBar; scroller: list }
+    MScrollBar { id: listBar; scroller: list; mainWindow: panel.mainWindow }
     // MELO_GEOM_DEBUG: right edges in window coordinates, for the per-frame trace
     function edgeReport() {
         const r = (it) => it ? Math.round(it.mapToItem(null, it.width, 0).x * 10) / 10 : -1
@@ -526,7 +581,7 @@ Rectangle {
         anchors.top: parent.top
         anchors.topMargin: panel.emptyTop
         anchors.horizontalCenter: parent.horizontalCenter
-        visible: !panel.queueMode && list.count === 0 && !Player.suggestionsLoading
+        visible: !panel.queueMode && list.count === 0 && !Player.suggestionsLoading && !Player.radioStarting
         text: "No suggestions available"
         ink: "textFaint"
         font { pixelSize: Theme.fs(13); family: Theme.fontFamily }

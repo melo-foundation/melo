@@ -43,7 +43,7 @@ bool WindowController::setWindowKeepAbove(QQuickWindow* win, bool on) {
     return true;
 }
 bool WindowController::placePopupWindowOverMain(const QString&, int, int) { return false; }
-bool WindowController::watchPopupWindows(bool) { return false; }
+bool WindowController::watchPopupWindows(bool, bool) { return false; }
 bool WindowController::placePopupWindowBeside(const QString&) { return false; }
 bool WindowController::raisePopupWindow(const QString&) { return false; }
 bool WindowController::swapPopupWindows(const QString&, const QString&) { return false; }
@@ -65,5 +65,6 @@ bool WindowController::watchWindowGeometry(const QStringList&) { return false; }
 // false: callers fall back to the client-side position, which IS authoritative
 // on this platform (only Wayland hides a window's position from its client).
 bool WindowController::reportMainGeometry() { return false; }
-bool WindowController::applyMainPosition(int, int) { return false; }
+bool WindowController::applyMainPosition(int, int, bool) { return false; }
+bool WindowController::applyMiniGeometry(int, int, int, int) { return false; }
 bool WindowController::applyMainGeometry(int, int, int, int) { return false; }

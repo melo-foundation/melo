@@ -40,8 +40,11 @@ QQC.ScrollBar {
     // the rail and thumb sit inside the theme's scrollbar inset: right from
     // the edge (negative runs past it), top and bottom from the scroller's,
     // left the room kept from the content
-    leftPadding: Theme.inset("scrollbar", "left"); rightPadding: Theme.inset("scrollbar", "right")
-    topPadding: Theme.inset("scrollbar", "top"); bottomPadding: Theme.inset("scrollbar", "bottom")
+    // the main window's bars take the maximised scrollbar inset
+    property bool mainWindow: false
+    function ins(side) { return mainWindow ? Theme.mainInset("scrollbar", side) : Theme.inset("scrollbar", side) }
+    leftPadding: ins("left"); rightPadding: ins("right")
+    topPadding: ins("top"); bottomPadding: ins("bottom")
     implicitWidth: thick + leftPadding + rightPadding
     implicitHeight: thick + topPadding + bottomPadding
     // the rail is the thumb's run, inside the paddings, because a control's

@@ -1,12 +1,13 @@
 import QtQuick
 import QtQuick.Window
 import ".."
+import "layoutstate.js" as LayoutState
 
 // The queue, the visualizer or the video in a window of its own. Where KWin can
 // set its opacity it stays mapped from start to quit, and open means opacity 1
 // and input, as melo and melo-mini swap: it never animates. Elsewhere it is
-// shown and hidden. Its place, size, controls and keep-above are kept under
-// "window.<kind>".
+// shown and hidden. Its place, size, controls, keep-above and whether it is open
+// are kept under "window.<kind>".
 MeloWindow {
     id: dw
     required property string kind              // "queue" | "vis" | "video"
@@ -69,7 +70,17 @@ MeloWindow {
     function show() {
         if (open) return
         open = true
-        if (!mapped) { openWindow(); return }
+        if (!mapped) {
+            // X11 without KWin: Qt places it, at its saved place if that is on a screen
+            const s = prefs()
+            if (x11Places && s.x !== undefined && s.y !== undefined) {
+                const at = LayoutState.onScreen(s.x, s.y, width, height, Array.prototype.map.call(Qt.application.screens,
+                    r => ({ x: r.virtualX, y: r.virtualY, width: r.width, height: r.height })))
+                if (at) { x = at.x; y = at.y }
+            }
+            openWindow()
+            return
+        }
         applyGlass()
         const p = prefs()
         if (p.x !== undefined && p.y !== undefined) WindowCtl.moveWindows([{ title: dw.title, x: p.x, y: p.y }])
@@ -78,6 +89,15 @@ MeloWindow {
         WindowCtl.raisePopupWindow(dw.title)
         reveal(true)
     }
+    // open at start: waits for the first frame, before which KWin cannot place it
+    property bool reopenPending: false
+    function reopen() {
+        if (settled || !mapped) show()
+        else reopenPending = true
+    }
+    // whether it is open, kept with its place; off while melo quits
+    property bool recordOpen: false
+    onOpenChanged: if (recordOpen) remember({ open: open })
     function hide() {
         if (!open) return
         open = false
@@ -101,18 +121,26 @@ MeloWindow {
     onFrameSwapped: {
         if (!settled) {
             settled = true
-            if (mapped && !open) reveal(false)
+            if (reopenPending) { reopenPending = false; show() }
+            else if (mapped && !open) reveal(false)
         } else if (awaitingFrame) {
             awaitingFrame = false
             framed()
         }
     }
+    readonly property bool x11Places: !mapped && Qt.platform.pluginName === "xcb"
     onWidthChanged: sizeSave.restart()
     onHeightChanged: sizeSave.restart()
-    Timer {   // without KWin there is no report: the size alone is kept
+    onXChanged: if (x11Places) sizeSave.restart()
+    onYChanged: if (x11Places) sizeSave.restart()
+    Timer {   // without KWin there is no report: the size is kept, and on X11 the place
         id: sizeSave
         interval: 400
-        onTriggered: if (dw.open && !WindowCtl.kwinAvailable()) dw.remember({ w: dw.width, h: dw.height })
+        onTriggered: {
+            if (!dw.open) return
+            if (dw.x11Places) dw.remember({ x: dw.x, y: dw.y, w: dw.width, h: dw.height })
+            else if (!WindowCtl.kwinAvailable()) dw.remember({ w: dw.width, h: dw.height })
+        }
     }
     Item {   // under the content: a drag the content leaves moves the window
         parent: dw.body

@@ -100,8 +100,10 @@ Window {
         const titleH = Theme.titleBarH
         cutTitleL = shaped ? Math.max(frL, sh.intrusion("left", 0, titleH)) : frL
         cutTitleR = shaped ? Math.max(frR, sh.intrusion("right", 0, titleH)) : frR
-        cutBodyL = shaped ? Math.max(frL, sh.intrusion("left", titleH, height)) : frL
-        cutBodyR = shaped ? Math.max(frR, sh.intrusion("right", titleH, height)) : frR
+        // above the bottom corners: a rounded corner is the shape's to clip, not a side to clear
+        const bodyEnd = Math.max(titleH, height - Theme.windowRadiusBottom)
+        cutBodyL = shaped ? Math.max(frL, sh.intrusion("left", titleH, bodyEnd)) : frL
+        cutBodyR = shaped ? Math.max(frR, sh.intrusion("right", titleH, bodyEnd)) : frR
     }
     onShapedChanged: readCuts()
     readonly property bool frameOff: (win.visibility === Window.Maximized || win.visibility === Window.FullScreen)
@@ -688,6 +690,20 @@ Window {
         // numbers are not clamped either.
         cur[side] = Math.max(-64, Math.min(64, Math.round(Number(v) || 0)))
         all[name] = cur
+        ThemeBackend.setThemeSetting("insets", all)
+    }
+    // which values the insets rows edit: "normal" or "maximized"
+    property string insetMode: "normal"
+    // one side of one structure's maximised inset; the unset sides stay unset
+    function setInsetMax(name, side, v) {
+        const all = Object.assign({}, Theme.insetMap), max = Object.assign({}, Theme.insetMaxMap), cur = {}
+        const was = max[name]
+        for (const s of Theme.insetSides)
+            if (typeof was === "number") cur[s] = was
+            else if (was !== null && typeof was === "object" && was[s] !== undefined) cur[s] = Number(was[s])
+        cur[side] = Math.max(-64, Math.min(64, Math.round(Number(v) || 0)))
+        max[name] = cur
+        all.maximized = max
         ThemeBackend.setThemeSetting("insets", all)
     }
     function stage(id) {
@@ -3325,13 +3341,20 @@ Window {
                     width: col.width
                     visible: win.secOpen("insets")
                     SectionTools { title: "INSETS"; kind: "insets" }
+                    SRow {
+                        name: "Window"
+                        SSelect { value: win.insetMode
+                                  options: [{ value: "normal", label: "Normal" }, { value: "maximized", label: "Maximised" }]
+                                  onPicked: (v) => win.insetMode = v }
+                    }
                     Repeater {
-                        model: Theme.insetNames
+                        model: win.insetMode === "maximized" ? Theme.insetMaxNames : Theme.insetNames
                         SRow {
                             id: insRow
                             required property string modelData
+                            readonly property bool maxed: win.insetMode === "maximized"
                             // the tab strips carry their gap as a box ahead of the sides
-                            readonly property bool tabStrip: modelData === "tabs" || modelData === "pageTabs"
+                            readonly property bool tabStrip: !maxed && (modelData === "tabs" || modelData === "pageTabs")
                             name: win.insetLabels[modelData] || modelData
                             reserve: Theme.sp(tabStrip ? 250 : 200)
                             Row {
@@ -3343,9 +3366,17 @@ Window {
                                         required property string modelData
                                         readonly property real held: (Theme.ts, modelData === "gap"
                                             ? (insRow.modelData === "pageTabs" ? Theme.pageTabGap : Theme.tabGap)
+                                            : insRow.maxed ? Theme.insetMaxOf(insRow.modelData, modelData)
                                             : Theme.insetOf(insRow.modelData, modelData))
+                                        // a maximised side with no value of its own shows the normal one
+                                        readonly property bool unset: (Theme.ts, insRow.maxed && !Theme.insetMaxSet(insRow.modelData, modelData))
                                         function put(v) {
                                             if (modelData === "gap") win.setTabGap(insRow.modelData, v)
+                                            else if (insRow.maxed) {
+                                                // leaving an unset box untouched keeps it unset
+                                                if (unset && Math.round(Number(v) || 0) === held) return
+                                                win.setInsetMax(insRow.modelData, modelData, v)
+                                            }
                                             else win.setInset(insRow.modelData, modelData, v)
                                         }
                                         width: Theme.sp(44); height: Theme.sp(24)
@@ -3375,7 +3406,7 @@ Window {
                                             anchors.leftMargin: Theme.gap(14); anchors.rightMargin: Theme.gap(4)
                                             verticalAlignment: TextInput.AlignVCenter
                                             horizontalAlignment: TextInput.AlignRight
-                                            color: Theme.text
+                                            color: parent.unset && !activeFocus ? Theme.textFaint : Theme.text
                                             validator: IntValidator { bottom: -64; top: 64 }
                                             font { pixelSize: Theme.fs(11); family: "monospace" }
                                             text: activeFocus ? text : String(parent.held)

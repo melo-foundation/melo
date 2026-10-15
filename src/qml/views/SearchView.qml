@@ -161,7 +161,7 @@ Item {
             required property int index
             required property var model
             readonly property bool shown: view.rowVisible(model)   // source filter
-            width: Math.max(0, list.width - Theme.scrollGutter)
+            width: Math.max(0, list.width - Theme.mainScrollGutter)
             height: shown ? Theme.sp(list.compact ? 26 : GridUi.rowH(width)) : 0
             visible: shown
             radius: Theme.radiusMd
@@ -299,7 +299,7 @@ Item {
             }
         }
     }
-    MScrollBar { id: listBar; scroller: list }
+    MScrollBar { id: listBar; scroller: list; mainWindow: true }
 
     // --- grid (cells at least 160px wide, 16:9 thumbs) ---
     GridView {
@@ -323,13 +323,13 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: GridUi.padBottom
         anchors.horizontalCenter: parent.horizontalCenter
-        readonly property int availW: parent.width - GridUi.padX - Theme.scrollGutter
+        readonly property int availW: parent.width - GridUi.padX - Theme.mainScrollGutter
         readonly property int gcols: GridUi.colsFor(availW, GridUi.growth)
         cellWidth: GridUi.cellWFor(availW, GridUi.growth)
         readonly property int slack: GridUi.slackOf(availW, gcols, cellWidth)
         // the whole box, not gcols * cellWidth: the slack is handed out per
         // column below, so an exact-fit width would only move the right edge
-        width: availW + Theme.scrollGutter
+        width: availW + Theme.mainScrollGutter
         visible: view.layout === "grid"
         model: view.model
         clip: true
@@ -386,7 +386,7 @@ Item {
             }
         }
     }
-    MScrollBar { id: gridBar; scroller: grid }
+    MScrollBar { id: gridBar; scroller: grid; mainWindow: true }
 
     InkText {
         anchors.centerIn: parent

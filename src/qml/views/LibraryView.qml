@@ -90,7 +90,7 @@ Item {
 
     // ONE column math for the track grid AND the playlist/album cards —
     // fixed-width cards read smaller the moment the window grows the grid
-    readonly property int gridAvailW: width - GridUi.padX - Theme.scrollGutter
+    readonly property int gridAvailW: width - GridUi.padX - Theme.mainScrollGutter
     // ...but not one width: in list layout the playlist/album cards sit in the
     // list's centred column, so they size off it. Sized off the whole box they
     // wrapped early past ~1020px and shuffled on every resize step.
@@ -125,9 +125,10 @@ Item {
     readonly property Flickable scroller: layout === "grid" ? grid : list
     // the top of the scroller's viewport, in the card column's coordinates
     readonly property real cardTop: scroller.headerItem ? scroller.contentY - scroller.headerItem.y : 0
-    readonly property real cardW: gridCellW - 8
+    // a track tile's width: the cell less its gap(4) each side
+    readonly property real cardW: gridCellW - 2 * Theme.gap(4)
     // MediaTile's own implicit height at that width
-    readonly property real cardH: GridUi.cellHFor(cardW + 8)
+    readonly property real cardH: GridUi.cellHFor(gridCellW)
 
     Column {
         id: cardHead
@@ -161,8 +162,10 @@ Item {
                         onClicked: parent.toggled() }
         }
         component Cards: CardGrid {
-            width: parent.width
-            spacing: Theme.gap(8)
+            // in the grid, in line with the track tiles, which sit gap(4) into their cells
+            x: view.layout === "grid" ? Theme.gap(4) : 0
+            width: parent.width - x
+            spacing: 2 * Theme.gap(4)
             cardWidth: view.cardW
             cardHeight: view.cardH
             viewTop: view.cardTop - y
@@ -451,7 +454,7 @@ Item {
             id: row
             required property int index
             required property var model
-            width: Math.max(0, list.width - Theme.scrollGutter)
+            width: Math.max(0, list.width - Theme.mainScrollGutter)
             height: Theme.sp(list.compact ? 26 : GridUi.rowH(width))
             radius: Theme.radiusMd
             role: view.isActive(model) ? "selected"
@@ -579,7 +582,7 @@ Item {
             }
         }
     }
-    MScrollBar { id: listBar; scroller: list }
+    MScrollBar { id: listBar; scroller: list; mainWindow: true }
 
     // ---------- tracks: grid ----------
     GridView {
@@ -603,7 +606,7 @@ Item {
         // its width from this, and an exact-fit grid made the title row and
         // its buttons jump on every layout switch. The columns span it
         // exactly — the delegate hands the floor's leftover out per column.
-        width: view.gridAvailW + Theme.scrollGutter
+        width: view.gridAvailW + Theme.mainScrollGutter
         visible: view.layout === "grid"
         model: Library.tracks
         clip: true
@@ -693,7 +696,7 @@ Item {
             }
         }
     }
-    MScrollBar { id: gridBar; scroller: grid }
+    MScrollBar { id: gridBar; scroller: grid; mainWindow: true }
 
     // An empty library and an empty search are different pages: this counts
     // what the filter left, so a search matching nothing shows a message

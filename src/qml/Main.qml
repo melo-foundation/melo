@@ -7,6 +7,7 @@ import "components"
 import "components/skeletonmodel.js" as SkeletonModel
 import "components/shortcuts.js" as SC
 import "components/videowanted.js" as VideoWanted
+import "components/layoutstate.js" as LayoutState
 import "views"
 import "."
 
@@ -100,7 +101,7 @@ Window {
     // the edges wobble, so the snap waits for the drag to end. The size step is for
     // window managers that honour it; KWin 6 does not.
     function applySizeStep() { if (isX11 && typeof WindowCtl !== "undefined") WindowCtl.setSizeStep(root, sizeStep()) }
-    onMiniPlayerChanged: applySizeStep()
+    onMiniPlayerChanged: { applySizeStep(); recordLayout() }
     function snapSize() {
         applySizeStep()
         const g = sizeStep()
@@ -217,7 +218,12 @@ Window {
     onReadyChanged: if (ready) applyBlur()   // enable glass once positioned
     // maximise and restore change the corner radius, and the radius is what
     // the glass is rounded to
-    onVisibilityChanged: { if (ready) applyBlur(); applySizeStep() }
+    onVisibilityChanged: {
+        if (ready) applyBlur()
+        applySizeStep()
+        recordLayout()
+        if (afterMaximized && visibility === Window.Maximized) runAfterMaximized()
+    }
     property bool alwaysOnTop: false
     // the modes where melo sets the state itself and so can show it
     readonly property bool pinToggles: WindowCtl.pinMode === "kwin" || WindowCtl.pinMode === "flag"
@@ -241,6 +247,8 @@ Window {
     // its frames cannot lag a configure, and a fill freezing mid-drag
     // read as a hang. sysDragging covers both; resizeFreeze is the resize.
     Binding { target: Theme; property: "held"; value: root.resizeFreeze }
+    Binding { target: Theme; property: "maximized"
+              value: !root.miniPlayer && (root.visibility === Window.Maximized || root.visibility === Window.FullScreen) }
     function holdFadeForDrag() { sysDragging = true }
     // !fadeSnap forces full opacity during the toggle's snap window, because
     // hover re-registers after the flip.
@@ -307,6 +315,113 @@ Window {
             if (root.placeWhenFramed) Qt.callLater(root.placeWhenFramed)
         }
     }
+    // The layout is saved as it changes, never at quit: closing melo hides its windows.
+    property var restorePlan: null
+    // main stays hidden until the restored mini player's flip
+    property bool restoringMini: false
+    property bool layoutRestored: false
+    property bool quitting: false
+    readonly property bool layoutRecording: layoutRestored && !quitting
+    onClosing: quitting = true
+    Connections { target: Qt.application; function onAboutToQuit() { root.quitting = true } }
+    // KWin can place the bar only once it has a frame
+    property bool miniFramed: false
+    property bool restoreWaitsForMini: false
+    Connections {
+        target: miniWin
+        enabled: !root.miniFramed
+        function onFrameSwapped() {
+            root.miniFramed = true
+            if (root.restoreWaitsForMini) { root.restoreWaitsForMini = false; Qt.callLater(root.restoreLayout) }
+        }
+    }
+    Timer {   // a bar that never draws must not leave melo hidden
+        running: root.restoringMini && !root.toggling && root.ready
+        interval: 3000
+        onTriggered: { root.miniFramed = true; root.restoreWaitsForMini = false; root.restoreLayout() }
+    }
+    function restoreLayout() {
+        const p = restorePlan
+        if (MELO_GEOM_DEBUG && p) console.warn("[layout] " + Date.now() + " restore " + JSON.stringify(p))
+        if (p && p.mini && !miniPlayer && builtinMini) {
+            if (!miniFramed) { restoreWaitsForMini = true; return }
+            toggleMini()   // finishRestore after the flip
+            return
+        }
+        finishRestore()
+    }
+    function finishRestore() {
+        const p = restorePlan
+        restorePlan = null
+        if (restoringMini) { restoringMini = false; applyWindowOpacity() }
+        if (p) {
+            if (miniPlayer && p.popup === "queue") { miniVisWanted = false; PlayerState.showPanel = true; syncMiniQueue() }
+            else if (miniPlayer && p.popup === "vis") { PlayerState.showPanel = false; miniVisWanted = true; syncMiniQueue() }
+            for (const k of p.windows) winOf(k).reopen()
+        }
+        layoutRestored = true
+        recordLayout()
+        if (MELO_GEOM_DEBUG) console.warn("[layout] " + Date.now() + " restored mini " + miniPlayer + " popup " + miniQueueShown + " " + popupKind
+                                          + " windows " + [queueWin, visWin, videoWin].filter(w => w.open).map(w => w.kind).join(","))
+    }
+    readonly property string popupWants: LayoutState.popupOf(miniVisWanted, PlayerState.showPanel, detached.queue === true)
+    function rememberLayout(fields) {
+        const l = Settings.uiGet("layout", null)
+        const prev = l && typeof l === "object" ? l : ({})
+        if (Object.keys(fields).every(k => prev[k] === fields[k])) return
+        Settings.uiSet("layout", Object.assign({}, prev, fields))
+    }
+    function recordLayout() {
+        const v = visibility === Window.Maximized ? "maximized" : visibility === Window.Windowed ? "windowed" : "other"
+        const f = LayoutState.record({ recording: layoutRecording, toggling: toggling, miniPlayer: miniPlayer,
+                                       popup: popupWants, visibility: v })
+        if (f) rememberLayout(f)
+    }
+    onTogglingChanged: recordLayout()
+    onPopupWantsChanged: recordLayout()
+    Connections {
+        target: WindowCtl
+        function onMiniPosition(x, y) {
+            if (root.layoutRecording && root.miniPlayer && !root.toggling) root.rememberLayout({ miniX: x, miniY: y })
+        }
+    }
+    function screenRects() {
+        return Array.prototype.map.call(Qt.application.screens, s => ({ x: s.virtualX, y: s.virtualY, width: s.width, height: s.height }))
+    }
+    // KWin maximises a restored main after moving it: content waits for that, up to 1.5 s
+    property var afterMaximized: null
+    function whenMaximized(f) { afterMaximized = f; maximizeWait.restart() }
+    function runAfterMaximized() {
+        const f = afterMaximized
+        afterMaximized = null
+        maximizeWait.stop()
+        if (f) f()
+    }
+    Timer { id: maximizeWait; interval: 1500; onTriggered: root.runAfterMaximized() }
+    // X11 without KWin: Qt knows both windows' places, so they are saved from there
+    readonly property bool x11Places: isX11 && !WindowCtl.canPlaceWindows
+    Timer {
+        id: x11PlaceSave
+        interval: 400
+        onTriggered: {
+            if (!root.layoutRecording || root.toggling) return
+            if (root.miniPlayer) root.rememberLayout({ miniX: miniWin.x, miniY: miniWin.y })
+            else if (root.visibility === Window.Windowed && (root.x !== root.savedX || root.y !== root.savedY)) {
+                root.savedX = root.x
+                root.savedY = root.y
+                Settings.uiSet("windowX", root.x)
+                Settings.uiSet("windowY", root.y)
+            }
+        }
+    }
+    onXChanged: if (x11Places) x11PlaceSave.restart()
+    onYChanged: if (x11Places) x11PlaceSave.restart()
+    Connections {
+        target: miniWin
+        enabled: root.x11Places
+        function onXChanged() { x11PlaceSave.restart() }
+        function onYChanged() { x11PlaceSave.restart() }
+    }
     function applySavedSettings() {
         root.trackLayout = Settings.uiGet("library-layout", "grid")
         root.refreshShortcuts()
@@ -315,7 +430,12 @@ Window {
         for (const w of [queueWin, visWin, videoWin]) w.restore()
         root.detached = ({ queue: queueWin.prefs().detached === true, vis: visWin.prefs().detached === true,
                            video: videoWin.prefs().detached === true })
-        WindowCtl.watchPopupWindows(true)
+        const plan = LayoutState.plan((k, f) => Settings.uiGet(k, f), WindowCtl.canPlaceWindows)
+        root.restorePlan = plan
+        root.restoringMini = plan.mini
+        // a restored mini player: KWin maps main at opacity 0, as on X11
+        WindowCtl.watchPopupWindows(true, plan.mini && !root.firstFrameShown)
+        if (plan.mini) root.applyWindowOpacity()
         root.miniPopupVideo = Settings.uiGet("miniPopupVideo", false) === true
         if (npLoader.item) npLoader.item.showVideo = Settings.uiGet("npVideo", false) === true
         root.readVideoFit()
@@ -330,13 +450,23 @@ Window {
         // Wayland), then start the event-driven geometry watcher — KWin
         // reports once per completed user move/resize, no polling
         const px = Settings.uiGet("windowX", -99999), py = Settings.uiGet("windowY", -99999)
+        const saved = px !== -99999 && py !== -99999 ? { x: px, y: py } : null
+        const start = LayoutState.mainStart(plan.maximized, saved, isX11, WindowCtl.canPlaceWindows)
+        // a maximised main maximises on the screen of its saved place
+        if (start.preplace && !root.firstFrameShown) {
+            const at = LayoutState.onScreen(px, py, root.width, root.height, screenRects())
+            if (at) { root.x = at.x; root.y = at.y }
+        }
+        if (start.maximizeNow && !root.firstFrameShown) root.visibility = Window.Maximized
         const place = () => {
-            if (px !== -99999 && py !== -99999) WindowCtl.applyMainPosition(px, py)
+            if (saved && root.visibility !== Window.Maximized) WindowCtl.applyMainPosition(px, py, start.maximizeByKwin)
             WindowCtl.watchMainGeometry()
             // reveal content only after the KWin position move, or the
             // window shows at KWin's default placement for a frame before
             // it jumps to the saved position
-            root.ready = true
+            const reveal = () => { root.ready = true; root.restoreLayout() }
+            if (start.maximizeByKwin) whenMaximized(reveal)
+            else reveal()
         }
         if (root.firstFrameShown) Qt.callLater(place)
         else root.placeWhenFramed = place
@@ -448,7 +578,7 @@ Window {
     // QML opacity gates it and the 1-frame seam returns.
     property bool kwinSwap: true
     readonly property real _r: ready ? 1 : 0   // startup position gate
-    readonly property real fullContentOpacity: ((kwinSwap || !miniPlayer) ? hoverFade : 0) * _r
+    readonly property real fullContentOpacity: ((kwinSwap || !miniPlayer) && !restoringMini ? hoverFade : 0) * _r
     readonly property real fullBaseOpacity: fullContentOpacity
     readonly property real miniContentOpacity: ((kwinSwap || miniPlayer) ? miniHoverFade : 0) * _r
     readonly property bool fullBarVisible: !miniPlayer || toggling
@@ -477,7 +607,7 @@ Window {
         function onFrameSwapped() { root.firstFrame = true; root.applyWindowOpacity() }
     }
     function applyWindowOpacity() {
-        const mainOp = shellHidden || popupSwap === -1 || revealPending || !firstFrame ? 0
+        const mainOp = shellHidden || popupSwap === -1 || revealPending || !firstFrame || restoringMini ? 0
                      : ((!miniPlayer || miniQueueShown || popupSwap === 1) ? 1 : 0)
         const wins = [{ title: "melo",      opacity: mainOp },
                       { title: "melo-mini",
@@ -541,7 +671,13 @@ Window {
             // Align the mini window over main's bar during the settle, not at the flip:
             // on the first collapse it sits at screen centre, and a same-tick move landed
             // after the reveal (a 1-frame flash). The 50ms settle lets the move land.
-            WindowCtl.alignForCollapse(root.barH)
+            // a restored mini player goes where the bar was left instead
+            const at = restoringMini && restorePlan ? restorePlan.miniAt : null
+            const x11At = at && !WindowCtl.canPlaceWindows && isX11
+                          ? LayoutState.onScreen(at.x, at.y, width, root.barH, screenRects()) : null
+            if (at && WindowCtl.canPlaceWindows) WindowCtl.applyMiniGeometry(at.x, at.y, Math.round(width), root.barH)
+            else if (x11At) { miniWin.x = x11At.x; miniWin.y = x11At.y }
+            else WindowCtl.alignForCollapse(root.barH)
         } else {
             // X11: main, the popup's host, stays dark through the settle while the bar holds.
             // With the popup attached main is its tall host on Wayland too, and its first
@@ -563,10 +699,11 @@ Window {
         const to = miniPlayer ? mainLayoutNow : "barMini:" + Theme.barMini
         playerBar.quiet = miniPlayer      // expanding: main is the one revealed
         miniBar.quiet = !miniPlayer       // collapsing: mini is
-        handoverLayout = from !== to ? from : ""
+        // a restored mini player starts at its own layout: main was never on screen
+        handoverLayout = from !== to && !restoringMini ? from : ""
         const fromBack = miniPlayer ? Theme.backMini : mainBackingNow
         const toBack = miniPlayer ? mainBackingNow : Theme.backMini
-        handoverBacking = fromBack !== toBack ? fromBack : ""
+        handoverBacking = fromBack !== toBack && !restoringMini ? fromBack : ""
         // the flip waits only for the window move to land
         toggleSettleTimer.interval = 50
         toggleSettleTimer.restart()
@@ -607,6 +744,18 @@ Window {
         if (!miniPlayer) root.requestActivate()
         else if (builtinMini) miniWin.requestActivate()
         syncMiniQueue()
+        // where the flip left the window now shown: neither move is the user's, so KWin's watcher misses it
+        flipReport.restart()
+        if (restoringMini) finishRestore()
+    }
+    Timer {
+        id: flipReport
+        interval: 250
+        onTriggered: {
+            if (root.toggling || root.sysDragging || root.resizeFreeze) return
+            if (root.x11Places) x11PlaceSave.restart()
+            else WindowCtl.reportMainGeometry()
+        }
     }
     // A file handed to melo: by the desktop entry's MimeType, by `melo <path>`,
     // or by a second launch passing its arguments to this one over MPRIS.
@@ -1411,6 +1560,8 @@ Window {
             visible: root.queueInWindow ? queueWin.open : !root.miniVisWanted
             fullWidth: true
             miniHost: true
+            // the popup and the queue window are their own glass: opaque where none can blur
+            solid: Theme.glassBlur === "off" || !WindowCtl.blurAvailable
             contextMenu: contextMenu   // main-window overlays work in mini mode
             menuTail: root.queueInWindow ? null : root.popupActs
         }
@@ -1479,6 +1630,7 @@ Window {
         listEmpty: popupQueuePanel.empty
         defaultControls: root.detachedControls
         onFramed: root.windowFramed(queueWin)
+        recordOpen: root.layoutRecording
         onReattachRequested: root.reattach(queueWin)
         onResizeStarting: root.beginDetachedResize(queueWin)
         onMenuRequested: (x, y) => root.openWindowMenu(queueWin, x, y)
@@ -1488,6 +1640,7 @@ Window {
         kind: "vis"
         defaultControls: root.detachedControls
         onFramed: root.windowFramed(visWin)
+        recordOpen: root.layoutRecording
         onReattachRequested: root.reattach(visWin)
         onResizeStarting: root.beginDetachedResize(visWin)
         onMenuRequested: (x, y) => root.openWindowMenu(visWin, x, y)
@@ -1524,6 +1677,7 @@ Window {
         kind: "video"
         defaultControls: root.detachedControls
         onFramed: root.windowFramed(videoWin)
+        recordOpen: root.layoutRecording
         onReattachRequested: root.reattach(videoWin)
         onResizeStarting: root.beginDetachedResize(videoWin)
         onMenuRequested: (x, y) => root.openWindowMenu(videoWin, x, y)
@@ -2490,6 +2644,7 @@ Window {
 
             QueuePanel {
                 id: queuePanel
+                mainWindow: true
                 // Bound means INSTEAD OF: melo's queue and a plugin's cannot
                 // both have the right-hand strip.
                 visible: !root.queueSlotFilled

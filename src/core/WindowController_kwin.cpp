@@ -158,6 +158,8 @@ WindowController::WindowController(QObject* parent) : QObject(parent) {
         QDBusConnection::ExportAllSlots);
     connect(geoReceiver_, &GeometryReceiver::reported,
             this, &WindowController::mainGeometry);
+    connect(geoReceiver_, &GeometryReceiver::miniReported,
+            this, &WindowController::miniPosition);
     connect(geoReceiver_, &GeometryReceiver::resizeStarted,
             this, &WindowController::interactiveStarted);
     connect(geoReceiver_, &GeometryReceiver::moveStarted,
@@ -542,7 +544,7 @@ bool WindowController::placePopupWindowBeside(const QString& caption) {
         "}\n").arg(c, QString::number(QCoreApplication::applicationPid())));
 }
 
-bool WindowController::watchPopupWindows(bool on) {
+bool WindowController::watchPopupWindows(bool on, bool hideMain) {
     if (!kwinAvailable_) return false;
     const KWinObject scripting("/Scripting", "org.kde.kwin.Scripting");
     if (!on || popupWatchId_ >= 0) {
@@ -609,7 +611,7 @@ bool WindowController::watchPopupWindows(bool on) {
         "  hook(w);\n"
         "});\n").arg(geoService_, QString::number(QCoreApplication::applicationPid()),
                                                  qEnvironmentVariableIsSet("MELO_GEOM_DEBUG") ? QStringLiteral("true") : QStringLiteral("false"),
-                                                 isX11_ ? QStringLiteral("true") : QStringLiteral("false"))).toUtf8());
+                                                 isX11_ || hideMain ? QStringLiteral("true") : QStringLiteral("false"))).toUtf8());
     f.close();
     QDBusReply<int> id = scripting.call("loadScript", popupWatchPath_, popupWatchName_);
     if (!id.isValid() || id.value() < 0) {
@@ -1100,7 +1102,8 @@ void WindowController::watchMainGeometry() {
         "  const inside = inR(g) || (mini && inR(mini.frameGeometry)) ? 1 : 0;\n"
         "  callDBus(\"%2\", \"/melo/geometry\",\n"
         "           \"com.melo.Geometry\", \"Report\",\n"
-        "           q(g.x) + \",\" + q(g.y) + \",\" + q(g.width) + \",\" + q(g.height) + \",\" + inside);\n"
+        "           q(g.x) + \",\" + q(g.y) + \",\" + q(g.width) + \",\" + q(g.height) + \",\" + inside\n"
+        "           + (mini ? \",\" + q(mini.frameGeometry.x) + \",\" + q(mini.frameGeometry.y) : \"\"));\n"
         "};\n"
         "const started = (w) => {\n"
         // Which one it is: KWin sets `resize` on the window for the length
@@ -1160,7 +1163,8 @@ bool WindowController::reportMainGeometry() {
         "  const inside = inR(g) || (mini && inR(mini.frameGeometry)) ? 1 : 0;\n"
         "  callDBus(\"%1\", \"/melo/geometry\",\n"
         "           \"com.melo.Geometry\", \"Report\",\n"
-        "           q(g.x) + \",\" + q(g.y) + \",\" + q(g.width) + \",\" + q(g.height) + \",\" + inside);\n"
+        "           q(g.x) + \",\" + q(g.y) + \",\" + q(g.width) + \",\" + q(g.height) + \",\" + inside\n"
+        "           + (mini ? \",\" + q(mini.frameGeometry.x) + \",\" + q(mini.frameGeometry.y) : \"\"));\n"
         "}\n").arg(geoService_));
 }
 
@@ -1350,25 +1354,57 @@ bool WindowController::watchWindowGeometry(const QStringList& captions) {
     return true;
 }
 
-bool WindowController::applyMainPosition(int x, int y) {
+// areaAt: the work area of the screen under the rectangle's centre, else w's
+// own, so a saved place on another screen stays on that screen.
+static QString areaAtJs() {
+    return QStringLiteral(
+        "const areaAt = (w, x, y, gw, gh) => {\n"
+        "  const cx = x + gw / 2, cy = y + gh / 2;\n"
+        "  try {\n"
+        "    for (const s of workspace.screens) {\n"
+        "      const r = s.geometry;\n"
+        "      if (cx >= r.x && cx < r.x + r.width && cy >= r.y && cy < r.y + r.height)\n"
+        "        return workspace.clientArea(KWin.MaximizeArea, s, workspace.currentDesktop);\n"
+        "    }\n"
+        "  } catch (e) {}\n"
+        "  try { return workspace.clientArea(KWin.MaximizeArea, w); } catch (e) {}\n"
+        "  return w.output ? w.output.geometry : null;\n"
+        "};\n");
+}
+
+bool WindowController::applyMainPosition(int x, int y, bool maximize) {
     if (!kwinAvailable_) return false;
     // A saved position can land off the current screen: a different display
     // scale, a monitor unplugged, or the window parked at an edge. KWin
     // places it there without complaint and the window then sits in the
     // taskbar drawing nothing. Clamp into the work area before applying.
-    return runKwinScript(findWindowsPrelude() + QStringLiteral(
+    return runKwinScript(findWindowsPrelude() + areaAtJs() + QStringLiteral(
         "if (main) {\n"
         "  const g = main.frameGeometry;\n"
-        "  let a = null;\n"
-        "  try { a = workspace.clientArea(KWin.MaximizeArea, main); } catch (e) { a = null; }\n"
-        "  if (!a && main.output) a = main.output.geometry;\n"
         "  let nx = %1 * k, ny = %2 * k;\n"
+        "  const a = areaAt(main, nx, ny, g.width, g.height);\n"
         "  if (a && a.width > 0 && a.height > 0) {\n"
         "    nx = Math.max(a.x, Math.min(nx, a.x + a.width - g.width));\n"
         "    ny = Math.max(a.y, Math.min(ny, a.y + a.height - g.height));\n"
         "  }\n"
         "  main.frameGeometry = { x: nx, y: ny, width: g.width, height: g.height };\n"
-        "}\n").arg(x).arg(y));
+        "  if (%3) main.setMaximize(true, true);\n"
+        "}\n").arg(x).arg(y).arg(maximize ? QStringLiteral("true") : QStringLiteral("false")));
+}
+
+bool WindowController::applyMiniGeometry(int x, int y, int w, int h) {
+    if (!kwinAvailable_) return false;
+    return runKwinScript(findWindowsPrelude() + areaAtJs() + QStringLiteral(
+        "if (mini) {\n"
+        "  const gw = %3 * k, gh = %4 * k;\n"
+        "  let nx = %1 * k, ny = %2 * k;\n"
+        "  const a = areaAt(mini, nx, ny, gw, gh);\n"
+        "  if (a && a.width > 0 && a.height > 0) {\n"
+        "    nx = Math.max(a.x, Math.min(nx, a.x + a.width - gw));\n"
+        "    ny = Math.max(a.y, Math.min(ny, a.y + a.height - gh));\n"
+        "  }\n"
+        "  mini.frameGeometry = { x: nx, y: ny, width: gw, height: gh };\n"
+        "}\n").arg(x).arg(y).arg(w).arg(h));
 }
 
 bool WindowController::applyMainGeometry(int x, int y, int w, int h) {

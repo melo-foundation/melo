@@ -63,6 +63,8 @@ public:
     // the last row.
     Q_PROPERTY(bool queueLoading READ queueLoading NOTIFY loadingMoreChanged)
     Q_PROPERTY(bool suggestionsLoading READ suggestionsLoading NOTIFY loadingMoreChanged)
+    // radioStarting: a radio's first list is in flight; the queue panel shows its skeleton
+    Q_PROPERTY(bool radioStarting READ radioStarting NOTIFY loadingMoreChanged)
     Q_PROPERTY(bool uiFrozen READ uiFrozen NOTIFY uiFrozenChanged)
     bool uiFrozen() const { return uiFrozen_; }
     Q_INVOKABLE void setUiFrozen(bool frozen) {
@@ -87,6 +89,7 @@ public:
     Q_INVOKABLE bool suggestionsHaveMore() const { return !suggestionsCursor_.isEmpty(); }
     bool queueLoading() const { return mixFetching_ || radioFetching_; }
     bool suggestionsLoading() const { return suggestionsFetching_; }
+    bool radioStarting() const { return radioStarting_; }
     Q_INVOKABLE void playSuggestion(int index);                 // clears radio
     Q_INVOKABLE void startRadio(const QString& videoId);
     Q_INVOKABLE void startRadioPlaylist(const QString& playlistId, int startIndex = -1,
@@ -198,6 +201,7 @@ private:
     void topUpRadioQueue(bool force = false);
     void armRadioAfterMix();
     bool radioFetching_ = false;
+    bool radioStarting_ = false;
 
     // silence
     double skipStart_ = 0, skipEnd_ = 0;
