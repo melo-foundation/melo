@@ -172,6 +172,17 @@ void VideoSurface::notifyTrackChange() {
         if (v->frozen_ && v->running_ && v->window()) v->fetch();
 }
 
+// Scrubbing while paused: the new place's picture arrives a moment after the
+// seek, so a frozen surface ticks until it has.
+void VideoSurface::notifySeek() {
+    const auto live = s_live;
+    for (VideoSurface* v : live) {
+        if (!v->frozen_ || !v->running_) continue;
+        v->thaw_ = QDeadlineTimer(1500);
+        v->retick();
+    }
+}
+
 // Under the basic render loop every update() is a full-window render: only a
 // changed picture on a visible surface asks for one.
 // The picture never goes blank while shown: an empty view keeps it, unless the
@@ -179,8 +190,9 @@ void VideoSurface::notifyTrackChange() {
 void VideoSurface::fetch() {
     if (!s_source) return;
     VideoView next = s_source->videoView();
+    if (frozen_ && thaw_.hasExpired() && tick_.isActive()) retick();   // the thaw is over
     // frozen, only another track's view gets through
-    if (frozen_ && (next.trackId.isEmpty() || next.trackId == pending_.trackId)) return;
+    if (frozen_ && !thawed() && (next.trackId.isEmpty() || next.trackId == pending_.trackId)) return;
     if (!next.main && hasFrame_) {
         const bool otherTrack = !next.trackId.isEmpty() && !pending_.trackId.isEmpty()
                              && next.trackId != pending_.trackId;
@@ -198,7 +210,7 @@ void VideoSurface::fetch() {
 
 void VideoSurface::retick() {
     // Not gated on isVisible(): QML shows the surface on hasFrame, which only the tick sets.
-    const bool on = running_ && !frozen_ && window();
+    const bool on = running_ && (!frozen_ || thawed()) && window();
     if (on && !tick_.isActive()) tick_.start();
     if (!on) tick_.stop();
 }
@@ -280,8 +292,8 @@ QSGNode* VideoSurface::updatePaintNode(QSGNode* old, UpdatePaintNodeData*) {
         view_ = {}; setContentRect({});
     }
     const QRectF bounds = boundingRect();
-    if (node && (frozen_ || !pending_.main)) {
-        // Frozen or between frames: the held picture still covers the bounds.
+    if (node && ((frozen_ && !thawed()) || !pending_.main)) {
+        // Frozen (and no seek's thaw) or between frames: the held picture still covers the bounds.
         setContentRect(node->main.place(bounds, fit_, fillMix_));
         if (node->incoming && !node->incoming->empty()) node->incoming->place(bounds, fit_, fillMix_);
         return node;

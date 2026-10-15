@@ -469,7 +469,7 @@ bool WindowController::alignForExpand(int barHeight, int width, int height) {
 // The popup host's rectangle for a side, shared with the glue script; and the
 // room above the bar, reported to melo.
 // On X11 the host spans the work area: KWin shows a moved X window's old picture
-// until it redraws, so a host that moved at each drag's start and end flashed.
+// until it redraws, so a host moved at each drag's start and end would flash.
 static QString popupHostJs(const QString& service, bool wide) {
     return QStringLiteral(
         "const wideHost = %2;\n"
@@ -647,14 +647,14 @@ QString WindowController::stackOrder(QQuickWindow* a, QQuickWindow* b) {
 }
 
 // Qt 6.12's Wayland EGL context resizes the EGL window inside makeCurrent, after
-// eglMakeCurrent: on NVIDIA the frame being drawn keeps the old size's back buffer, and
-// it is committed with the new size's ack and viewport, so KWin scales the old picture
-// into the new place, the far edge deforming through a drag. Measured with WAYLAND_DEBUG
-// over a 760 px drag: 37 of 51 acked commits one size behind. A window-sized offscreen
-// pass (main's layers, projectM's FBO) made the window current a second time and hid it.
-// So when the size has changed since the last frame, make it current once more before
-// drawing, which takes the new buffer. X11 (Mesa) draws the first frame after a resize in
-// the old buffer too, and GLX skips a bind to what is already current: it unbinds first.
+// eglMakeCurrent: on NVIDIA the frame being drawn keeps the old size's back buffer and
+// is committed with the new size's ack and viewport, so KWin scales the old picture into
+// the new place and the far edge deforms through a drag (37 of 51 commits one size
+// behind). A window-sized offscreen pass (main's layers, projectM's FBO) makes the window
+// current a second time, which hides it. When the size has changed since the last frame,
+// make it current once more before drawing, which takes the new buffer. X11 (Mesa) draws
+// the first frame after a resize in the old buffer too, and GLX skips a bind to what is
+// already current: it unbinds first.
 // MELO_X11_REBIND=0 leaves X11 to the present sync alone.
 void WindowController::keepBufferInStep(QQuickWindow* win) {
     if (!win) return;
@@ -899,8 +899,8 @@ bool WindowController::setMiniQueueGlue(bool on) {
         "  main.frameGeometry = { x: nx, y: ny, width: g.width, height: g.height };\n"
         "}\n"
         // The host stays where the move or resize left it: fitting it back to the bar here
-        // moved it before melo drew there, and its old picture jumped (KWin shows a moved
-        // window's last frame). Only the room above the bar is refreshed.
+        // would move it before melo draws there, and KWin would show its last frame in the
+        // new place. Only the room above the bar is refreshed.
         "function settle() {\n"
         "  if (!mini || !main) return;\n"
         "  const g = main.frameGeometry, r = hostRect(\"\");\n"

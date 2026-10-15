@@ -33,6 +33,7 @@ struct VideoPixels {
     int planeCount = 1;
     VideoPlane planes[3];
     VideoColor color;
+    double pts = 0;            // seconds into the track, as its frame's
     std::shared_ptr<void> keepAlive;
     std::function<std::shared_ptr<const VideoPixels>()> makeRgba;
     mutable std::mutex twinMutex;

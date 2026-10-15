@@ -432,6 +432,7 @@ int main(int argc, char** argv) {
     // queued: videoChanged can fire inside videoView(), which the fetch calls
     QObject::connect(&engine, &AudioEngine::videoChanged, &engine,
                      &VideoSurface::notifyTrackChange, Qt::QueuedConnection);
+    QObject::connect(&engine, &AudioEngine::seeked, &engine, &VideoSurface::notifySeek);
 
     SidecarService sidecar;
     PlayerState playerState;

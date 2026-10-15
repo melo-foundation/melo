@@ -36,6 +36,10 @@ public:
     double positionSeconds() const;   // -1 if unknown
     double durationSeconds() const;   // -1 if unknown
     bool seekTo(double seconds);      // flushing seek on this deck only
+    bool seekPending() const;         // a seek is waiting for its first buffer
+    double requestedSeek() const;     // the newest target asked for; -1 if none
+    double seekWaitedMs() const;      // how long the in-flight seek has waited; -1 if none
+    const std::string& uri() const { return uri_; }
 
     GstElement* bin() const { return bin_; }
 
@@ -85,8 +89,11 @@ private:
     void linkToMixer(bool withOffset);
     void unlinkFromMixer();
     bool sendSeek(double seconds);
-    void restoreAfterFailedSeek();
+    // False when no seek was in flight.
+    bool restoreAfterFailedSeek();
 
+    std::string uri_;
+    std::string name_;   // the bin's name, "deckN", tags every log line
     GstElement* pipeline_ = nullptr;
     GstElement* mixer_    = nullptr;
     GstElement* bin_      = nullptr;
@@ -103,6 +110,7 @@ private:
     mutable std::mutex seekMutex_;
     double requestedSeek_ = -1;
     double inFlightSeek_ = -1;
+    double seekStartedMs_ = 0;   // meloLogMs() when the in-flight request was sent
     bool seekInFlight_ = false;
     bool reseekPosted_ = false;
     std::function<void()> eosCb_;

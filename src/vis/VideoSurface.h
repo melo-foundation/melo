@@ -1,6 +1,7 @@
 #pragma once
 #include "MeloEngineOnly.h"
 #include "VideoFrameSource.h"
+#include <QDeadlineTimer>
 #include <QList>
 #include <QQuickItem>
 #include <QTimer>
@@ -25,6 +26,8 @@ public:
     }
     static void setSource(VideoFrameSource* s) { s_source = s; }
     static void notifyTrackChange();   // a frozen surface fetches once, on the source's change
+    static void notifySeek();          // a frozen surface ticks for 1.5 s, until the new place shows
+    double shownPts() const { return view_.main ? view_.main->pts : -1; }   // the drawn picture's place
 #ifdef MELO_VIDEOSURFACE_TEST
     static int paintCount;
 #endif
@@ -62,6 +65,8 @@ private:
     QTimer tick_;
     bool running_ = false;
     bool frozen_ = false;
+    QDeadlineTimer thaw_;   // a seek lets a frozen surface tick until this expires
+    bool thawed() const { return frozen_ && !thaw_.hasExpired(); }
     bool hasFrame_ = false;
     bool dropNode_ = false;   // the next paint deletes the node
     QString fit_ = QStringLiteral("fill");

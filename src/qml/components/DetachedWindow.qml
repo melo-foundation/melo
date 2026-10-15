@@ -133,7 +133,7 @@ MeloWindow {
         parent: dw.body
         width: parent.width
         height: dw.listEmpty ? parent.height : 44
-        // under the header, not over it: over it, it took the tabs' and buttons' presses
+        // under the header: over it, it would take the tabs' and buttons' presses
         z: -1
         enabled: dw.kind === "queue" && (!dw.titled || dw.listEmpty)
         DragHandler {

@@ -57,9 +57,9 @@ Rectangle {
     Surface { visible: !panel.fullWidth; anchors.left: parent.left
               width: 1; height: parent.height; role: "border"; z: 5 }
 
-    // The panel starts hidden in the popup under the bar, where a Row or a Column lays out no
-    // hidden child; shown in its own window they kept that, the list over the tabs and the tabs
-    // on each other. Each showing and each move lays them out again.
+    // A Row or a Column lays out no hidden child, and the panel starts hidden in the popup
+    // under the bar; shown in its own window it would keep those places, the list over the
+    // tabs and the tabs on each other. Each showing and each move lays them out again.
     function relayout() {
         const walk = (o) => {
             if (typeof o.forceLayout === "function") o.forceLayout()

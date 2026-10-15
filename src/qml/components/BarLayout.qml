@@ -98,8 +98,8 @@ Item {
     property real frozenEdge: -1
     property real frozenEdgeR: -1
     // Side padding: the document's `padLeft`/`padRight`, else `pad`, else 12, plus
-    // the theme's player inset; the floating card's inset is added on top.
-    // the theme's inset for this bar: the mini player's has its own
+    // the theme's inset for this bar (the mini player has its own); a floating
+    // card adds its inset on top.
     readonly property string insetName: bar && bar.mini ? "miniPlayer" : "player"
     function docPad(side) {
         const own = side === "left" ? doc.padLeft : doc.padRight
@@ -114,11 +114,10 @@ Item {
     }
     readonly property real edge: frozenEdge >= 0 ? frozenEdge : sideEdge("left")
     readonly property real edgeRight: frozenEdgeR >= 0 ? frozenEdgeR : sideEdge("right")
-    // The vertical room, each side the least space between the bar's edge and the
-    // rows: the document's `top` (a variant's first) plus the theme's top inset; the
-    // theme's bottom inset below. On top of it what covers the bar there: a
-    // floating card's own inset, and the window frame's band where a shaped window
-    // draws it over the bar (cutTop, cutBottom, as cutLeft is at the ends).
+    // Least room between the bar's edge and the rows: above, the document's `top`
+    // (a variant's first) plus the theme's top inset; below, the theme's bottom inset.
+    // Each side adds what covers the bar: a floating card's inset and a shaped
+    // window's frame band (cutTop, cutBottom).
     readonly property real mainTop: (doc.top !== undefined ? Number(doc.top) : 0) + Theme.inset(insetName, "top")
     readonly property real altTop: altDoc && altDoc.top !== undefined ? Number(altDoc.top) + Theme.inset(insetName, "top") : mainTop
     readonly property bool onCard: bar && bar.backing === "floating"

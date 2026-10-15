@@ -164,7 +164,7 @@ Window {
     readonly property real frR: frameOff ? 0 : Theme.borderRight
     readonly property real frB: frameOff ? 0 : Theme.borderBottom
     // a frame with no title in it draws all its bands at the top, deeper than a thin top side
-    // (Translucent Aqua: 10 px of bands, a 4 px top): what it frames starts below them
+    // (10 px of bands over a 4 px top, say): what it frames starts below them
     readonly property real frTop: frameOff ? 0 : Theme.frameTopUntitled(frT)
     readonly property bool framed: frL > 0 || frT > 0 || frR > 0 || frB > 0
     readonly property bool frameDrawn: framed || (!frameOff && Theme.frameDepth > 0)
@@ -543,9 +543,9 @@ Window {
             // after the reveal (a 1-frame flash). The 50ms settle lets the move land.
             WindowCtl.alignForCollapse(root.barH)
         } else {
-            // X11: main, the popup's host, goes dark through the settle; the bar holds
-            // with the popup attached main is its tall host on Wayland too, and its first full-size
-            // frames landed at that height (1075 for 680 at 1.9)
+            // X11: main, the popup's host, stays dark through the settle while the bar holds.
+            // With the popup attached main is its tall host on Wayland too, and its first
+            // full-size frames would land at the host's height.
             if (isX11 || miniQueueShown) { expandReveal = true; revealPending = true; revealReady = false; applyWindowOpacity() }
             width = miniWin.width                     // main expands at the bar's width
         }
@@ -1224,7 +1224,7 @@ Window {
         // under the bar: from main's left, or through a drag from the left, from its
         // right, where the bar's fixed edge is (see fitPopupHost). X11 gives both
         // windows' places, so there it follows the bar itself: KWin moves and sizes the
-        // host in separate steps, and the anchor alone drew it 485 px off for a frame
+        // host in separate steps, and the anchor alone would draw it in the wrong place for a frame
         x: root.isX11 && root.miniPlayer
            ? Math.max(0, Math.min(root.width - width, miniWin.x - root.x))
            : root.popupAnchorRight ? root.width - width : 0
@@ -3460,8 +3460,8 @@ Window {
     // freeze tick UI + hold the hover fade the instant OUR handle is pressed
     // A detached window's resize holds the same things still, and every other window in
     // the process on its last frame, application-wide (AppHold): KWin resizes cleanly only
-    // while the rest of the process commits nothing (docs/mini-player-windowing.md §3,
-    // a4d09997). KWin's report of that window's new place (onPopupWindow) ends it.
+    // while the rest of the process commits nothing. KWin's report of that window's new
+    // place (onPopupWindow) ends it.
     property bool detachedResizing: false
     property var resizingWin: null
     function beginDetachedResize(w) {

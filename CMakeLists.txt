@@ -910,7 +910,7 @@ if(Qt6Test_FOUND)
         src/core/Track.h)
     target_include_directories(tst_audioengine PRIVATE src/audio src/core src/vis)
     target_link_libraries(tst_audioengine PRIVATE
-        Qt6::Core Qt6::Qml Qt6::Test ${MELO_GST_LIB})
+        Qt6::Core Qt6::Qml Qt6::Network Qt6::Test ${MELO_GST_LIB})
     add_test(NAME audioengine COMMAND tst_audioengine)
 
     add_executable(tst_pcmqueue tests/cpp/tst_pcmqueue.cpp)

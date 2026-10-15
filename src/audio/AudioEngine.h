@@ -74,6 +74,9 @@ public:
     double mixerPositionSeconds() const;  // master timeline (diagnostics)
     void setSinkMuted(bool muted);        // remnant-tail mute across hard cuts
     double duration() const;              // current-track seconds (or -1)
+    // A seek with no data after this long is dropped, so the next one goes through.
+    void setSeekTimeoutMs(double ms) { seekTimeoutMs_ = ms; }
+    bool seekPending() const;             // the position-owning deck awaits a seek's first buffer
 
     // ---- video: decks are made only while a surface wants them --------------
     void setVideoWanted(bool on);   // false keeps the decks until dropVideoDecksIfUnwanted()
@@ -103,12 +106,14 @@ signals:
     void trackEnded();                                     // current deck hit EOS
     void pipelineError(const QString& message);
     void videoChanged();   // a deck appeared, got its first frame, or went away
+    void seeked();         // seekTo ran: the position moved under a paused picture
 
 private:
     static GstFlowReturn onNewSample(GstAppSink* sink, gpointer user);
     void buildPipeline();
     std::unique_ptr<SourceDeck> makeDeck(const QString& pathOrUri, bool deferLink = false);
     void onFadeTick();
+    void seekToDecks(double seconds, bool cutFade);
 
     PcmQueue&   vizQueue_;
     GstElement* pipeline_ = nullptr;
@@ -121,6 +126,21 @@ private:
     GstElement* appsink_  = nullptr;
 
     bool messageIsFromCurrentDeck(GstObject* src) const;
+    void onBusMessage(GstMessage* msg);
+    void handleBusError(GstObject* src, const QString& message);
+    void dropIncoming();   // an incoming deck that errored; the outgoing one plays on
+    double seekTimeoutMs_ = 10000;
+    void watchStuckSeeks();
+    void replaceStuckDeck(bool isIncoming);
+    void reportStalled(SourceDeck* d, double waitedMs);
+    void forgetReplacement();
+    // Compared, never dereferenced: the incoming deck while it prerolls, the
+    // replacement until its seek lands, and the deck already reported stalled.
+    SourceDeck* replacing_ = nullptr;
+    SourceDeck* replacement_ = nullptr;
+    SourceDeck* stallReported_ = nullptr;
+    double replaceStartedMs_ = 0;
+    double replaceDuration_ = -1;   // the stuck deck's, shown while the replacement prerolls
 
     std::unique_ptr<SourceDeck> current_;
     std::unique_ptr<SourceDeck> incoming_;   // during crossfade
@@ -128,6 +148,10 @@ private:
     std::vector<std::unique_ptr<SourceDeck>> retiring_;  // fading out, torn down on fade end
 
     QTimer posTimer_;
+    void watchStall(double pos);
+    void logStall() const;
+    double stallPos_ = -1;
+    int stallTicks_ = 0;   // posTimer_ ticks with the position still
     QTimer fadeTimer_;
     double fadePos_ = 0, fadeStep_ = 0;
     bool fadeFrozen_ = false;   // fade suspended by pause

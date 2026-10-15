@@ -27,7 +27,9 @@ public:
     std::optional<VideoFrame> frameAt(double position);
     bool hasFrame() const { return sawSample_.load(); }
     void onFirstFrame(std::function<void()> cb);   // runs now if the first frame already came
+    void onSeekLanded(std::function<void()> cb);   // the first frame after each seek; streaming thread
     bool failed();                                 // sticky once the pipeline posts an error
+    const char* name() const { return name_.c_str(); }   // "vdeckN"
 
     static void joinAllTeardowns();
 
@@ -48,6 +50,7 @@ private:
     bool canSeek() const;          // PAUSED or PLAYING: GStreamer drops a seek sent before preroll
     void sendSeek(double seconds);   // a pull-mode seek may read over HTTP, so it runs on a worker
 
+    std::string name_;
     GstElement* pipeline_ = nullptr;
     GstBus* bus_ = nullptr;
     GstElement* queue_ = nullptr;
@@ -61,6 +64,8 @@ private:
     std::atomic<bool> sawSample_{false};
     std::atomic<bool> firstFired_{false};
     std::function<void()> firstFrameCb_;
+    std::atomic<double> seekSentMs_{0};    // meloLogMs() of the last sent seek until its first frame
+    std::function<void()> seekLandedCb_;
     bool started_ = false;
     bool failed_ = false;
     VideoFrame lastShown_;

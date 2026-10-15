@@ -78,7 +78,7 @@ async function detectSilenceUncached(
     // melo's ffmpeg has no TLS, so an https source is read through the local
     // relay, which fetches it with Node's. The relay reuses the deck's entry
     // when the deck is already streaming this URL.
-    const input = /^https:/i.test(source) ? await relayUrl(source) : source;
+    const input = /^https:/i.test(source) ? await relayUrl(source, undefined, undefined, videoId) : source;
     const ffmpeg = getEnv().ffmpegPath || "ffmpeg";
     const ffmpegBase = ["-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1", "-ar", String(sampleRate), "-v", "error", "-"];
     const threshold = Math.pow(10, thresholdDb / 20);

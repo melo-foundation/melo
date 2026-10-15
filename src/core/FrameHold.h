@@ -41,11 +41,10 @@ private:
     QSet<QObject*> held_;
 };
 
-// Every window in the process but one renders nothing while it is on: an
-// application-wide filter, since a list misses windows made later (menus, tips,
-// plugin windows). On the basic render loop any other window's frame lands between
-// the compositor's configure and the resized window's answer, and the compositor
-// stretches that window's stale buffer: the playlist deform, bisected in a4d09997.
+// Every window in the process but one renders nothing while it is on. On the basic
+// render loop another window's frame between the compositor's configure and the
+// resized window's answer makes the compositor stretch the resized window's stale
+// buffer. Application-wide, so windows made later (menus, tips, plugins) are held too.
 class AppHold : public QObject {
 public:
     using QObject::QObject;

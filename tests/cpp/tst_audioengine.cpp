@@ -1,13 +1,77 @@
 #include <QtTest>
 #include <QElapsedTimer>
+#include <QFile>
+#include <QRegularExpression>
+#include <QSemaphore>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
+#include <QThread>
 #include <gst/gst.h>
 #include <cmath>
 #include <memory>
 #include "AudioEngine.h"
 #include "PcmQueue.h"
 #include "PlayerState.h"
+#include "SourceDeck.h"
 #include "VideoDeck.h"
+
+// A stream whose second request (the first seek) is never answered; every
+// other request gets its range. Own thread, since a seek may wait on the
+// source from the calling thread.
+class StallingServer : public QThread {
+public:
+    // holdAll: every request after the first goes unanswered, not only the second
+    explicit StallingServer(QByteArray body, bool holdAll = false)
+        : body_(std::move(body)), holdAll_(holdAll) {}
+    ~StallingServer() override { quit(); wait(); }
+    quint16 port() { ready_.acquire(); ready_.release(); return port_; }
+    QAtomicInt requests;
+
+protected:
+    void run() override {
+        QTcpServer server;
+        server.listen(QHostAddress::LocalHost);
+        port_ = server.serverPort();
+        QObject::connect(&server, &QTcpServer::newConnection, [&] {
+            while (QTcpSocket* sock = server.nextPendingConnection()) {
+                auto* buf = new QByteArray;
+                QObject::connect(sock, &QTcpSocket::disconnected, sock, [sock, buf] {
+                    delete buf; sock->deleteLater();
+                });
+                QObject::connect(sock, &QTcpSocket::readyRead, sock, [this, sock, buf] {
+                    buf->append(sock->readAll());
+                    if (!buf->contains("\r\n\r\n")) return;
+                    const QRegularExpressionMatch m =
+                        QRegularExpression(QStringLiteral("Range: bytes=(\\d+)-"),
+                                           QRegularExpression::CaseInsensitiveOption)
+                            .match(QString::fromLatin1(*buf));
+                    buf->clear();
+                    const int n = requests.fetchAndAddRelaxed(1);
+                    if (n == 1 || (holdAll_ && n > 1)) return;   // never answered
+                    const qint64 from = m.hasMatch() ? m.captured(1).toLongLong() : 0;
+                    const QByteArray part = body_.mid(from);
+                    sock->write((from ? "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes "
+                                        + QByteArray::number(from) + "-"
+                                        + QByteArray::number(body_.size() - 1) + "/"
+                                        + QByteArray::number(body_.size()) + "\r\n"
+                                      : QByteArray("HTTP/1.1 200 OK\r\n"))
+                                + "Accept-Ranges: bytes\r\nContent-Type: audio/webm\r\n"
+                                  "Content-Length: " + QByteArray::number(part.size()) + "\r\n\r\n");
+                    sock->write(part);
+                });
+            }
+        });
+        ready_.release();
+        exec();
+    }
+
+private:
+    QByteArray body_;
+    bool holdAll_ = false;
+    quint16 port_ = 0;
+    QSemaphore ready_;
+};
 
 // AudioEngine builds a real GStreamer pipeline. MELO_FAKE_SINK swaps the audio
 // sink for a fakesink, so the engine IS constructible headlessly and its EQ
@@ -108,6 +172,85 @@ private slots:
                                 .arg(i).arg(elapsed.elapsed())));
             QTest::qWait(10);
         }
+    }
+
+    // A seek whose request is never answered is asked again after the limit,
+    // for the newest target, instead of waiting forever.
+    void aSeekIntoADeadStreamIsAskedAgain() {
+        const QString fixture = makeSeekFixture();
+        QVERIFY2(!fixture.isEmpty(), "could not create the WebM/Opus seek fixture");
+        if (!have("souphttpsrc")) QSKIP("souphttpsrc missing");
+        QFile f(fixture);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        StallingServer server(f.readAll());
+        server.start();
+        const QString url = QStringLiteral("http://127.0.0.1:%1/seek.webm").arg(server.port());
+        {
+            auto eng = makeEngine();
+            eng->setSeekTimeoutMs(1500);
+            eng->loadTrack(url);
+            QTRY_VERIFY_WITH_TIMEOUT(eng->position() > 0.0, 5000);
+
+            eng->seekTo(6.0);
+            QVERIFY(eng->seekPending());
+            eng->seekTo(7.0);   // coalesced behind the first
+            QTest::qWait(500);
+            QVERIFY(eng->seekPending());
+
+            QTRY_VERIFY_WITH_TIMEOUT(!eng->seekPending(), 6000);
+            QVERIFY(server.requests.loadRelaxed() >= 3);
+            QTRY_VERIFY_WITH_TIMEOUT(eng->position() > 6.9, 3000);
+        }
+        SourceDeck::joinAllTeardowns();
+    }
+
+    // A replacement deck that gets no data either reports the track once,
+    // instead of being replaced again.
+    void aStalledReplacementReportsOnce() {
+        const QString fixture = makeSeekFixture();
+        QVERIFY2(!fixture.isEmpty(), "could not create the WebM/Opus seek fixture");
+        if (!have("souphttpsrc")) QSKIP("souphttpsrc missing");
+        QFile f(fixture);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        StallingServer server(f.readAll(), /*holdAll=*/true);
+        server.start();
+        const QString url = QStringLiteral("http://127.0.0.1:%1/seek.webm").arg(server.port());
+        {
+            auto eng = makeEngine();
+            QSignalSpy errors(eng.get(), &AudioEngine::pipelineError);
+            eng->setSeekTimeoutMs(1000);
+            eng->loadTrack(url);
+            QTRY_VERIFY_WITH_TIMEOUT(eng->position() > 0.0, 5000);
+            eng->seekTo(6.0);
+            QTRY_COMPARE_WITH_TIMEOUT(errors.count(), 1, 5000);
+            QCOMPARE(errors.at(0).at(0).toString(), QStringLiteral("stream stalled"));
+            QTest::qWait(2500);
+            QCOMPARE(errors.count(), 1);
+            QCOMPARE(server.requests.loadRelaxed(), 3);   // one replacement, no loop
+        }
+        SourceDeck::joinAllTeardowns();
+    }
+
+    // An error from a deck that is fading out belongs to the track that ended,
+    // not to the one now playing.
+    void anErrorOnARetiringDeckIsNotTheCurrentTracks() {
+        const QString fixture = makeSeekFixture();
+        QVERIFY2(!fixture.isEmpty(), "could not create the WebM/Opus fixture");
+        auto eng = makeEngine();
+        QSignalSpy errors(eng.get(), &AudioEngine::pipelineError);
+        // The broken deck posts its error now; it is dispatched only once the
+        // two fades below have made it a retiring deck.
+        eng->loadTrack(QStringLiteral("file:///nonexistent-retiring.opus"), QStringLiteral("A"));
+        eng->crossfadeTo(fixture, 4.0, QStringLiteral("B"));
+        eng->crossfadeTo(fixture, 4.0, QStringLiteral("C"));
+        QTest::qWait(1000);
+        QCOMPARE(errors.count(), 0);
+        QVERIFY(eng->pipelinePlaying());
+
+        // control: the same error on the current deck does report
+        eng->loadTrack(QStringLiteral("file:///nonexistent-current.opus"), QStringLiteral("D"));
+        QTRY_VERIFY_WITH_TIMEOUT(errors.count() > 0, 3000);
+        SourceDeck::joinAllTeardowns();
     }
 
     // Picking a track while paused, with crossfade on, must start the
@@ -355,6 +498,64 @@ private slots:
         e.attachVideo(QStringLiteral("file:///nonexistent-a.webm"), false, QStringLiteral("A"));
         QCOMPARE(e.hasVideoDeck(), true);
         QCOMPARE(e.videoView().trackId, QStringLiteral("A"));
+        VideoDeck::joinAllTeardowns();
+    }
+
+    // A still stretch encoded as one frame every 2 s is not the video falling
+    // behind: the picture follows the audio with no catch-up jumps.
+    void aSparseVideoNeedsNoCatchUp() {
+        const QString audio = makeSeekFixture();
+        QVERIFY(!audio.isEmpty());
+        const QString video = videoDir_ ? videoDir_->filePath(QStringLiteral("sparse.webm"))
+                                        : (videoDir_ = std::make_unique<QTemporaryDir>(),
+                                           videoDir_->filePath(QStringLiteral("sparse.webm")));
+        GError* err = nullptr;
+        GstElement* p = gst_parse_launch(QStringLiteral(
+            "videotestsrc num-buffers=5 pattern=ball ! video/x-raw,width=160,height=90,framerate=1/2 "
+            "! vp8enc deadline=1 keyframe-max-dist=1 ! webmmux ! filesink location=\"%1\"").arg(video).toUtf8().constData(), &err);
+        QVERIFY(p && !err);
+        gst_element_set_state(p, GST_STATE_PLAYING);
+        GstBus* bus = gst_element_get_bus(p);
+        GstMessage* m = gst_bus_timed_pop_filtered(bus, 20 * GST_SECOND,
+            GstMessageType(GST_MESSAGE_EOS | GST_MESSAGE_ERROR));
+        QVERIFY(m && GST_MESSAGE_TYPE(m) == GST_MESSAGE_EOS);
+        gst_message_unref(m); gst_object_unref(bus);
+        gst_element_set_state(p, GST_STATE_NULL); gst_object_unref(p);
+
+        AudioEngine e(queue_);
+        e.setVideoWanted(true);
+        e.loadTrack(audio, QStringLiteral("A"));
+        e.attachVideo(video, false, QStringLiteral("A"));
+        QTRY_VERIFY_WITH_TIMEOUT(e.position() > 0.5, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(e.videoView().main != nullptr, 5000);
+        // the surface asks every 16 ms; 6 s spans three 2 s frames
+        QElapsedTimer t; t.start();
+        int seeks = 0;
+        QSignalSpy seeked(&e, &AudioEngine::seeked);
+        while (t.elapsed() < 6000) { e.videoView(); QTest::qWait(16); }
+        seeks = seeked.count();
+        QCOMPARE(seeks, 0);
+        VideoDeck::joinAllTeardowns();
+    }
+
+    // Scrubbing while paused shows the picture at the new place.
+    void aPausedSeekShowsTheNewPicture() {
+        const QString audio = makeSeekFixture();
+        const QString video = makeVideoFixture();
+        QVERIFY2(!audio.isEmpty() && !video.isEmpty(), "could not create the fixtures");
+        AudioEngine e(queue_);
+        e.setVideoWanted(true);
+        e.loadTrack(audio, QStringLiteral("A"));
+        e.attachVideo(video, false, QStringLiteral("A"));
+        QTRY_VERIFY_WITH_TIMEOUT(e.position() > 1.0, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(e.videoView().main != nullptr, 5000);
+        e.setPaused(true);
+        QTest::qWait(300);
+        const auto before = e.videoView().main;
+        e.seekTo(7.0);
+        // the surface asks every frame; the picture must change without play
+        QTRY_VERIFY_WITH_TIMEOUT(e.videoView().main != before, 3000);
+        QTRY_VERIFY_WITH_TIMEOUT(std::abs(e.position() - 7.0) < 0.5, 3000);
         VideoDeck::joinAllTeardowns();
     }
 

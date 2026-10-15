@@ -356,9 +356,9 @@ bool PluginWindowHost::build(const QJsonObject& uiBlock, double scale) {
         rec.title = QStringLiteral("melo-plugin-%1-%2").arg(pluginId, id);
         rec.wanted = d.value(QStringLiteral("initial")).toString() != QStringLiteral("hidden");
         rec.fullHeight = h;
-        // EXACTLY miniWin's configuration (Main.qml). Transiency keeps the taskbar at
+        // Same configuration as miniWin (Main.qml). Transiency keeps the taskbar at
         // one entry on Wayland; on X11 KWin's watcher does (Qt sends no transient-for
-        // for a plain window). Frameless + transparent: the plugin paints its chrome.
+        // for a plain window). Frameless and transparent: the plugin paints its chrome.
         rec.win = new QQuickWindow();
         rec.win->setTransientParent(transientParent_.data());
         rec.win->setFlags(Qt::Window | Qt::FramelessWindowHint);

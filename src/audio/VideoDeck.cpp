@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <thread>
+#include "../core/LogClock.h"
 
 static std::mutex s_teardownMutex;
 static std::condition_variable s_teardownsCv;
@@ -68,7 +69,8 @@ VideoDeck::VideoDeck(const std::string& uri, Output out) {
     const int id = n++;
     auto nm = [&](const char* base) { return std::string(base) + std::to_string(id); };
 
-    pipeline_ = gst_pipeline_new(nm("vdeck").c_str());
+    name_ = nm("vdeck");
+    pipeline_ = gst_pipeline_new(name_.c_str());
     GstElement* decode = gst_element_factory_make("uridecodebin", nm("vdec").c_str());
     queue_ = gst_element_factory_make("queue", nm("vq").c_str());
     GstElement* convert = gst_element_factory_make("videoconvert", nm("vconv").c_str());
@@ -108,7 +110,7 @@ VideoDeck::VideoDeck(const std::string& uri, Output out) {
     // live before PAUSED: the preroll can arrive before the constructor returns
     { std::lock_guard<std::mutex> lk(live_->m); live_->self = this; }
     gst_element_set_state(pipeline_, GST_STATE_PAUSED);
-    std::fprintf(stderr, "[vdeck%d] built for %.90s\n", id, uri.c_str());
+    std::fprintf(stderr, "[%9.1f] [%s] built for %.90s\n", meloLogMs(), name_.c_str(), uri.c_str());
 }
 
 VideoDeck::~VideoDeck() {
@@ -132,7 +134,8 @@ VideoDeck::~VideoDeck() {
 void VideoDeck::joinAllTeardowns() {
     std::unique_lock<std::mutex> l(s_teardownMutex);
     if (!s_teardownsCv.wait_for(l, std::chrono::seconds(5), [] { return s_teardownsActive == 0; }))
-        std::fprintf(stderr, "[vdeck] %d teardown worker(s) still busy at exit\n", s_teardownsActive);
+        std::fprintf(stderr, "[%9.1f] [vdeck] %d teardown worker(s) still busy at exit\n", meloLogMs(),
+                     s_teardownsActive);
 }
 
 void VideoDeck::start() {
@@ -147,16 +150,17 @@ void VideoDeck::start() {
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
 }
 
+// Every queued error is logged, not only the first.
 bool VideoDeck::failed() {
-    if (failed_) return failed_;
     while (GstMessage* m = gst_bus_pop_filtered(bus_, GST_MESSAGE_ERROR)) {
-        if (!failed_) {
-            GError* err = nullptr;
-            gst_message_parse_error(m, &err, nullptr);
-            std::fprintf(stderr, "[vdeck] error: %s\n", err ? err->message : "unknown");
-            if (err) g_error_free(err);
-            failed_ = true;
-        }
+        GError* err = nullptr;
+        gchar* dbg = nullptr;
+        gst_message_parse_error(m, &err, &dbg);
+        std::fprintf(stderr, "[%9.1f] [%s] error from %s: %s | %s\n", meloLogMs(), name_.c_str(),
+                     GST_OBJECT_NAME(m->src), err ? err->message : "unknown", dbg ? dbg : "");
+        if (err) g_error_free(err);
+        g_free(dbg);
+        failed_ = true;
         gst_message_unref(m);
     }
     return failed_;
@@ -170,6 +174,11 @@ void VideoDeck::onFirstFrame(std::function<void()> cb) {
         already = firstFired_.load();
     }
     if (already && cb) cb();
+}
+
+void VideoDeck::onSeekLanded(std::function<void()> cb) {
+    std::lock_guard<std::mutex> lk(live_->m);
+    seekLandedCb_ = std::move(cb);
 }
 
 bool VideoDeck::canSeek() const {
@@ -203,14 +212,20 @@ void VideoDeck::seekWorker(GstElement* pipeline, gpointer user) {
         const bool ok = gst_element_seek_simple(pipeline, GST_FORMAT_TIME,
             GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE),
             gint64(target * GST_SECOND)) == TRUE;
-        if (ok) continue;
+        if (ok) {
+            // the flush is done: the next sample is the new place's
+            std::lock_guard<std::mutex> lk(ref->m);
+            if (ref->self) ref->self->seekSentMs_.store(meloLogMs());
+            continue;
+        }
         std::lock_guard<std::mutex> lk(ref->m);
         if (!ref->self) return;
         ref->self->seekRefused_.store(true);
         // no FLUSH_STOP will come: frames from where the deck is are current again
         if (ref->self->seekTarget_.load() < 0)
             ref->self->acceptGen_.store(ref->self->ring_.generation());
-        std::fprintf(stderr, "[vdeck] seek refused at %.2f\n", target);
+        std::fprintf(stderr, "[%9.1f] [%s] seek refused at %.2f\n", meloLogMs(),
+                     ref->self->name_.c_str(), target);
     }
 }
 
@@ -269,6 +284,7 @@ VideoFrame VideoDeck::wrap(GstSample* sample) {
     }
     const GstClockTime pts = GST_BUFFER_PTS(gst_sample_get_buffer(sample));
     f.pts = GST_CLOCK_TIME_IS_VALID(pts) ? double(pts) / GST_SECOND : 0.0;
+    px->pts = f.pts;
     f.px = px;
     return f;
 }
@@ -304,7 +320,8 @@ std::optional<VideoFrame> VideoDeck::frameAt(double position) {
         const gint64 now = g_get_monotonic_time();
         if (position - newest > 0.5 && now - lastCatchUpUs_ >= G_USEC_PER_SEC && !seekRefused_.load()) {
             lastCatchUpUs_ = now;
-            std::fprintf(stderr, "[vdeck] %.2f s behind, jumping to %.2f\n", position - newest, position);
+            std::fprintf(stderr, "[%9.1f] [%s] %.2f s behind, jumping to %.2f\n", meloLogMs(), name_.c_str(),
+                         position - newest, position);
             const VideoFrame held = lastShown_;
             lk.unlock();
             seekTo(position);
@@ -316,6 +333,11 @@ std::optional<VideoFrame> VideoDeck::frameAt(double position) {
 
 void VideoDeck::markArrival() {
     sawSample_.store(true);
+    if (const double sent = seekSentMs_.exchange(0); sent > 0) {
+        std::fprintf(stderr, "[%9.1f] [%s] seek landed in %.0f ms\n", meloLogMs(), name_.c_str(),
+                     meloLogMs() - sent);
+        if (seekLandedCb_) seekLandedCb_();
+    }
     if (!firstFired_.exchange(true) && firstFrameCb_) firstFrameCb_();
 }
 

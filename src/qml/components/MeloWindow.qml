@@ -69,7 +69,7 @@ Window {
     readonly property real frB: frameOff ? 0 : Theme.borderBottom
     readonly property bool framed: frL > 0 || frT > 0 || frR > 0 || frB > 0
     // a frame with no title in it draws all its bands at the top, deeper than a thin top side
-    // (Translucent Aqua: 10 px of bands, a 4 px top): what it frames starts below them
+    // (10 px of bands over a 4 px top, say): what it frames starts below them
     readonly property real frTop: frameOff || (Theme.borderTitle && titled) ? frT : Theme.frameTopUntitled(frT)
     readonly property real titleGap: Theme.borderTitle ? (titled ? frT : frTop) : 0
     readonly property real titleCap: framed && !Theme.borderTitle ? Math.max(0, Theme.windowRadius - Math.max(frL, frT)) : Theme.windowRadius

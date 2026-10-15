@@ -774,7 +774,7 @@ async function toStreamResult(c: CachedStream): Promise<StreamResult> {
   return {
     ok: true,
     url: needsStreamRelay(c.raw)
-      ? await relayUrl(c.raw, c.headers, () => invalidateStreamCache(c.videoId))
+      ? await relayUrl(c.raw, c.headers, () => invalidateStreamCache(c.videoId), c.videoId)
       : c.raw,
     title: c.title, channel: c.channel, duration: c.duration, thumbnail: c.thumbnail,
   };
@@ -824,7 +824,7 @@ async function toVideoResult(c: CachedVideo): Promise<VideoStreamResult> {
     ok: true,
     videoId: c.videoId,
     url: needsStreamRelay(c.raw)
-      ? await relayUrl(c.raw, c.headers, () => invalidateVideoCache(c.videoId))
+      ? await relayUrl(c.raw, c.headers, () => invalidateVideoCache(c.videoId), c.videoId)
       : c.raw,
     still: c.still,
   };
@@ -976,7 +976,7 @@ export async function fetchStreamUrl(videoId: string): Promise<StreamResult | St
       thumbnail: meta?.thumbnail || "",
     };
   }
-  // Cache covers BOTH resolvers, so a prefetch or replay skips them entirely.
+  // The cache sits ahead of both resolvers, so a prefetch or replay runs neither.
   const hit = streamCache.get(videoId);
   if (hit && Date.now() < hit.expiresAt) {
     console.error(`[streams] cache hit for ${videoId}`);

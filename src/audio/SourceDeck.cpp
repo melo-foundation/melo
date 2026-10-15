@@ -26,12 +26,13 @@ static int s_teardownsActive = 0;
 
 SourceDeck::SourceDeck(GstElement* pipeline, GstElement* mixer, const std::string& uri,
                        bool deferLink)
-    : pipeline_(pipeline), mixer_(mixer) {
+    : uri_(uri), pipeline_(pipeline), mixer_(mixer) {
     static int n = 0;
     const int id = n++;
     auto nm = [&](const char* base) { return std::string(base) + std::to_string(id); };
 
-    bin_ = gst_bin_new(nm("deck").c_str());
+    name_ = nm("deck");
+    bin_ = gst_bin_new(name_.c_str());
 
     GstElement* decode  = gst_element_factory_make("uridecodebin", nm("dec").c_str());
     convert_            = gst_element_factory_make("audioconvert", nm("conv").c_str());
@@ -76,7 +77,7 @@ SourceDeck::SourceDeck(GstElement* pipeline, GstElement* mixer, const std::strin
                           &meloFirstAudioProbe, nullptr, nullptr);
     }
 
-    std::fprintf(stderr, "[%9.1f] [deck%d] built for %.90s%s\n", meloLogMs(), id, uri.c_str(),
+    std::fprintf(stderr, "[%9.1f] [%s] built for %.90s%s\n", meloLogMs(), name_.c_str(), uri.c_str(),
                  deferLink ? " (deferred link)" : "");
 
     // Last: probes registered above can already be firing, and until this is
@@ -107,7 +108,7 @@ void SourceDeck::linkToMixer(bool withOffset) {
         gst_pad_set_offset(ghostSrc_, (gint64)mixerTimelineNow());
     mixerPad_ = gst_element_request_pad_simple(mixer_, "sink_%u");
     if (gst_pad_link(ghostSrc_, mixerPad_) != GST_PAD_LINK_OK)
-        std::fprintf(stderr, "[deck] FAILED to link to mixer\n");
+        std::fprintf(stderr, "[%9.1f] [%s] FAILED to link to mixer\n", meloLogMs(), name_.c_str());
 }
 
 void SourceDeck::unlinkFromMixer() {
@@ -194,8 +195,8 @@ void SourceDeck::joinAllTeardowns() {
     std::unique_lock<std::mutex> l(s_teardownMutex);
     if (!s_teardownsCv.wait_for(l, std::chrono::seconds(5),
                                 [] { return s_teardownsActive == 0; }))
-        std::fprintf(stderr, "[deck] %d teardown worker(s) still busy at exit\n",
-                     s_teardownsActive);
+        std::fprintf(stderr, "[%9.1f] [deck] %d teardown worker(s) still busy at exit\n",
+                     meloLogMs(), s_teardownsActive);
 }
 
 void SourceDeck::syncState() {
@@ -256,11 +257,14 @@ bool SourceDeck::sendSeek(double seconds) {
         gint64(seconds * GST_SECOND));
 }
 
-void SourceDeck::restoreAfterFailedSeek() {
+bool SourceDeck::restoreAfterFailedSeek() {
     gulong segmentProbe = 0;
     gulong bufferProbe = 0;
     {
         std::lock_guard<std::mutex> lock(seekMutex_);
+        // Checked and cleared under one lock: once seekInFlight_ is false,
+        // seekOffsetProbe never links, so mixerPad_ below is ours alone.
+        if (!seekInFlight_) return false;
         seekInFlight_ = false;
         reseekPosted_ = false;
         segmentProbe = seekSegmentProbeId_;
@@ -273,6 +277,22 @@ void SourceDeck::restoreAfterFailedSeek() {
     if (segmentProbe) gst_pad_remove_probe(ghostSrc_, segmentProbe);
     if (bufferProbe) gst_pad_remove_probe(ghostSrc_, bufferProbe);
     if (!mixerPad_) linkToMixer(true);   // restore the still-current stream
+    return true;
+}
+
+bool SourceDeck::seekPending() const {
+    std::lock_guard<std::mutex> lock(seekMutex_);
+    return seekInFlight_;
+}
+
+double SourceDeck::requestedSeek() const {
+    std::lock_guard<std::mutex> lock(seekMutex_);
+    return requestedSeek_;
+}
+
+double SourceDeck::seekWaitedMs() const {
+    std::lock_guard<std::mutex> lock(seekMutex_);
+    return seekInFlight_ ? meloLogMs() - seekStartedMs_ : -1;
 }
 
 bool SourceDeck::seekTo(double seconds) {
@@ -290,6 +310,7 @@ bool SourceDeck::seekTo(double seconds) {
         if (wasLinked) {
             seekInFlight_ = true;
             inFlightSeek_ = seconds;
+            seekStartedMs_ = meloLogMs();
         }
     }
 
@@ -322,6 +343,7 @@ bool SourceDeck::continuePendingSeek() {
         if (!seekInFlight_) return false;
         target = requestedSeek_;
         inFlightSeek_ = target;
+        seekStartedMs_ = meloLogMs();
         reseekPosted_ = false;
         // The old request's SEGMENT already reached the probe. Wait for the
         // replacement request's segment before accepting another buffer.
@@ -381,8 +403,8 @@ GstPadProbeReturn SourceDeck::seekOffsetProbe(GstPad*, GstPadProbeInfo* info, gp
             self->linkToMixer(true);
             GstBuffer* buf = GST_PAD_PROBE_INFO_BUFFER(info);
             std::fprintf(stderr,
-                         "[deck] post-seek rejoin: timeline=%.2f bufPts=%.2f\n",
-                         double(now) / GST_SECOND,
+                         "[%9.1f] [%s] post-seek rejoin: timeline=%.2f bufPts=%.2f\n",
+                         meloLogMs(), self->name_.c_str(), double(now) / GST_SECOND,
                          buf ? double(GST_BUFFER_PTS(buf)) / GST_SECOND : -1.0);
             return GST_PAD_PROBE_REMOVE;
         }
@@ -413,8 +435,10 @@ GstPadProbeReturn SourceDeck::eosProbe(GstPad*, GstPadProbeInfo* info, gpointer 
     SourceDeck* self = g.self;
     if (!self) return GST_PAD_PROBE_REMOVE;
     GstEvent* ev = GST_PAD_PROBE_INFO_EVENT(info);
-    if (ev && GST_EVENT_TYPE(ev) == GST_EVENT_EOS && self->eosCb_)
-        self->eosCb_();   // NB: GStreamer streaming thread — marshal in the receiver
+    if (ev && GST_EVENT_TYPE(ev) == GST_EVENT_EOS) {
+        std::fprintf(stderr, "[%9.1f] [%s] EOS\n", meloLogMs(), self->name_.c_str());
+        if (self->eosCb_) self->eosCb_();   // NB: GStreamer streaming thread — marshal in the receiver
+    }
     return GST_PAD_PROBE_OK;
 }
 

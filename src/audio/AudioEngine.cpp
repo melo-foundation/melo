@@ -6,7 +6,9 @@
 #include "VideoDeck.h"
 
 #include <gst/audio/streamvolume.h>
+#include <gst/base/gstaggregator.h>
 #include <gst/base/gstbasesink.h>
+#include "../core/LogClock.h"
 
 #include <QUrl>
 #include <algorithm>
@@ -26,9 +28,12 @@ AudioEngine::AudioEngine(PcmQueue& vizQueue, QObject* parent)
     connect(&posTimer_, &QTimer::timeout, this, [this] {
         // The INCOMING deck owns the display as soon as a crossfade begins:
         // progress tracks the new song, not the fading one.
+        watchStuckSeeks();
         SourceDeck* d = incoming_ ? incoming_.get() : current_.get();
-        if (!d || paused_) return;
-        emit positionTick(d->positionSeconds(), d->durationSeconds());
+        if (!d || paused_) { stallTicks_ = 0; return; }
+        const double pos = position();
+        watchStall(pos);
+        emit positionTick(pos, duration());
     });
     posTimer_.start();
 
@@ -72,7 +77,7 @@ void AudioEngine::buildPipeline() {
     const QString panStage = panFactory ? QStringLiteral("audiopanorama name=pan method=simple ! ")
                                         : QString();
     if (panFactory) gst_object_unref(panFactory);
-    else std::fprintf(stderr, "[audio] audiopanorama unavailable — balance disabled\n");
+    else std::fprintf(stderr, "[%9.1f] [audio] audiopanorama unavailable — balance disabled\n", meloLogMs());
     const auto build = [&err, &panStage](const QString& sink) {
         g_clear_error(&err);
         return gst_parse_launch(QStringLiteral(
@@ -102,7 +107,7 @@ void AudioEngine::buildPipeline() {
     };
     const bool pulseUsable = fakeSink || sinkOpens("pulsesink");
     if (!fakeSink && !pulseUsable)
-        std::fprintf(stderr, "[audio] pulsesink will not open a device — falling back to autoaudiosink\n");
+        std::fprintf(stderr, "[%9.1f] [audio] pulsesink will not open a device — falling back to autoaudiosink\n", meloLogMs());
 
     pipeline_ = (fakeSink || pulseUsable)
         ? build(fakeSink ? "fakesink name=fsink sync=true"
@@ -111,7 +116,7 @@ void AudioEngine::buildPipeline() {
     // Fallback keeps a volume element in the audio branch (buffered but correct).
     if (!pipeline_ && !fakeSink) pipeline_ = build("volume name=fbvol ! autoaudiosink name=autosink");
     if (!pipeline_) {
-        std::fprintf(stderr, "[audio] pipeline build failed: %s\n", err ? err->message : "?");
+        std::fprintf(stderr, "[%9.1f] [audio] pipeline build failed: %s\n", meloLogMs(), err ? err->message : "?");
         return;
     }
     mixer_    = gst_bin_get_by_name(GST_BIN(pipeline_), "mix");
@@ -128,7 +133,7 @@ void AudioEngine::buildPipeline() {
     // can return it (volume then never reaches the sink; full blast).
     sinkVol_ = gst_bin_get_by_name(GST_BIN(pipeline_), "asink");
     if (!sinkVol_) sinkVol_ = gst_bin_get_by_name(GST_BIN(pipeline_), "fbvol");
-    std::fprintf(stderr, "[audio] volume applies at: %s\n",
+    std::fprintf(stderr, "[%9.1f] [audio] volume applies at: %s\n", meloLogMs(),
                  sinkVol_ ? GST_OBJECT_NAME(sinkVol_) : "NONE (fakesink test build)");
     appsink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "viz");
     audioQueue_ = gst_bin_get_by_name(GST_BIN(pipeline_), "aq");
@@ -155,21 +160,107 @@ void AudioEngine::buildPipeline() {
 
     GstBus* bus = gst_element_get_bus(pipeline_);
     gst_bus_add_watch(bus, [](GstBus*, GstMessage* msg, gpointer user) -> gboolean {
-        auto* self = static_cast<AudioEngine*>(user);
-        if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR) {
-            GError* e = nullptr; gchar* dbg = nullptr;
-            gst_message_parse_error(msg, &e, &dbg);
-            std::fprintf(stderr, "[bus] ERROR from %s: %s | %s\n",
-                         GST_OBJECT_NAME(msg->src), e->message, dbg ? dbg : "");
-            QMetaObject::invokeMethod(self, [self, m = QString::fromUtf8(e->message)] {
-                self->pipelineErrored_ = true;   // next loadTrack does a full NULL reset
-                emit self->pipelineError(m);
-            }, Qt::QueuedConnection);
-            g_error_free(e); g_free(dbg);
-        }
+        static_cast<AudioEngine*>(user)->onBusMessage(msg);
         return TRUE;
     }, this);
     gst_object_unref(bus);
+}
+
+// Main thread (the bus watch runs on the default GLib context).
+void AudioEngine::onBusMessage(GstMessage* msg) {
+    const char* from = GST_OBJECT_NAME(msg->src);
+    switch (GST_MESSAGE_TYPE(msg)) {
+    case GST_MESSAGE_ERROR: {
+        GError* e = nullptr; gchar* dbg = nullptr;
+        gst_message_parse_error(msg, &e, &dbg);
+        std::fprintf(stderr, "[%9.1f] [bus] ERROR from %s: %s | %s\n", meloLogMs(),
+                     from, e->message, dbg ? dbg : "");
+        handleBusError(msg->src, QString::fromUtf8(e->message));
+        g_error_free(e); g_free(dbg);
+        break;
+    }
+    // logged only: what the sound server and the sink say besides errors
+    case GST_MESSAGE_WARNING: {
+        GError* e = nullptr; gchar* dbg = nullptr;
+        gst_message_parse_warning(msg, &e, &dbg);
+        std::fprintf(stderr, "[%9.1f] [bus] warning from %s: %s | %s\n", meloLogMs(),
+                     from, e->message, dbg ? dbg : "");
+        g_error_free(e); g_free(dbg);
+        break;
+    }
+    case GST_MESSAGE_REQUEST_STATE: {
+        GstState s = GST_STATE_VOID_PENDING;
+        gst_message_parse_request_state(msg, &s);
+        std::fprintf(stderr, "[%9.1f] [bus] %s asks for %s\n", meloLogMs(),
+                     from, gst_element_state_get_name(s));
+        break;
+    }
+    case GST_MESSAGE_CLOCK_LOST:
+        std::fprintf(stderr, "[%9.1f] [bus] clock lost from %s\n", meloLogMs(), from);
+        break;
+    // the pipeline's and the audible sink's only; every element posts one
+    case GST_MESSAGE_STATE_CHANGED: {
+        if (GST_ELEMENT_CAST(msg->src) != pipeline_ && GST_ELEMENT_CAST(msg->src) != audibleSink_)
+            break;
+        GstState was = GST_STATE_VOID_PENDING, now = GST_STATE_VOID_PENDING,
+                 pending = GST_STATE_VOID_PENDING;
+        gst_message_parse_state_changed(msg, &was, &now, &pending);
+        std::fprintf(stderr, "[%9.1f] [bus] %s %s -> %s%s%s\n", meloLogMs(), from,
+                     gst_element_state_get_name(was), gst_element_state_get_name(now),
+                     pending != GST_STATE_VOID_PENDING ? ", pending " : "",
+                     pending != GST_STATE_VOID_PENDING ? gst_element_state_get_name(pending) : "");
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+// Only an error from the current deck or a shared element is the playing
+// track's. One from the incoming deck drops that deck and still reports, since
+// the coordinator already shows the incoming track; one from a retiring or
+// torn-down deck is logged and dropped.
+void AudioEngine::handleBusError(GstObject* src, const QString& message) {
+    const auto inDeck = [src](const SourceDeck* d) {
+        return d && d->bin() && (GST_OBJECT(d->bin()) == src
+                                 || gst_object_has_as_ancestor(src, GST_OBJECT(d->bin())));
+    };
+    if (!messageIsFromCurrentDeck(src)) {
+        if (inDeck(incoming_.get())) {
+            std::fprintf(stderr, "[%9.1f] [bus] error is the incoming deck's (%s): dropping it\n",
+                         meloLogMs(), GST_OBJECT_NAME(incoming_->bin()));
+            dropIncoming();
+            QMetaObject::invokeMethod(this, [this, message] { emit pipelineError(message); },
+                                      Qt::QueuedConnection);
+            return;
+        }
+        for (auto it = retiring_.begin(); it != retiring_.end(); ++it) {
+            if (!inDeck(it->get())) continue;
+            std::fprintf(stderr, "[%9.1f] [bus] error is a retiring deck's (%s): dropping it\n",
+                         meloLogMs(), GST_OBJECT_NAME((*it)->bin()));
+            retiring_.erase(it);
+            return;
+        }
+        std::fprintf(stderr, "[%9.1f] [bus] error from a deck already gone: ignored\n", meloLogMs());
+        return;
+    }
+    QMetaObject::invokeMethod(this, [this, message] {
+        pipelineErrored_ = true;   // next loadTrack does a full NULL reset
+        emit pipelineError(message);
+    }, Qt::QueuedConnection);
+}
+
+// The outgoing deck carries on at full volume, as if the fade never began.
+void AudioEngine::dropIncoming() {
+    if (incoming_.get() == replacing_) replacing_ = nullptr;
+    fadeTimer_.stop();
+    fadeFrozen_ = false;
+    fadePos_ = 0;
+    pendingIncomingSeek_ = -1;
+    incoming_.reset();
+    incomingTrack_.clear();
+    if (current_) current_->setVolume(1.0);
+    if (videoIncoming_) { videoIncoming_.reset(); emit videoChanged(); }
 }
 
 // True when the element that posted a message sits inside the deck that is
@@ -178,6 +269,8 @@ void AudioEngine::buildPipeline() {
 bool AudioEngine::messageIsFromCurrentDeck(GstObject* src) const {
     if (!src) return true;
     if (GST_ELEMENT_CAST(src) == pipeline_) return true;
+    // a message queued before its deck left the pipeline
+    if (!gst_object_has_as_ancestor(src, GST_OBJECT(pipeline_))) return false;
     const auto inDeck = [src](const SourceDeck* d) {
         return d && d->bin() && (GST_OBJECT(d->bin()) == src
                                  || gst_object_has_as_ancestor(src, GST_OBJECT(d->bin())));
@@ -233,6 +326,7 @@ std::unique_ptr<SourceDeck> AudioEngine::makeDeck(const QString& pathOrUri, bool
 
 void AudioEngine::loadTrack(const QString& pathOrUri, const QString& trackId) {
     fadeTimer_.stop();
+    forgetReplacement();
     incoming_.reset();
     retiring_.clear();      // hard cut: tear down everything old
     current_.reset();
@@ -241,7 +335,7 @@ void AudioEngine::loadTrack(const QString& pathOrUri, const QString& trackId) {
     videoIncoming_.reset();
     clearHold();
     if (videoPending_ && !videoPendingTrack_.isEmpty() && !trackId.isEmpty() && videoPendingTrack_ != trackId) {
-        std::fprintf(stderr, "[video] prerolled deck for %s dropped, loading %s\n",
+        std::fprintf(stderr, "[%9.1f] [video] prerolled deck for %s dropped, loading %s\n", meloLogMs(),
                      qPrintable(videoPendingTrack_), qPrintable(trackId));
         videoPending_.reset();
     }
@@ -294,10 +388,11 @@ void AudioEngine::crossfadeTo(const QString& pathOrUri, double seconds, const QS
         retiring_.push_back(std::move(current_));
         promoteIncoming();
     }
+    forgetReplacement();
     incoming_ = makeDeck(pathOrUri, /*deferLink=*/true);   // don't stall the mixer while buffering
     incomingTrack_ = trackId;
     if (videoPending_ && !videoPendingTrack_.isEmpty() && !trackId.isEmpty() && videoPendingTrack_ != trackId) {
-        std::fprintf(stderr, "[video] prerolled deck for %s dropped, fading to %s\n",
+        std::fprintf(stderr, "[%9.1f] [video] prerolled deck for %s dropped, fading to %s\n", meloLogMs(),
                      qPrintable(videoPendingTrack_), qPrintable(trackId));
         videoPending_.reset();
     }
@@ -313,15 +408,15 @@ void AudioEngine::crossfadeTo(const QString& pathOrUri, double seconds, const QS
     // The fade starts only when the incoming deck actually produces audio —
     // starting on URL arrival fades the outgoing track into preroll silence.
     SourceDeck* raw = incoming_.get();
-    std::fprintf(stderr, "[xfade] deck created, waiting for first buffer (fade %.1fs)\n", seconds);
+    std::fprintf(stderr, "[%9.1f] [xfade] deck created, waiting for first buffer (fade %.1fs)\n", meloLogMs(), seconds);
     incoming_->onFirstBuffer([this, raw, seconds] {
-        std::fprintf(stderr, "[xfade] first buffer from incoming deck\n");
+        std::fprintf(stderr, "[%9.1f] [xfade] first buffer from incoming deck\n", meloLogMs());
         QMetaObject::invokeMethod(this, [this, raw, seconds] {
             if (incoming_.get() != raw) {
-                std::fprintf(stderr, "[xfade] fade-start ignored: deck superseded\n");
+                std::fprintf(stderr, "[%9.1f] [xfade] fade-start ignored: deck superseded\n", meloLogMs());
                 return;
             }
-            std::fprintf(stderr, "[xfade] fade started\n");
+            std::fprintf(stderr, "[%9.1f] [xfade] fade started\n", meloLogMs());
             if (pendingIncomingSeek_ >= 0) {   // silence-skip that raced preroll
                 incoming_->seekTo(pendingIncomingSeek_);
                 pendingIncomingSeek_ = -1;
@@ -343,7 +438,7 @@ void AudioEngine::onFadeTick() {
     if (current_)  current_->setVolume(vOut);
     if (incoming_) incoming_->setVolume(vIn);
     if (p >= 1.0) {
-        std::fprintf(stderr, "[xfade] fade complete\n");
+        std::fprintf(stderr, "[%9.1f] [xfade] fade complete\n", meloLogMs());
         fadeTimer_.stop();
         retiring_.push_back(std::move(current_));
         promoteIncoming();
@@ -364,6 +459,7 @@ void AudioEngine::promoteIncoming() {
 void AudioEngine::stop() {
     dropVideoDecks();
     fadeTimer_.stop();
+    forgetReplacement();
     incoming_.reset();
     retiring_.clear();
     current_.reset();
@@ -396,11 +492,21 @@ void AudioEngine::finishFadeNow() {
     promoteIncoming();
     emit videoChanged();
     retiring_.clear();
-    std::fprintf(stderr, "[xfade] fade cut short\n");
+    std::fprintf(stderr, "[%9.1f] [xfade] fade cut short\n", meloLogMs());
 }
 
 void AudioEngine::seekTo(double seconds, bool cutFade) {
+    seekToDecks(seconds, cutFade);
+    emit seeked();
+}
+
+void AudioEngine::seekToDecks(double seconds, bool cutFade) {
     const double s = std::max(0.0, seconds);
+    if (incoming_ && incoming_.get() == replacing_) {
+        pendingIncomingSeek_ = s;   // applied on its first buffer
+        if (videoIncoming_) videoIncoming_->seekTo(videoPositionFor(s));
+        return;
+    }
     if (incoming_) {
         if (!cutFade) {
             // internal silence-skip: it targets the INCOMING track. Leave the
@@ -427,6 +533,10 @@ std::unique_ptr<VideoDeck> AudioEngine::makeVideoDeck(const QString& url) {
     deck->onFirstFrame([this] {
         QMetaObject::invokeMethod(this, [this] { emit videoChanged(); }, Qt::QueuedConnection);
     });
+    // a paused picture fetches from when the new place's frame is there, not from the seek
+    deck->onSeekLanded([this] {
+        QMetaObject::invokeMethod(this, [this] { emit seeked(); }, Qt::QueuedConnection);
+    });
     return deck;
 }
 
@@ -445,8 +555,8 @@ void AudioEngine::dropFailedVideoDecks() {
     bool dropped = false;
     for (auto* d : {&videoCurrent_, &videoIncoming_, &videoPending_}) {
         if (*d && (*d)->failed()) {
+            std::fprintf(stderr, "[%9.1f] [video] %s failed, dropping\n", meloLogMs(), (*d)->name());
             d->reset();
-            std::fprintf(stderr, "[video] deck failed, dropping\n");
             dropped = true;
         }
     }
@@ -475,7 +585,7 @@ void AudioEngine::attachVideo(const QString& url, bool incoming, const QString& 
     if (!audio) return;
     const QString& playing = incoming_ ? incomingTrack_ : currentTrack_;
     if (!trackId.isEmpty() && trackId != playing) {
-        std::fprintf(stderr, "[video] attach for %s refused, playing %s\n",
+        std::fprintf(stderr, "[%9.1f] [video] attach for %s refused, playing %s\n", meloLogMs(),
                      qPrintable(trackId), qPrintable(playing));
         return;
     }
@@ -521,8 +631,8 @@ void AudioEngine::logOutputLeadOnce() {
     if (outputLeadLogged_) return;
     outputLeadLogged_ = true;
     const OutputLead l = outputLeadParts();
-    std::fprintf(stderr, "[video] output lead: queue %d ms + sink %d ms (sync %+d ms)\n",
-                 int(std::lround(l.queue * 1000)), int(std::lround(l.sink * 1000)), videoSyncMs_);
+    std::fprintf(stderr, "[%9.1f] [video] output lead: queue %d ms + sink %d ms (sync %+d ms)\n",
+                 meloLogMs(), int(std::lround(l.queue * 1000)), int(std::lround(l.sink * 1000)), videoSyncMs_);
 }
 
 double AudioEngine::videoPositionFor(double audioSeconds) const {
@@ -538,7 +648,7 @@ VideoView AudioEngine::videoView() {
     // under it, and never again once the view has gone empty.
     if (incoming_) {
         if (videoIncoming_)
-            if (auto f = videoIncoming_->frameAt(videoPositionFor(incoming_->positionSeconds()))) v.incoming = f->px;
+            if (auto f = videoIncoming_->frameAt(videoPositionFor(position()))) v.incoming = f->px;
         if (!v.incoming) { dissolveOutgoing_ = false; return v; }
         if (dissolveOutgoing_ && videoCurrent_ && current_)
             if (auto f = videoCurrent_->frameAt(videoPositionFor(current_->positionSeconds()))) v.main = f->px;
@@ -614,10 +724,153 @@ void AudioEngine::setBalance(double v) {
     if (pan_) g_object_set(pan_, "panorama", static_cast<gfloat>(balance_), nullptr);
 }
 
+// A replacement deck still prerolling counts as the seek it carries.
+bool AudioEngine::seekPending() const {
+    if (incoming_ && incoming_.get() == replacing_) return true;
+    const SourceDeck* d = incoming_ ? incoming_.get() : current_.get();
+    return d && d->seekPending();
+}
+
 double AudioEngine::position() const {
+    if (incoming_ && incoming_.get() == replacing_) return pendingIncomingSeek_;
     const SourceDeck* d = incoming_ ? incoming_.get() : current_.get();
     return d ? d->positionSeconds() : -1;
 }
+
+void AudioEngine::forgetReplacement() {
+    replacing_ = replacement_ = stallReported_ = nullptr;
+}
+
+// A seek with no data for seekTimeoutMs_ cannot recover in its own deck: the
+// demuxer holds it while the source is blocked, so a re-sent seek never
+// reaches the source. The deck is replaced; a replacement that stalls too
+// reports the track as failed, once.
+void AudioEngine::watchStuckSeeks() {
+    if (replacement_ && replacement_ != replacing_ && replacement_ == incoming_.get()
+        && !incoming_->seekPending())
+        replacement_ = nullptr;   // landed; a later stall is a new one
+    if (replacement_ && replacement_ != replacing_ && replacement_ == current_.get()
+        && !current_->seekPending())
+        replacement_ = nullptr;
+    if (replacing_ && replacing_ == incoming_.get()
+        && meloLogMs() - replaceStartedMs_ >= seekTimeoutMs_) {
+        reportStalled(incoming_.get(), meloLogMs() - replaceStartedMs_);
+        return;
+    }
+    if (incoming_) {
+        if (incoming_.get() != replacing_ && incoming_->seekWaitedMs() >= seekTimeoutMs_)
+            replaceStuckDeck(true);
+        return;   // a seek on the outgoing deck ends with the fade
+    }
+    if (current_ && current_->seekWaitedMs() >= seekTimeoutMs_) replaceStuckDeck(false);
+}
+
+void AudioEngine::reportStalled(SourceDeck* d, double waitedMs) {
+    if (d == stallReported_) return;
+    std::fprintf(stderr, "[%9.1f] [%s] replacement has no data after %.1f s; stream stalled\n",
+                 meloLogMs(), GST_OBJECT_NAME(d->bin()), waitedMs / 1000.0);
+    replacing_ = replacement_ = nullptr;
+    stallReported_ = d;
+    QMetaObject::invokeMethod(this, [this] { emit pipelineError(QStringLiteral("stream stalled")); },
+                              Qt::QueuedConnection);
+}
+
+// The stuck deck is never relinked: a linked input with no data stalls the
+// mixer. A fresh deck on the same URI fades in over it (0.3 s) and takes the
+// newest target on its first buffer; the bound video deck stays bound.
+void AudioEngine::replaceStuckDeck(bool isIncoming) {
+    SourceDeck* stuck = isIncoming ? incoming_.get() : current_.get();
+    const double waited = stuck->seekWaitedMs();
+    if (stuck == replacement_) { reportStalled(stuck, waited); return; }
+    if (stuck == stallReported_) return;
+    const double target = std::max(0.0, stuck->requestedSeek());
+    std::fprintf(stderr, "[%9.1f] [%s] seek to %.2f s has no data after %.1f s; replacing the deck\n",
+                 meloLogMs(), GST_OBJECT_NAME(stuck->bin()), target, waited / 1000.0);
+    replaceDuration_ = stuck->durationSeconds();
+    auto deck = makeDeck(QString::fromStdString(stuck->uri()), /*deferLink=*/true);
+    deck->setVolume(0.0);
+    SourceDeck* raw = deck.get();
+    fadeTimer_.stop();
+    fadeFrozen_ = false;
+    if (isIncoming) {
+        // the outgoing deck holds its level; the fade resumes where it was
+        retiring_.push_back(std::move(incoming_));
+        incoming_ = std::move(deck);
+    } else {
+        incoming_ = std::move(deck);
+        incomingTrack_ = currentTrack_;
+        videoIncoming_ = std::move(videoCurrent_);
+        dissolveOutgoing_ = false;
+        fadePos_ = 0;
+        fadeStep_ = 0.05 / 0.3;
+    }
+    pendingIncomingSeek_ = target;
+    replacing_ = replacement_ = raw;
+    replaceStartedMs_ = meloLogMs();
+    incoming_->onFirstBuffer([this, raw] {
+        QMetaObject::invokeMethod(this, [this, raw] {
+            if (incoming_.get() != raw || replacing_ != raw) return;
+            replacing_ = nullptr;
+            if (pendingIncomingSeek_ >= 0) {
+                incoming_->seekTo(pendingIncomingSeek_);
+                pendingIncomingSeek_ = -1;
+            }
+            if (paused_) fadeFrozen_ = true;
+            else fadeTimer_.start();
+        }, Qt::QueuedConnection);
+    });
+    incoming_->syncState();
+}
+// Playing with the position still for 3 s: log the output's state once, and
+// once more when it moves again.
+void AudioEngine::watchStall(double pos) {
+    if (std::abs(pos - stallPos_) > 0.01) {
+        if (stallTicks_ >= 12)
+            std::fprintf(stderr, "[%9.1f] [stall] moving again at %.2f s\n", meloLogMs(), pos);
+        stallPos_ = pos;
+        stallTicks_ = 0;
+        return;
+    }
+    if (++stallTicks_ == 12) logStall();
+}
+
+void AudioEngine::logStall() const {
+    const auto state = [](GstElement* e) {
+        if (!e) return std::string("none");
+        GstState cur = GST_STATE_VOID_PENDING, pend = GST_STATE_VOID_PENDING;
+        const GstStateChangeReturn r = gst_element_get_state(e, &cur, &pend, 0);
+        std::string s = gst_element_state_get_name(cur);
+        if (pend != GST_STATE_VOID_PENDING) s += std::string("→") + gst_element_state_get_name(pend);
+        if (r == GST_STATE_CHANGE_ASYNC) s += " (async)";
+        if (r == GST_STATE_CHANGE_FAILURE) s += " (failed)";
+        return s;
+    };
+    std::fprintf(stderr, "[%9.1f] [stall] position %.2f s still for 3 s; pipeline %s, sink %s, mixer at %.2f s%s\n",
+                 meloLogMs(), stallPos_, state(pipeline_).c_str(), state(audibleSink_).c_str(),
+                 mixerPositionSeconds(), pipelineErrored_ ? ", errored" : "");
+    const auto deck = [&](const char* role, const SourceDeck* d) {
+        if (d) std::fprintf(stderr, "[%9.1f] [stall]   %s %s: %s, at %.2f s\n", meloLogMs(), role, GST_OBJECT_NAME(d->bin()),
+                            state(d->bin()).c_str(), d->positionSeconds());
+    };
+    deck("current", current_.get());
+    deck("incoming", incoming_.get());
+    for (const auto& r : retiring_) deck("retiring", r.get());
+    if (!mixer_) return;
+    GST_OBJECT_LOCK(mixer_);
+    for (GList* l = GST_ELEMENT(mixer_)->sinkpads; l; l = l->next) {
+        GstAggregatorPad* p = GST_AGGREGATOR_PAD(l->data);
+        GstPad* peer = gst_pad_get_peer(GST_PAD(p));
+        GstObject* from = peer ? gst_object_get_parent(GST_OBJECT(peer)) : nullptr;
+        std::fprintf(stderr, "[%9.1f] [stall]   mixer %s from %s: %s%s\n", meloLogMs(), GST_OBJECT_NAME(p),
+                     from ? GST_OBJECT_NAME(from) : "nothing",
+                     gst_aggregator_pad_has_buffer(p) ? "buffer waiting" : "no buffer",
+                     gst_aggregator_pad_is_eos(p) ? ", eos" : "");
+        if (from) gst_object_unref(from);
+        if (peer) gst_object_unref(peer);
+    }
+    GST_OBJECT_UNLOCK(mixer_);
+}
+
 double AudioEngine::mixerPositionSeconds() const {
     gint64 pos = 0;
     if (mixer_ && gst_element_query_position(mixer_, GST_FORMAT_TIME, &pos))
@@ -625,6 +878,7 @@ double AudioEngine::mixerPositionSeconds() const {
     return -1;
 }
 double AudioEngine::duration() const {
+    if (incoming_ && incoming_.get() == replacing_) return replaceDuration_;
     const SourceDeck* d = incoming_ ? incoming_.get() : current_.get();
     return d ? d->durationSeconds() : -1;
 }
