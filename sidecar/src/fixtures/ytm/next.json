@@ -1,0 +1,631 @@
+{
+ "contents": {
+  "singleColumnMusicWatchNextResultsRenderer": {
+   "tabbedRenderer": {
+    "watchNextTabbedResultsRenderer": {
+     "tabs": [
+      {
+       "tabRenderer": {
+        "title": "Up next",
+        "content": {
+         "musicQueueRenderer": {
+          "content": {
+           "playlistPanelRenderer": {
+            "contents": [
+             {
+              "playlistPanelVideoRenderer": {
+               "title": {
+                "runs": [
+                 {
+                  "text": "Get Lucky (Official Audio) (feat. Pharrell Williams & Nile Rodgers)"
+                 }
+                ]
+               },
+               "longBylineText": {
+                "runs": [
+                 {
+                  "text": "Daft Punk",
+                  "navigationEndpoint": {
+                   "browseEndpoint": {
+                    "browseId": "UCRr1xG_2WIDs18a6cIiCxeA",
+                    "browseEndpointContextSupportedConfigs": {
+                     "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                     }
+                    }
+                   }
+                  }
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "881M views"
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "5.4M likes"
+                 }
+                ]
+               },
+               "thumbnail": {
+                "thumbnails": [
+                 {
+                  "url": "https://i.ytimg.com/vi/5NV6Rdv1a3I/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3mvsP8mFDRro1d2OpZBLOyPo9fHxA",
+                  "width": 400,
+                  "height": 225
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/5NV6Rdv1a3I/hq720.jpg?sqp=-oaymwEKCKAGEMIDIABIWg&rs=AMzJL3lJswswkp9oMkQnzpawS-ms0dNXng",
+                  "width": 800,
+                  "height": 450
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/5NV6Rdv1a3I/hq720.jpg?sqp=-oaymwEKCNUGEN8DIABIWg&rs=AMzJL3kWp73LkZiWlHm7uSS6X8A7WatGsg",
+                  "width": 853,
+                  "height": 479
+                 }
+                ]
+               },
+               "lengthText": {
+                "runs": [
+                 {
+                  "text": "4:09"
+                 }
+                ]
+               },
+               "selected": true,
+               "videoId": "5NV6Rdv1a3I",
+               "shortBylineText": {
+                "runs": [
+                 {
+                  "text": "Daft Punk"
+                 }
+                ]
+               },
+               "playlistSetVideoId": "56B44F6D10557CC6",
+               "canReorder": true,
+               "queueNavigationEndpoint": {
+                "queueAddEndpoint": {
+                 "queueTarget": {
+                  "videoId": "5NV6Rdv1a3I"
+                 },
+                 "queueInsertPosition": "INSERT_AT_END",
+                 "params": "Q0FJJTNE"
+                }
+               }
+              }
+             },
+             {
+              "playlistPanelVideoRenderer": {
+               "title": {
+                "runs": [
+                 {
+                  "text": "One More Time"
+                 }
+                ]
+               },
+               "longBylineText": {
+                "runs": [
+                 {
+                  "text": "Daft Punk",
+                  "navigationEndpoint": {
+                   "browseEndpoint": {
+                    "browseId": "UCRr1xG_2WIDs18a6cIiCxeA",
+                    "browseEndpointContextSupportedConfigs": {
+                     "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                     }
+                    }
+                   }
+                  }
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "621M views"
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "3.6M likes"
+                 }
+                ]
+               },
+               "thumbnail": {
+                "thumbnails": [
+                 {
+                  "url": "https://i.ytimg.com/vi/FGBhQbmPwH8/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3n3_qY4XRLapf4YMTv5EuAp3xtbfw",
+                  "width": 400,
+                  "height": 225
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/FGBhQbmPwH8/hq720.jpg?sqp=-oaymwEKCKAGEMIDIABIWg&rs=AMzJL3kkO-1yipseFU6gvv7RYXwGeDzUlQ",
+                  "width": 800,
+                  "height": 450
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/FGBhQbmPwH8/hq720.jpg?sqp=-oaymwEKCNUGEN8DIABIWg&rs=AMzJL3nD-EQlXTRI8fFg7J0ZZKKWtHaH2Q",
+                  "width": 853,
+                  "height": 479
+                 }
+                ]
+               },
+               "lengthText": {
+                "runs": [
+                 {
+                  "text": "5:22"
+                 }
+                ]
+               },
+               "selected": false,
+               "videoId": "FGBhQbmPwH8",
+               "shortBylineText": {
+                "runs": [
+                 {
+                  "text": "Daft Punk"
+                 }
+                ]
+               },
+               "playlistSetVideoId": "289F4A46DF0A30D2",
+               "canReorder": true,
+               "queueNavigationEndpoint": {
+                "queueAddEndpoint": {
+                 "queueTarget": {
+                  "videoId": "FGBhQbmPwH8"
+                 },
+                 "queueInsertPosition": "INSERT_AT_END",
+                 "params": "Q0FJJTNE"
+                }
+               }
+              }
+             },
+             {
+              "playlistPanelVideoRenderer": {
+               "title": {
+                "runs": [
+                 {
+                  "text": "Blurred Lines (feat. Pharrell & T.I.)"
+                 }
+                ]
+               },
+               "longBylineText": {
+                "runs": [
+                 {
+                  "text": "Robin Thicke",
+                  "navigationEndpoint": {
+                   "browseEndpoint": {
+                    "browseId": "UCyYnxJIyBDCIkDIpE7lsUkw",
+                    "browseEndpointContextSupportedConfigs": {
+                     "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                     }
+                    }
+                   }
+                  }
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "996M views"
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "4.4M likes"
+                 }
+                ]
+               },
+               "thumbnail": {
+                "thumbnails": [
+                 {
+                  "url": "https://i.ytimg.com/vi/yyDUC1LUXSU/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3ktPXcizhvfC_PL3sfLrhU9GK1SCA",
+                  "width": 400,
+                  "height": 225
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/yyDUC1LUXSU/hq720.jpg?sqp=-oaymwEKCKAGEMIDIABIWg&rs=AMzJL3kf_WT0Z1lRIDsvbTh4oNIEZsfk6w",
+                  "width": 800,
+                  "height": 450
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/yyDUC1LUXSU/hq720.jpg?sqp=-oaymwEKCNUGEN8DIABIWg&rs=AMzJL3lu0QkfXyK4QWBeTM7UtT0FO8_Shw",
+                  "width": 853,
+                  "height": 479
+                 }
+                ]
+               },
+               "lengthText": {
+                "runs": [
+                 {
+                  "text": "4:32"
+                 }
+                ]
+               },
+               "selected": false,
+               "videoId": "yyDUC1LUXSU",
+               "shortBylineText": {
+                "runs": [
+                 {
+                  "text": "Robin Thicke"
+                 }
+                ]
+               },
+               "playlistSetVideoId": "017208FAA85233F9",
+               "canReorder": true,
+               "queueNavigationEndpoint": {
+                "queueAddEndpoint": {
+                 "queueTarget": {
+                  "videoId": "yyDUC1LUXSU"
+                 },
+                 "queueInsertPosition": "INSERT_AT_END",
+                 "params": "Q0FJJTNE"
+                }
+               }
+              }
+             },
+             {
+              "playlistPanelVideoRenderer": {
+               "title": {
+                "runs": [
+                 {
+                  "text": "Passion (feat. Nile Rodgers)"
+                 }
+                ]
+               },
+               "longBylineText": {
+                "runs": [
+                 {
+                  "text": "Roosevelt",
+                  "navigationEndpoint": {
+                   "browseEndpoint": {
+                    "browseId": "UC7jTDrwBF4FNMX_zzaIC5mQ",
+                    "browseEndpointContextSupportedConfigs": {
+                     "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                     }
+                    }
+                   }
+                  }
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "1M views"
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "14K likes"
+                 }
+                ]
+               },
+               "thumbnail": {
+                "thumbnails": [
+                 {
+                  "url": "https://i.ytimg.com/vi/4byolRzsPmo/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3lFLseW2B0TzI69j8kMDMB5UotKTg",
+                  "width": 400,
+                  "height": 225
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/4byolRzsPmo/hq720.jpg?sqp=-oaymwEKCKAGEMIDIABIWg&rs=AMzJL3l8N2NGhviFlV_pd1Zr6X5X7lYkzw",
+                  "width": 800,
+                  "height": 450
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/4byolRzsPmo/hq720.jpg?sqp=-oaymwEKCNUGEN8DIABIWg&rs=AMzJL3kfr_Ly6S8PC_8Xw7y67KI-FPTT0g",
+                  "width": 853,
+                  "height": 479
+                 }
+                ]
+               },
+               "lengthText": {
+                "runs": [
+                 {
+                  "text": "3:45"
+                 }
+                ]
+               },
+               "selected": false,
+               "videoId": "4byolRzsPmo",
+               "shortBylineText": {
+                "runs": [
+                 {
+                  "text": "Roosevelt"
+                 }
+                ]
+               },
+               "playlistSetVideoId": "52152B4946C2F73F",
+               "canReorder": true,
+               "queueNavigationEndpoint": {
+                "queueAddEndpoint": {
+                 "queueTarget": {
+                  "videoId": "4byolRzsPmo"
+                 },
+                 "queueInsertPosition": "INSERT_AT_END",
+                 "params": "Q0FJJTNE"
+                }
+               }
+              }
+             },
+             {
+              "playlistPanelVideoRenderer": {
+               "title": {
+                "runs": [
+                 {
+                  "text": "Safe And Sound"
+                 }
+                ]
+               },
+               "longBylineText": {
+                "runs": [
+                 {
+                  "text": "Capital Cities",
+                  "navigationEndpoint": {
+                   "browseEndpoint": {
+                    "browseId": "UClxuMOFeLBJXk8nt-SolPvw",
+                    "browseEndpointContextSupportedConfigs": {
+                     "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                     }
+                    }
+                   }
+                  }
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "912M views"
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "5.9M likes"
+                 }
+                ]
+               },
+               "thumbnail": {
+                "thumbnails": [
+                 {
+                  "url": "https://i.ytimg.com/vi/47dtFZ8CFo8/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3nP3ICP8iMojpSh6YuhRegKoGhMIw",
+                  "width": 400,
+                  "height": 225
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/47dtFZ8CFo8/hq720.jpg?sqp=-oaymwEKCKAGEMIDIABIWg&rs=AMzJL3knHDQk00LF1no291VDQf8ebwzIPg",
+                  "width": 800,
+                  "height": 450
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/47dtFZ8CFo8/hq720.jpg?sqp=-oaymwEKCNUGEN8DIABIWg&rs=AMzJL3k_EEtR3j0LtsENVgUVEhyAoU27Fg",
+                  "width": 853,
+                  "height": 479
+                 }
+                ]
+               },
+               "lengthText": {
+                "runs": [
+                 {
+                  "text": "3:47"
+                 }
+                ]
+               },
+               "selected": false,
+               "videoId": "47dtFZ8CFo8",
+               "shortBylineText": {
+                "runs": [
+                 {
+                  "text": "Capital Cities"
+                 }
+                ]
+               },
+               "playlistSetVideoId": "090796A75D153932",
+               "canReorder": true,
+               "queueNavigationEndpoint": {
+                "queueAddEndpoint": {
+                 "queueTarget": {
+                  "videoId": "47dtFZ8CFo8"
+                 },
+                 "queueInsertPosition": "INSERT_AT_END",
+                 "params": "Q0FJJTNE"
+                }
+               }
+              }
+             },
+             {
+              "playlistPanelVideoRenderer": {
+               "title": {
+                "runs": [
+                 {
+                  "text": "Music Sounds Better With You (Radio Edit)"
+                 }
+                ]
+               },
+               "longBylineText": {
+                "runs": [
+                 {
+                  "text": "Stardust",
+                  "navigationEndpoint": {
+                   "browseEndpoint": {
+                    "browseId": "UCjuD2g8i12Kwl-7NUOthFgw",
+                    "browseEndpointContextSupportedConfigs": {
+                     "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                     }
+                    }
+                   }
+                  }
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "192M views"
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "1.5M likes"
+                 }
+                ]
+               },
+               "thumbnail": {
+                "thumbnails": [
+                 {
+                  "url": "https://i.ytimg.com/vi/FQlAEiCb8m0/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3k0nCqXUKvK7LTZD3zV_OutdrmjGw",
+                  "width": 400,
+                  "height": 225
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/FQlAEiCb8m0/hq720.jpg?sqp=-oaymwEKCKAGEMIDIABIWg&rs=AMzJL3kUQ8wlKX4uPnbC5BUwM5upKKlAhA",
+                  "width": 800,
+                  "height": 450
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/FQlAEiCb8m0/hq720.jpg?sqp=-oaymwEKCNUGEN8DIABIWg&rs=AMzJL3l5-erUPjUAz06dFGskmbmRKCTlOw",
+                  "width": 853,
+                  "height": 479
+                 }
+                ]
+               },
+               "lengthText": {
+                "runs": [
+                 {
+                  "text": "4:23"
+                 }
+                ]
+               },
+               "selected": false,
+               "videoId": "FQlAEiCb8m0",
+               "shortBylineText": {
+                "runs": [
+                 {
+                  "text": "Stardust"
+                 }
+                ]
+               },
+               "playlistSetVideoId": "12EFB3B1C57DE4E1",
+               "canReorder": true,
+               "queueNavigationEndpoint": {
+                "queueAddEndpoint": {
+                 "queueTarget": {
+                  "videoId": "FQlAEiCb8m0"
+                 },
+                 "queueInsertPosition": "INSERT_AT_END",
+                 "params": "Q0FJJTNE"
+                }
+               }
+              }
+             }
+            ],
+            "playlistId": "RDAMVM5NV6Rdv1a3I",
+            "isInfinite": true,
+            "continuations": [
+             {
+              "nextRadioContinuationData": {
+               "continuation": "CDISOBILaVI2b1lYMUQtMHciEVJEQU1WTTVOVjZSZHYxYTNJODHQAQH6ARBENjI1QUI0MDI5NEQzODFEGAo%3D"
+              }
+             }
+            ],
+            "numItemsToShow": 25
+           }
+          },
+          "header": {
+           "musicQueueHeaderRenderer": {
+            "title": {
+             "runs": [
+              {
+               "text": "Playing from"
+              }
+             ]
+            },
+            "subtitle": {
+             "runs": [
+              {
+               "text": "Get Lucky (Official Audio) Mix"
+              }
+             ]
+            },
+            "buttons": [
+             {
+              "chipCloudChipRenderer": {
+               "style": {
+                "styleType": "STYLE_TRANSPARENT"
+               },
+               "text": {
+                "runs": [
+                 {
+                  "text": "Save"
+                 }
+                ]
+               },
+               "navigationEndpoint": {
+                "modalEndpoint": {
+                 "modal": {
+                  "modalWithTitleAndButtonRenderer": {
+                   "title": {
+                    "runs": [
+                     {
+                      "text": "Save this for later"
+                     }
+                    ]
+                   },
+                   "content": {
+                    "runs": [
+                     {
+                      "text": "Make playlists and share them after signing in"
+                     }
+                    ]
+                   },
+                   "button": {
+                    "buttonRenderer": {
+                     "style": "STYLE_BLUE_TEXT",
+                     "isDisabled": false,
+                     "text": {
+                      "runs": [
+                       {
+                        "text": "Sign in"
+                       }
+                      ]
+                     },
+                     "navigationEndpoint": {
+                      "signInEndpoint": {}
+                     }
+                    }
+                   }
+                  }
+                 }
+                },
+                "saveQueueToPlaylistCommand": {}
+               },
+               "icon": {
+                "iconType": "ADD_TO_PLAYLIST"
+               },
+               "isSelected": false,
+               "uniqueId": "Save"
+              }
+             }
+            ]
+           }
+          }
+         }
+        }
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

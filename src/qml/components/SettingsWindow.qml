@@ -1784,7 +1784,7 @@ Window {
                 width: col.width
 
                 SRow {
-                    name: "Home source"
+                    name: "Source"
                     SSelect { value: Settings.homeSource
                               options: [ { value: "ytmusic", label: "YouTube Music" },
                                          { value: "youtube", label: "YouTube" } ]

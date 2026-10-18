@@ -23,6 +23,9 @@ const ck = () => {
   return [s.cookieSource, s.browser, s.cookieProfile] as const;
 };
 
+// Settings → Source: where search and suggestions come from, besides Home
+const source = (): it.DataSource => loadSettings().homeSource === "ytmusic" ? "ytmusic" : "youtube";
+
 let jobSeq = 0;
 const jobId = (prefix: string) => `${prefix}-${++jobSeq}`;
 
@@ -67,8 +70,8 @@ export function registerHandlers(): void {
   const discord = createPresence({ log: (m) => log(m) });
   discord.setEnabled(loadSettings().discordStatus === true);
   // --- YouTube data ---
-  method("yt/search", ({ query, filters }) => it.fetchSearch(query, ...ck(), filters));
-  method("yt/searchContinuation", ({ token }) => it.fetchSearchContinuation(token, ...ck()));
+  method("yt/search", ({ query, filters }) => it.searchFrom(source(), query, ...ck(), filters));
+  method("yt/searchContinuation", ({ token }) => it.searchContinuationFrom(token, ...ck()));
   // a mood chip's params open that mood's home; none is the plain home
   method("yt/getHome", (p: any) => it.fetchMusicHome(...ck(), p?.params || undefined));
   method("yt/homeContinuation", ({ token }) => it.fetchMusicHomeContinuation(token, ...ck()));
@@ -81,8 +84,8 @@ export function registerHandlers(): void {
   });
   method("yt/getRecommendedByChip", ({ token, count }) => it.fetchRecommendedByChip(token, ...ck(), count ?? 30));
   method("yt/recommendedContinuation", ({ token }) => it.fetchRecommendedContinuation(token, ...ck()));
-  method("yt/getNext", ({ videoId }) => it.fetchNext(videoId, ...ck()));
-  method("yt/nextContinuation", ({ token }) => it.fetchNextContinuation(token, ...ck()));
+  method("yt/getNext", ({ videoId }) => it.nextFrom(source(), videoId, ...ck()));
+  method("yt/nextContinuation", ({ token }) => it.nextContinuationFrom(token, ...ck()));
   method("yt/getStream", ({ videoId, fresh }) => st.fetchStreamUrl(videoId, { fresh: fresh === true }));
   method("yt/getVideoStream", ({ videoId, maxHeight, codecs }) =>
     st.fetchVideoStreamUrl(videoId, Number(maxHeight) || 720, parseCodecs(codecs)));

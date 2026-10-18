@@ -362,7 +362,7 @@ MeloWindow {
                         height: obw.rowH
                         InkText {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "Home"
+                            text: "Source"
                             ink: "text"
                             font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
                         }

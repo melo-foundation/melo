@@ -16,7 +16,7 @@ import {
   cookiesTxtPath,
 } from "./guest-cookies";
 import { getDownloadedUrl, getTrackMetadata } from "./library";
-import { hasAuthCookie, resolveCookies } from "./innertube";
+import { fetchMusicRadio, hasAuthCookie, resolveCookies } from "./innertube";
 import { UNPACK_FAILED, unpackFailedMessage } from "./ytdlp-proc";
 import { relayUrl } from "./stream-relay";
 import { looksStale, ytdlp, ytdlpChannel } from "./ytdlp";
@@ -1385,6 +1385,19 @@ async function fetchRadioTracks(
 ): Promise<FlatTrack[]> {
   if (FAST_STREAMS) {
     const t0 = Date.now();
+    const s = loadSettings();
+    if (s.homeSource === "ytmusic") {
+      try {
+        const ytm = await fetchMusicRadio(playlistId, s.cookieSource, s.browser, s.cookieProfile);
+        if (ytm) {
+          console.error(`[streams] ytm radio ${playlistId} (${ytm.length}) in ${Date.now() - t0}ms`);
+          return ytm;
+        }
+        console.error(`[ytm] radio ${playlistId}: no tracks; using YouTube`);
+      } catch (e) {
+        console.error(`[ytm] radio ${playlistId}: ${String(e).split("\n")[0]}; using YouTube`);
+      }
+    }
     try {
       // The panel is the radio: /next with the playlist id returns the mix's
       // queue. watch_next_feed is the related-videos sidebar, which would put
@@ -1454,8 +1467,10 @@ export async function startSongRadio(playlistId: string, startIndex?: number) {
     // pulls it forward if the buffer is actually needed sooner.
     radioSeedId = tracks[tracks.length - 1].id;
     radioRefillTimer = setTimeout(() => { radioRefillTimer = null; refillRadio(radioSeedId); }, 4000);
-    // background: extend the cached mix list to full length, off the critical path
-    void fetchRadioTracks(playlistId, RADIO_TARGET).catch(() => {});
+    // background: extend the cached mix list to full length, off the critical path;
+    // YouTube Music's queue comes whole and is not cached
+    if (loadSettings().homeSource !== "ytmusic")
+      void fetchRadioTracks(playlistId, RADIO_TARGET).catch(() => {});
     return { ok: true as const, tracks, startIndex: idx };
   } catch (err) {
     return { ok: false as const, error: String(err) };

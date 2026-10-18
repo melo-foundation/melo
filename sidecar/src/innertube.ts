@@ -1238,3 +1238,282 @@ export function parseMusicHomeContinuation(data: any): { sections: HomeSection[]
   const list = data?.continuationContents?.sectionListContinuation;
   return { sections: parseShelves(list?.contents), continuation: nextContinuation(list) };
 }
+
+// ---- YouTube Music search and suggestions (Settings → Source) ----
+
+export type DataSource = "youtube" | "ytmusic";
+// A continuation is answered only by the service that issued it.
+const YTM_TOKEN = "ytm:";
+const MUSIC_ORIGIN = "https://music.youtube.com";
+
+// Search filter params, as YouTube Music's own chips send them.
+const YTM_SONGS = "EgWKAQIIAWoMEA4QChADEAQQCRAF";
+const YTM_VIDEOS = "EgWKAQIQAWoMEA4QChADEAQQCRAF";
+const YTM_PLAYLISTS = "EgeKAQQoAEABagwQDhAKEAMQBBAJEAU=";
+
+function ytmFallback(what: string, why: unknown): void {
+  console.error(`[ytm] ${what}: ${String(why).split("\n")[0]}; using YouTube`);
+}
+
+async function musicPost(endpoint: string, body: Record<string, unknown>,
+                         cookieSource: CookieSource, browser: string, profile: string): Promise<any> {
+  const headers = await buildHeaders(MUSIC_ORIGIN, cookieSource, browser, profile);
+  const client: Record<string, string> = {
+    clientName: "WEB_REMIX", clientVersion: "1.20260301.01.00",
+    hl: localePref().hl, gl: localePref().gl,
+  };
+  if (musicVisitorData) client.visitorData = musicVisitorData;
+  const res = await fetch(`${MUSIC_ORIGIN}/youtubei/v1/${endpoint}?prettyPrint=false`, {
+    method: "POST", headers, body: JSON.stringify({ context: { client }, ...body }),
+  });
+  if (cookieSource === "guest") captureResponseCookies(profile, res);
+  if (!res.ok) throw new Error(`YouTube Music ${endpoint} failed: ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+/** The YouTube Music params for melo's filters; undefined when YouTube Music has no equivalent. */
+export function musicSearchParams(f?: SearchFilters): string | undefined {
+  if (f?.sort && f.sort !== "relevance") return undefined;
+  if (f?.uploadDate && f.uploadDate !== "any") return undefined;
+  if (f?.duration && f.duration !== "any") return undefined;
+  switch (f?.type ?? "any") {
+    case "any": return YTM_SONGS;
+    case "video": return YTM_VIDEOS;
+    case "playlist": return YTM_PLAYLISTS;
+    default: return undefined;
+  }
+}
+
+// googleusercontent art is sized by its URL; the list stops at 120 px for songs
+function musicThumb(sources: any[] | undefined): string {
+  const url = pickThumb(sources);
+  const want = wantedThumbWidth();
+  return /=w\d+-h\d+/.test(url) ? url.replace(/=w\d+-h\d+/, `=w${want}-h${want}`) : url;
+}
+
+// "881M views" is compacted like YouTube's; "110M plays" is already short
+function musicViews(segs: string[], fallback: string): string {
+  const v = segs.find((s) => /views?$/i.test(s));
+  return v ? compactViews(v) : fallback;
+}
+
+type MusicListItem =
+  | { kind: "track"; track: SearchResult }
+  | { kind: "playlist"; playlist: SearchPlaylistResult }
+  | null;
+
+function columnText(r: any, i: number): string {
+  return textOf(r?.flexColumns?.[i]?.musicResponsiveListItemFlexColumnRenderer?.text);
+}
+
+/** One musicResponsiveListItemRenderer: a song or video, or an album or playlist. Artists, podcasts and profiles are dropped. */
+export function parseMusicListItem(r: any): MusicListItem {
+  if (!r) return null;
+  const title = columnText(r, 0);
+  const segs = columnText(r, 1).split(/\s+•\s+/).map((s) => s.trim()).filter(Boolean);
+  const thumbnail = musicThumb(r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails);
+  const videoId: string = r.playlistItemData?.videoId
+    || findKey(r.overlay, "watchEndpoint")?.videoId || "";
+  if (videoId) {
+    const duration = parseDuration(segs.find((s) => /^\d+(:\d\d)+$/.test(s)) || "");
+    return { kind: "track", track: { id: videoId, title, channel: segs[0] || "", duration, thumbnail,
+                                     views: musicViews(segs, columnText(r, 2)) } };
+  }
+  const bid: string = r.navigationEndpoint?.browseEndpoint?.browseId || "";
+  const overlayList: string = findKey(r.overlay, "watchPlaylistEndpoint")?.playlistId || "";
+  let playlistId = "";
+  if (bid.startsWith("VL")) playlistId = bid.slice(2);
+  else if (bid.startsWith("MPRE")) playlistId = overlayList;   // an album plays as its playlist
+  if (!playlistId) return null;
+  // the artist or author is the linked run; unlinked, it follows the type label when there is one
+  const runs: any[] = r.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+  const linked = runs.find((x) => x?.navigationEndpoint?.browseEndpoint)?.text;
+  const channel = linked || (segs.length >= 3 ? segs[1] : segs[0]) || "";
+  const count = segs.map((s) => s.match(/^([\d,]+)\s+(songs?|tracks?|videos?)$/i)).find(Boolean);
+  return { kind: "playlist", playlist: { playlistId, title, channel, thumbnail,
+                                         videoCount: count ? parseInt(count[1].replace(/,/g, ""), 10) : 0 } };
+}
+
+function collectMusicItems(items: any[] | undefined, out: InnerTubeSearchResult): void {
+  for (const it of items || []) {
+    const parsed = parseMusicListItem(it?.musicResponsiveListItemRenderer);
+    if (parsed?.kind === "track") out.results.push(parsed.track);
+    else if (parsed?.kind === "playlist") out.playlists.push(parsed.playlist);
+  }
+}
+
+function shelfContinuation(shelf: any): string {
+  const t = shelf?.continuations?.[0]?.nextContinuationData?.continuation
+    || continuationToken(shelf?.contents);
+  return t ? YTM_TOKEN + t : "";
+}
+
+/** A search page: every shelf's rows, plus the rows the unfiltered page lists one per section. */
+export function parseMusicSearch(data: any): InnerTubeSearchResult {
+  const out: InnerTubeSearchResult = { results: [], playlists: [] };
+  const tabs = data?.contents?.tabbedSearchResultsRenderer?.tabs;
+  const sections = tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents;
+  for (const s of Array.isArray(sections) ? sections : []) {
+    const shelf = s?.musicShelfRenderer;
+    if (shelf) {
+      collectMusicItems(shelf.contents, out);
+      const c = shelfContinuation(shelf);
+      if (c && !out.continuation) out.continuation = c;
+    }
+    collectMusicItems(s?.itemSectionRenderer?.contents, out);
+  }
+  return out;
+}
+
+export function parseMusicSearchContinuation(data: any): InnerTubeSearchResult {
+  const out: InnerTubeSearchResult = { results: [], playlists: [] };
+  const shelf = data?.continuationContents?.musicShelfContinuation;
+  if (shelf) {
+    collectMusicItems(shelf.contents, out);
+    const c = shelfContinuation(shelf);
+    if (c) out.continuation = c;
+  }
+  for (const a of data?.onResponseReceivedCommands || []) {
+    const items = a?.appendContinuationItemsAction?.continuationItems;
+    collectMusicItems(items, out);
+    const t = continuationToken(items);
+    if (t && !out.continuation) out.continuation = YTM_TOKEN + t;
+  }
+  return out;
+}
+
+/**
+ * YouTube Music search. The tracks are the Songs (or Videos) list, which pages;
+ * with no filter, the albums and playlists come from the unfiltered page.
+ */
+export async function fetchMusicSearch(query: string, cookieSource: CookieSource, browser: string, profile: string,
+                                       filters?: SearchFilters): Promise<InnerTubeSearchResult> {
+  const params = musicSearchParams(filters) ?? YTM_SONGS;
+  const ask = (p?: string) => musicPost("search", { query, ...(p ? { params: p } : {}) }, cookieSource, browser, profile);
+  if (params !== YTM_SONGS) return parseMusicSearch(await ask(params));
+  const [songs, top] = await Promise.all([ask(params), ask().catch(() => null)]);
+  const r = parseMusicSearch(songs);
+  if (top) r.playlists = parseMusicSearch(top).playlists;
+  return r;
+}
+
+export async function fetchMusicSearchContinuation(token: string, cookieSource: CookieSource, browser: string, profile: string): Promise<InnerTubeSearchResult> {
+  const raw = token.startsWith(YTM_TOKEN) ? token.slice(YTM_TOKEN.length) : token;
+  return parseMusicSearchContinuation(await musicPost("search", { continuation: raw }, cookieSource, browser, profile));
+}
+
+/** Search from the chosen source; YouTube Music falls back to YouTube when it fails, finds nothing or cannot filter that way. */
+export async function searchFrom(source: DataSource, query: string, cookieSource: CookieSource, browser: string, profile: string,
+                                 filters?: SearchFilters): Promise<InnerTubeSearchResult> {
+  if (source === "ytmusic" && musicSearchParams(filters) !== undefined) {
+    try {
+      const r = await fetchMusicSearch(query, cookieSource, browser, profile, filters);
+      if (r.results.length || r.playlists.length) return r;
+      ytmFallback("search", "no results");
+    } catch (e) { ytmFallback("search", e); }
+  }
+  return fetchSearch(query, cookieSource, browser, profile, filters);
+}
+
+/** The next page from whichever service issued the token; a failed YouTube Music page ends the list. */
+export async function searchContinuationFrom(token: string, cookieSource: CookieSource, browser: string, profile: string): Promise<InnerTubeSearchResult> {
+  if (!token.startsWith(YTM_TOKEN)) return fetchSearchContinuation(token, cookieSource, browser, profile);
+  try { return await fetchMusicSearchContinuation(token, cookieSource, browser, profile); }
+  catch (e) {
+    console.error(`[ytm] search continuation: ${String(e).split("\n")[0]}`);
+    return { results: [], playlists: [] };
+  }
+}
+
+function panelItems(data: any): { items: any[]; continuation: string } {
+  const found: { list: any } = { list: null };
+  const walk = (o: any, depth: number): void => {
+    if (!o || typeof o !== "object" || found.list || depth > 14) return;
+    if (o.playlistPanelRenderer) { found.list = o.playlistPanelRenderer; return; }
+    if (o.playlistPanelContinuation) { found.list = o.playlistPanelContinuation; return; }
+    for (const v of Object.values(o)) walk(v, depth + 1);
+  };
+  // a continuation response repeats the first page under contents
+  walk(data?.continuationContents ?? data?.contents, 0);
+  const list = found.list;
+  const token = list?.continuations?.[0]?.nextRadioContinuationData?.continuation
+    || list?.continuations?.[0]?.nextContinuationData?.continuation || "";
+  return { items: Array.isArray(list?.contents) ? list.contents : [], continuation: token ? YTM_TOKEN + token : "" };
+}
+
+export function parsePanelVideo(item: any): SearchResult | null {
+  const v = item?.playlistPanelVideoRenderer
+    || item?.playlistPanelVideoWrapperRenderer?.primaryRenderer?.playlistPanelVideoRenderer;
+  const id = v?.videoId;
+  if (typeof id !== "string" || !id) return null;
+  const segs = textOf(v.longBylineText).split(/\s+•\s+/).map((s: string) => s.trim());
+  const views = musicViews(segs, "");
+  return {
+    id, title: textOf(v.title),
+    channel: textOf(v.shortBylineText) || segs[0] || "",
+    duration: parseDuration(textOf(v.lengthText)),
+    thumbnail: musicThumb(v.thumbnail?.thumbnails) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+    ...(views ? { views } : {}),
+  };
+}
+
+const isTrack = (t: SearchResult | null): t is SearchResult => t !== null;
+
+/** The radio's queue as suggestions: the playing track left out, the one after it the autoplay. */
+export function parseMusicNext(data: any, videoId: string): NextResult {
+  const { items, continuation } = panelItems(data);
+  const tracks = items.map(parsePanelVideo).filter(isTrack).filter((t) => t.id !== videoId);
+  return { autoplay: tracks[0] ?? null, suggestions: tracks.slice(1), continuation, info: null };
+}
+
+export function parseMusicNextContinuation(data: any): { suggestions: SearchResult[]; continuation: string } {
+  const { items, continuation } = panelItems(data);
+  return { suggestions: items.map(parsePanelVideo).filter(isTrack), continuation };
+}
+
+const RADIO_BODY = { isAudioOnly: true, enablePersistentPlaylistPanel: true, tunerSettingValue: "AUTOMIX_SETTING_NORMAL" };
+
+export async function fetchMusicNext(videoId: string, cookieSource: CookieSource, browser: string, profile: string): Promise<NextResult> {
+  return parseMusicNext(await musicPost("next", { videoId, playlistId: "RDAMVM" + videoId, ...RADIO_BODY },
+                                        cookieSource, browser, profile), videoId);
+}
+
+export async function fetchMusicNextContinuation(token: string, cookieSource: CookieSource, browser: string, profile: string): Promise<{ suggestions: SearchResult[]; continuation: string }> {
+  const raw = token.startsWith(YTM_TOKEN) ? token.slice(YTM_TOKEN.length) : token;
+  return parseMusicNextContinuation(await musicPost("next", { continuation: raw, ...RADIO_BODY }, cookieSource, browser, profile));
+}
+
+/** A mix's queue from YouTube Music's /next, the seed included; null when it has none. */
+export async function fetchMusicRadio(playlistId: string, cookieSource: CookieSource, browser: string, profile: string): Promise<SearchResult[] | null> {
+  const videoId = playlistId.startsWith("RDAMVM") ? playlistId.slice(6) : undefined;
+  const data = await musicPost("next", { playlistId, ...(videoId ? { videoId } : {}), ...RADIO_BODY },
+                               cookieSource, browser, profile);
+  const tracks = panelItems(data).items.map(parsePanelVideo).filter(isTrack);
+  return tracks.length ? tracks : null;
+}
+
+/**
+ * Suggestions from the chosen source. YouTube Music's radio supplies the list;
+ * YouTube's /next, asked alongside, supplies the track info and is the
+ * fallback when YouTube Music fails or sends nothing.
+ */
+export async function nextFrom(source: DataSource, videoId: string, cookieSource: CookieSource, browser: string, profile: string): Promise<NextResult> {
+  if (source !== "ytmusic") return fetchNext(videoId, cookieSource, browser, profile);
+  const web = fetchNext(videoId, cookieSource, browser, profile)
+    .catch((): NextResult => ({ autoplay: null, suggestions: [], continuation: "", info: null }));
+  try {
+    const m = await fetchMusicNext(videoId, cookieSource, browser, profile);
+    if (m.autoplay || m.suggestions.length) return { ...m, info: (await web).info };
+    ytmFallback("next", "no suggestions");
+  } catch (e) { ytmFallback("next", e); }
+  return web;
+}
+
+export async function nextContinuationFrom(token: string, cookieSource: CookieSource, browser: string, profile: string): Promise<{ suggestions: SearchResult[]; continuation: string }> {
+  if (!token.startsWith(YTM_TOKEN)) return fetchNextContinuation(token, cookieSource, browser, profile);
+  try { return await fetchMusicNextContinuation(token, cookieSource, browser, profile); }
+  catch (e) {
+    console.error(`[ytm] next continuation: ${String(e).split("\n")[0]}`);
+    return { suggestions: [], continuation: "" };
+  }
+}
