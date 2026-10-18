@@ -271,7 +271,12 @@ Item {
                     { tag: "toggleOn", key: "toggleOn", parent: "accent" },
                     { tag: "buttonActive", key: "buttonActive", parent: "selected" },
                     { tag: "cardSelected", key: "cardSelected", parent: "selected" },
-                    { tag: "scrubberTrack", key: "scrubberTrack", parent: "button" }]
+                    { tag: "scrubberTrack", key: "scrubberTrack", parent: "button" },
+                    { tag: "checkBox", key: "checkBox", parent: "input" },
+                    { tag: "checkBoxOn", key: "checkBoxOn", parent: "checkBox" },
+                    { tag: "checkBoxHover", key: "checkBoxHover", parent: "checkBox" },
+                    { tag: "checkBoxOnHover", key: "checkBoxOnHover", parent: "checkBoxOn" },
+                    { tag: "checkBoxBorder", key: "checkBoxBorder", parent: "borderStrong" }]
         }
         function test_a_controls_parts_follow_the_control(data) {
             const p2 = Object.assign({}, pal, { button: "#222222", accent: "#cc3333",

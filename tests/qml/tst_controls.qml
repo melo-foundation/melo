@@ -28,7 +28,7 @@ Item {
 
         function cleanup() {
             for (const k of ["sliderTrackHeight", "sliderKnobSize", "sliderKnobShape", "sliderTrackShape", "sliderKnobInset", "scrollbars", "scrubberShape", "scrubberHover", "scrubberKnobSize", "scrubberKnobShape", "scrubberKnobInset",
-                             "toggleWidth", "toggleHeight", "toggleKnobShape",
+                             "toggleWidth", "toggleHeight", "toggleKnobShape", "toggleStyle", "checkboxRadius", "checkboxBorder", "checkWeight",
                              "controlScale", "buttonPress"]) delete Theme.ts[k]
             Theme.tsChanged(); wait(20)
         }
@@ -180,6 +180,99 @@ Item {
             tog.checked = true; wait(20)
             compare(tog.role, "toggleOn")
             tog.checked = false; wait(20)
+        }
+
+        // A checkbox is a toggleHeight square with its own four faces, an
+        // outline and a check drawn in the checkMark ink.
+        function test_a_checkbox_takes_its_faces_and_sizes() {
+            set("toggleStyle", "checkbox")
+            compare(tog.width, 20); compare(tog.height, 20)
+            const face = part(tog, "checkBoxFace")
+            verify(face.visible)
+            compare(tog.role, "", "the box is the face's, not the track's")
+            compare(face.width, 20); compare(face.height, 20)
+            compare(face.role, "checkBox")
+            compare(face.borderRole, "checkBoxBorder"); compare(face.borderWidth, 1)
+            compare(face.radius, 2)
+            const mark = part(face, "checkMark")
+            verify(!mark.visible)
+            compare(mark.ink, "checkMark"); compare(mark.name, "checkBox")
+            fuzzyCompare(mark.strokeWidth, 2.5, 0.001)
+            tog.checked = true; wait(20)
+            compare(face.role, "checkBoxOn"); verify(mark.visible)
+            mouseMove(tog, 5, 5); wait(20)
+            compare(face.role, "checkBoxOnHover")
+            tog.checked = false; wait(20)
+            compare(face.role, "checkBoxHover")
+            mouseMove(tog, tog.width + 300, 150); wait(20)
+            compare(face.role, "checkBox")
+            set("checkboxRadius", 6); set("checkboxBorder", 2); set("checkWeight", 3.5)
+            compare(face.radius, 6); compare(face.borderWidth, 2)
+            fuzzyCompare(mark.strokeWidth, 3.5, 0.001)
+            set("checkboxRadius", 12)
+            compare(face.radius, 10, "no rounder than a circle")
+            set("checkboxBorder", 0)
+            compare(face.borderWidth, 0)
+            // the check glyph is the check until a theme draws its own
+            compare(Theme.glyphOf("checkBox").paths, Theme.glyphDefaults.check.paths)
+            verify(Theme.glyphNames.indexOf("checkBox") >= 0)
+            set("glyphs", { checkBox: { fill: false, paths: ["M4 4L20 20"] } })
+            compare(Theme.glyphOf("checkBox").paths, ["M4 4L20 20"])
+            unset("glyphs")
+        }
+        // the inner ring is classic's second band: none unless the palette names it,
+        // and on a snapped box it is as many whole device pixels as the outline
+        function test_the_inner_ring_is_absent_until_set() {
+            set("toggleStyle", "checkbox")
+            const face = part(tog, "checkBoxFace"), inner = part(face, "checkBoxInner")
+            verify(!inner.visible, "unset: no inner ring")
+            compare(inner.borderRole, "")
+            set("toggleHeight", 13)
+            inner.set = true; GridUi.dpr = 1.9; wait(20)
+            verify(inner.visible)
+            compare(inner.borderRole, "checkBoxInner")
+            const whole = (v) => Math.abs(v * 1.9 - Math.round(v * 1.9)) < 0.001
+            compare(Math.round(face.borderWidth * 1.9), 2)
+            compare(Math.round(inner.borderWidth * 1.9), 2, "two device px, as the outline")
+            verify(whole(inner.x) && whole(inner.y) && whole(inner.width), "inside the outline on whole device px")
+            compare(Math.round(inner.x * 1.9), 2)
+            compare(Math.round(inner.width * 1.9), Math.round(face.width * 1.9) - 4)
+            set("checkboxBorder", 0)
+            verify(!inner.visible, "no outline, no inner ring")
+            inner.set = Qt.binding(() => Theme.p.checkBoxInner !== undefined); GridUi.dpr = 1; wait(20)
+        }
+        // on the device grid: whole device pixels for the box, its outline and its check
+        function test_a_checkbox_sits_on_the_device_grid() {
+            set("toggleStyle", "checkbox"); set("toggleHeight", 13)
+            const face = part(tog, "checkBoxFace"), mark = part(face, "checkMark")
+            for (const d of [1.25, 1.5, 1.9, 2]) {
+                GridUi.dpr = d; wait(10)
+                const dev = (v) => Math.abs(v * d - Math.round(v * d)) < 0.001
+                verify(dev(face.width), "box " + d + " " + face.width)
+                verify(dev(face.borderWidth), "outline " + d)
+                verify(face.borderWidth * d >= 1, "never under a device pixel")
+                verify(dev(mark.size) && dev(mark.x), "check " + d)
+            }
+            GridUi.dpr = 1
+        }
+        function test_the_check_mark_follows_the_toggles_on_colour() {
+            verify(Theme.inkRoles.indexOf("checkMark") >= 0)
+            const pal = { accent: "#cc3333", text: "#e0e0e0" }
+            compare(Theme.inkFrom(pal, {}, "checkMark").colour.toString(), "#cc3333")
+            pal.toggleOn = "#112233"
+            compare(Theme.inkFrom(pal, {}, "checkMark").colour.toString(), "#112233")
+            pal.checkMark = "#445566"
+            compare(Theme.inkFrom(pal, {}, "checkMark").colour.toString(), "#445566")
+        }
+        // a role two steps from the one set follows it, entry and opacity
+        function test_a_checkbox_face_follows_up_the_chain() {
+            const pal = { button: "#202020", input: "#303030" }
+            compare(Theme.roleFrom(pal, {}, 1, "checkBoxOnHover").colour.toString(), "#303030")
+            const op = { input: 0.5 }
+            fuzzyCompare(Theme.roleFrom(pal, op, 1, "checkBoxOnHover").opacity, 0.5, 0.001)
+            pal.checkBoxOn = "#405060"
+            compare(Theme.roleFrom(pal, {}, 1, "checkBoxOnHover").colour.toString(), "#405060")
+            compare(Theme.roleFrom(pal, {}, 1, "checkBoxHover").colour.toString(), "#303030")
         }
 
         // A tab in the button style is a button: a framed face at rest, the

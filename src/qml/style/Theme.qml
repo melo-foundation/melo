@@ -688,7 +688,9 @@ QtObject {
                                            title: "chrome", skeleton: "button", input: "button", buttonHover: "hover", buttonPress: "hover", closeFace: "button", closeFaceHover: "buttonHover", titleButton: "button", titleButtonHover: "buttonHover", titleButtonActive: "buttonActive", titleButtonBorder: "border", titleButtonBorderHover: "borderStrong", titleButtonPress: "buttonPress", closeFacePress: "buttonPress", close: "textDim", closeHover: "text", titleGlyph: "textDim", titleGlyphHover: "text", titleGlyphActive: "textOnActive", textOnTitle: "textDim", textOnSelected: "text", textOnActive: "textOnSelected", windowBorder: "borderStrong", windowBorderInner: "windowBorder", windowBorderOuter: "windowBorder", panelHeader: "panel", highlight: "accent",
                                            scrubber: "accent", graph: "accent", tabLine: "accent",
                                            sliderTrack: "button", sliderFill: "accent", toggleOff: "button", toggleOn: "accent",
-                                           buttonActive: "selected", cardSelected: "selected", scrubberTrack: "button" })
+                                           buttonActive: "selected", cardSelected: "selected", scrubberTrack: "button",
+                                           checkBox: "input", checkBoxOn: "checkBox", checkBoxHover: "checkBox", checkBoxOnHover: "checkBoxOn",
+                                           checkBoxBorder: "borderStrong", checkMark: "toggleOn" })
     // Which roles came from a swatch. `from` is inert provenance — an entry
     // whose stamp names nothing still renders — and rolesFrom is what reads
     // it, so setThemeSwatch can rewrite every role stamped with a swatch.
@@ -839,9 +841,9 @@ QtObject {
         return out
     }
     function entryOf(key) {
-        if (p[key] !== undefined) return p[key]
-        const parent = entryParents[key]
-        return parent !== undefined ? p[parent] : undefined
+        let k = key
+        while (p[k] === undefined && entryParents[k] !== undefined) k = entryParents[k]
+        return p[k]
     }
     // what a source is called on screen: "adaptive" is the file's word, contrast the user's
     // an entry in a few words: its kinds bottom-up, a plain colour by its hex
@@ -1148,7 +1150,7 @@ QtObject {
         // a theme gives it its own — entry and opacity both — so every theme
         // from before it existed looks exactly as it did: the title bar
         // follows the header, the loading bars follow the field.
-        const parentRole = ({ title: "chrome", skeleton: "button", windowBorder: "borderStrong",
+        const parents = ({ title: "chrome", skeleton: "button", windowBorder: "borderStrong",
                               windowBorderInner: "windowBorder", windowBorderOuter: "windowBorder", panelHeader: "panel", scrubber: "accent", graph: "accent", tabLine: "accent", highlight: "accent",
                               input: "button", buttonHover: "hover", buttonPress: "hover", closeFace: "button", closeFaceHover: "buttonHover",
                               titleButton: "button", titleButtonHover: "buttonHover", titleButtonActive: "buttonActive", titleButtonBorder: "border", titleButtonBorderHover: "borderStrong", titleButtonPress: "buttonPress", closeFacePress: "buttonPress",
@@ -1167,11 +1169,20 @@ QtObject {
                               // ...and the volume rail's, for the same reason
                               volumeTrack: "sliderTrack", volumeFill: "sliderFill", volumeKnob: "sliderKnob",
                               // the playing card, as the playing row is
-                              cardSelected: "selected" })[name]
-        const inherit = parentRole !== undefined && pal[name] === undefined
-        const v = inherit ? pal[parentRole] : pal[name]
-        if (inherit && opacities[name] === undefined && opacities[parentRole] !== undefined) {
-            const o = Object.assign({}, opacities); o[name] = opacities[parentRole]; opacities = o
+                              cardSelected: "selected",
+                              // a checkbox is a field; the on, hover and on-hover boxes
+                              // follow it, and its outline is a control's
+                              checkBox: "input", checkBoxOn: "checkBox", checkBoxHover: "checkBox", checkBoxOnHover: "checkBoxOn",
+                              checkBoxBorder: "borderStrong" })
+        // up the chain to the first role the palette sets
+        const chain = [name]
+        while (pal[chain[chain.length - 1]] === undefined && parents[chain[chain.length - 1]] !== undefined)
+            chain.push(parents[chain[chain.length - 1]])
+        const inherit = chain.length > 1
+        const v = pal[chain[chain.length - 1]]
+        if (inherit && opacities[name] === undefined) {
+            const from = chain.find(c => opacities[c] !== undefined)
+            if (from !== undefined) { const o = Object.assign({}, opacities); o[name] = opacities[from]; opacities = o }
         }
         // A role's own opacity is absolute, so a header can be solid under a
         // glass master. The master is what a role without one gets, and the settings' master slider writes
@@ -1184,7 +1195,7 @@ QtObject {
         const notSurface = surfaceRoles.indexOf(name) < 0
         return ({
             // a role that follows another falls back as that one does
-            colour: flatColour(v, roleFallback[name] || roleFallback[parentRole] || "#000000"),
+            colour: flatColour(v, chain.map(c => roleFallback[c]).find(c => c !== undefined) || "#000000"),
             opacity: hasOwn ? own : (floating || notSurface ? 1 : scale),
             source: sourceOf(v),
             blend: blendOf(v),
@@ -1310,6 +1321,12 @@ QtObject {
     readonly property color toggleOff: roleColour("toggleOff")
     readonly property color toggleOn: roleColour("toggleOn")
     readonly property color toggleKnob: roleColour("toggleKnob")
+    readonly property color checkBox: roleColour("checkBox")
+    readonly property color checkBoxOn: roleColour("checkBoxOn")
+    readonly property color checkBoxHover: roleColour("checkBoxHover")
+    readonly property color checkBoxOnHover: roleColour("checkBoxOnHover")
+    readonly property color checkBoxBorder: roleColour("checkBoxBorder")
+    readonly property color checkBoxInner: roleColour("checkBoxInner")
     // `player`, not `bar`: Theme.bar() is the player bar's SIZE function
     readonly property color player: roleColour("player")
     readonly property color panel: roleColour("panel")
@@ -1328,7 +1345,7 @@ QtObject {
     // Named by prominence. Same shape as a surface role, but only ScrollText honours
     // source or blend; plain Text takes the colour with opacity in its alpha. Ink
     // opacity never takes the master's; the window fade handles that.
-    readonly property var inkRoles: ["text", "textSoft", "textDim", "textFaint", "textOverArt", "textOnAccent", "textOnSelected", "textOnActive", "textOnTitle", "close", "closeHover", "titleGlyph", "titleGlyphHover", "titleGlyphActive", "control", "controlOff", "controlHover", "highlight"]
+    readonly property var inkRoles: ["text", "textSoft", "textDim", "textFaint", "textOverArt", "textOnAccent", "textOnSelected", "textOnActive", "textOnTitle", "close", "closeHover", "titleGlyph", "titleGlyphHover", "titleGlyphActive", "control", "controlOff", "controlHover", "highlight", "checkMark"]
     readonly property var inkFallback: ({
         text: "#e0e0e0", textSoft: "#aaaaaa", textDim: "#888888", textFaint: "#666666",
         textOnAccent: "#ffffff"   // the words on an accent button: white, whatever the text is
@@ -1362,7 +1379,9 @@ QtObject {
                    : name === "titleGlyph" ? pal.textDim : name === "titleGlyphHover" ? pal.text
                    : name === "titleGlyphActive" ? (pal.textOnActive !== undefined ? pal.textOnActive
                                                    : pal.textOnSelected !== undefined ? pal.textOnSelected : pal.text)
-                   : name === "highlight" ? pal.accent : undefined)
+                   : name === "highlight" ? pal.accent
+                   // the check is drawn in the switch's on colour
+                   : name === "checkMark" ? (pal.toggleOn !== undefined ? pal.toggleOn : pal.accent) : undefined)
         const own = opacities[name] !== undefined ? opacities[name] : 1
         const fb = inkEffectFallback[name] !== undefined
                  ? effectOf({ effect: inkEffectFallback[name] }) : undefined
@@ -1448,6 +1467,7 @@ QtObject {
     readonly property color control: inkColour("control")
     readonly property color controlOff: inkColour("controlOff")
     readonly property color controlHover: inkColour("controlHover")
+    readonly property color checkMark: inkColour("checkMark")
     readonly property color textOnAccent: inkColour("textOnAccent")
     readonly property color textOnSelected: inkColour("textOnSelected")
     readonly property color textOnActive: inkColour("textOnActive")
@@ -1695,6 +1715,10 @@ QtObject {
     readonly property real toggleWidth: ts.toggleWidth !== undefined ? Number(ts.toggleWidth) : 36
     readonly property real toggleHeight: ts.toggleHeight !== undefined ? Number(ts.toggleHeight) : 20
     readonly property string toggleKnobShape: ts.toggleKnobShape || "round"
+    readonly property string toggleStyle: ts.toggleStyle || "switch"
+    readonly property real checkboxRadius: ts.checkboxRadius !== undefined ? Number(ts.checkboxRadius) : 2
+    readonly property real checkboxBorder: ts.checkboxBorder !== undefined ? Number(ts.checkboxBorder) : 1
+    readonly property real checkWeight: ts.checkWeight !== undefined ? Number(ts.checkWeight) : 2.5
     // A knob's shape is its own key, not the corner style's business: a theme
     // that squares every corner can still want a round knob to grab, and
     // `squared` folding it back would leave the key with nothing to do.
@@ -1889,13 +1913,19 @@ QtObject {
         layoutGrid:    { fill: true, vb: 14, ink: 14.0, paths: ["M0 0H6V6H0Z", "M8 0H14V6H8Z", "M0 8H6V14H0Z", "M8 8H14V14H8Z"] },
         layoutCompact: { fill: true, vb: 14, ink: 14.0, paths: ["M0 0.5H14V2.5H0Z", "M0 4H14V6H0Z", "M0 7.5H14V9.5H0Z", "M0 11H14V13H0Z"] }
     })
-    readonly property var glyphNames: Object.keys(glyphDefaults)
+    // a glyph that draws another until a theme gives it its own
+    readonly property var glyphParents: ({ checkBox: "check" })
+    readonly property var glyphNames: Object.keys(glyphDefaults).concat(Object.keys(glyphParents))
     // Held as a string, as the insets are: `ts` is a new map on every settings
     // write, so reading the object out of it would re-draw every icon in the
     // window whenever anything at all was set.
     readonly property string glyphKey: JSON.stringify(ts.glyphs !== null && typeof ts.glyphs === "object" ? ts.glyphs : ({}))
     readonly property var glyphMap: JSON.parse(glyphKey)
-    readonly property var glyphTable: Object.assign({}, glyphDefaults, glyphMap)
+    readonly property var glyphTable: {
+        const t = Object.assign({}, glyphDefaults, glyphMap)
+        for (const k in glyphParents) if (t[k] === undefined) t[k] = t[glyphParents[k]]
+        return t
+    }
     function glyphOf(name) { return glyphTable[name] }
     // the picture's corners — auto is the card's at the edge and small inside it
     readonly property string cardArtCorners: ts.cardArtCorners || "auto"

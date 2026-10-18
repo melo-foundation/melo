@@ -71,7 +71,7 @@ static QJsonObject defaultSettingsJson() {
         {"viewTabs", "filled"}, {"chips", "pill"}, {"pageTabs", "underline"}, {"toggles", "segment"},
         {"tabGap", 2}, {"pageTabGap", -1}, {"tabHeight", 22}, {"tabTrackPad", 4}, {"buttonGap", 2}, {"inputSelects", false}, {"buttonHeight", 22}, {"iconButtonSize", 26}, {"titleButtonSize", 0}, {"glyphSize", 14}, {"buttonPress", "none"},
         {"sliderTrackHeight", 4}, {"sliderKnobSize", 12}, {"sliderKnobShape", "round"}, {"sliderKnobAspect", 1}, {"volumeTrackHeight", 0}, {"volumeKnobSize", 0}, {"volumeKnobAspect", 0}, {"volumeKnobShape", ""}, {"volumeTrackShape", ""}, {"volumeKnobInset", -1}, {"sliderTrackShape", "round"}, {"scrollbars", "bar"}, {"scrollbarGrip", "none"}, {"scrollbarWidth", 0}, {"skeletonStyle", "shimmer"}, {"scrubberShape", "round"}, {"scrubberHover", "grow"}, {"scrubberKnobSize", 0}, {"scrubberKnobShape", "round"}, {"scrubberKnobAspect", 1},
-        {"toggleWidth", 36}, {"toggleHeight", 20}, {"toggleKnobShape", "round"},
+        {"toggleWidth", 36}, {"toggleHeight", 20}, {"toggleKnobShape", "round"}, {"toggleStyle", "switch"}, {"checkboxRadius", 2}, {"checkboxBorder", 1}, {"checkWeight", 2.5},
         {"titleButtons", "bare"}, {"toolButtons", "bare"}, {"transportButtons", "bare"},
         {"lockStyle", "glyph"}, {"lockPlace", "centre"}, {"popupFrame", "card"},
         {"cardArtCorners", "auto"}, {"insets", QJsonObject{}}, {"glyphs", QJsonObject{}},
@@ -289,7 +289,7 @@ static const char* kAppearanceKeys[] = {
     "borderSides", "borderLeft", "borderTop", "borderRight", "borderBottom", "borderOuterWidth", "borderInnerWidth", "borderSoftOuter", "borderSoftInner", "borderSoftBands", "borderSoftCurve", "borderTitle", "borderTitleRim", "borderTitleFade", "windowShape", "windowFrame", "borderMaximized", "windowRadiusBottom",
     "background",
     "viewTabs", "chips", "pageTabs", "toggles", "tabGap", "pageTabGap", "tabHeight", "tabTrackPad", "buttonGap", "inputSelects", "buttonHeight", "iconButtonSize", "titleButtonSize", "glyphSize", "buttonPress",
-    "sliderTrackHeight", "sliderKnobSize", "sliderKnobShape", "sliderKnobAspect", "sliderTrackShape", "volumeTrackHeight", "volumeKnobSize", "volumeKnobAspect", "volumeKnobShape", "volumeTrackShape", "volumeKnobInset", "sliderKnobInset", "scrollbars", "scrollbarGrip", "scrollbarWidth", "skeletonStyle", "scrubberShape", "scrubberHover", "scrubberKnobSize", "scrubberKnobShape", "scrubberKnobAspect", "scrubberKnobInset", "toggleWidth", "toggleHeight", "toggleKnobShape",
+    "sliderTrackHeight", "sliderKnobSize", "sliderKnobShape", "sliderKnobAspect", "sliderTrackShape", "volumeTrackHeight", "volumeKnobSize", "volumeKnobAspect", "volumeKnobShape", "volumeTrackShape", "volumeKnobInset", "sliderKnobInset", "scrollbars", "scrollbarGrip", "scrollbarWidth", "skeletonStyle", "scrubberShape", "scrubberHover", "scrubberKnobSize", "scrubberKnobShape", "scrubberKnobAspect", "scrubberKnobInset", "toggleWidth", "toggleHeight", "toggleKnobShape", "toggleStyle", "checkboxRadius", "checkboxBorder", "checkWeight",
     "titleButtons", "toolButtons", "transportButtons", "lockStyle", "lockPlace", "popupFrame", "cardArtCorners", "insets",
     "glyphs",
     "barMain", "barNp", "barMini", "barTransition", "centreScrub", "barSwapMs",
@@ -322,7 +322,7 @@ static const char* kBehaviourKeys[] = {
 static const char* kControlsKeys[] = { "viewTabs", "chips", "pageTabs", "toggles", "tabGap", "pageTabGap", "tabHeight", "tabTrackPad", "buttonGap",
                                       "inputSelects", "buttonPress", "cardArtCorners", "buttonHeight", "iconButtonSize", "titleButtonSize", "glyphSize", "titleButtons", "toolButtons",
                                       "transportButtons", "lockStyle", "lockPlace", "popupFrame", "sliderTrackHeight", "sliderKnobSize", "sliderKnobShape", "sliderKnobAspect", "volumeTrackHeight", "volumeKnobSize", "volumeKnobAspect", "volumeKnobShape", "volumeTrackShape", "volumeKnobInset",
-                                      "sliderTrackShape", "sliderKnobInset", "scrollbars", "scrollbarGrip", "scrollbarWidth", "skeletonStyle", "scrubberShape", "scrubberHover", "scrubberKnobSize", "scrubberKnobShape", "scrubberKnobAspect", "scrubberKnobInset", "toggleWidth", "toggleHeight", "toggleKnobShape" };
+                                      "sliderTrackShape", "sliderKnobInset", "scrollbars", "scrollbarGrip", "scrollbarWidth", "skeletonStyle", "scrubberShape", "scrubberHover", "scrubberKnobSize", "scrubberKnobShape", "scrubberKnobAspect", "scrubberKnobInset", "toggleWidth", "toggleHeight", "toggleKnobShape", "toggleStyle", "checkboxRadius", "checkboxBorder", "checkWeight" };
 // How far in a surface's content sits from its edge, per structure, four
 // sides each: `insets` is an object keyed by structure, with the defaults in
 // Theme. The card's are here too.

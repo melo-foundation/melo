@@ -790,6 +790,12 @@ Window {
         { key: "toggleOff", label: "Toggle off" },
         { key: "toggleOn", label: "Toggle on" },
         { key: "toggleKnob", label: "Toggle knob" },
+        { key: "checkBox", label: "Checkbox" },
+        { key: "checkBoxOn", label: "Checkbox on" },
+        { key: "checkBoxHover", label: "Checkbox hover" },
+        { key: "checkBoxOnHover", label: "Checkbox on hover" },
+        { key: "checkBoxBorder", label: "Checkbox edge" },
+        { key: "checkBoxInner", label: "Checkbox inner edge" },
         { key: "scrollbar", label: "Scrollbar" },
         { key: "scrollbarTrack", label: "Scrollbar track" },
         { key: "scrollbarThumb", label: "Scrollbar thumb" },
@@ -2423,6 +2429,7 @@ Window {
                             { key: "titleGlyphHover", label: "Title bar buttons hover" },
                             { key: "titleGlyphActive", label: "Title bar buttons on" },
                             { key: "highlight", label: "Highlight" },
+                            { key: "checkMark", label: "Check mark" },
                         ]
                         Column {
                             id: inkBlock
@@ -3293,6 +3300,30 @@ Window {
                         name: "Toggle knob"
                         SSelect { value: Theme.toggleKnobShape; options: win.knobShapes
                                   onPicked: (v) => ThemeBackend.setThemeSetting("toggleKnobShape", v) }
+                    }
+                    SRow {
+                        name: "Toggle style"
+                        SSelect { value: Theme.toggleStyle
+                                  options: [ { value: "switch", label: "Switch" }, { value: "checkbox", label: "Checkbox" } ]
+                                  onPicked: (v) => ThemeBackend.setThemeSetting("toggleStyle", v) }
+                    }
+                    SRow {
+                        name: "Checkbox corners"
+                        desc: Math.round(cbRadiusS.shown)
+                        SSlider { id: cbRadiusS; from: 0; to: 12; step: 1; value: Theme.checkboxRadius
+                                  onCommitted: (v) => ThemeBackend.setThemeSetting("checkboxRadius", Math.round(v)) }
+                    }
+                    SRow {
+                        name: "Checkbox edge"
+                        desc: Math.round(cbBorderS.shown)
+                        SSlider { id: cbBorderS; from: 0; to: 3; step: 1; value: Theme.checkboxBorder
+                                  onCommitted: (v) => ThemeBackend.setThemeSetting("checkboxBorder", Math.round(v)) }
+                    }
+                    SRow {
+                        name: "Check weight"
+                        desc: cbWeightS.shown.toFixed(1)
+                        SSlider { id: cbWeightS; from: 1; to: 4; step: 0.5; value: Theme.checkWeight
+                                  onCommitted: (v) => ThemeBackend.setThemeSetting("checkWeight", v) }
                     }
                 }
 
