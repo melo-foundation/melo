@@ -499,6 +499,23 @@ MeloWindow {
                         height: obw.rowH
                         InkText {
                             anchors.verticalCenter: parent.verticalCenter
+                            text: "Discord Rich Presence"
+                            ink: "text"
+                            font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
+                        }
+                        MToggle {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            checked: Settings.discordStatus
+                            onToggled: (v) => Settings.discordStatus = v
+                        }
+                    }
+
+                    Item {
+                        width: parent.width
+                        height: obw.rowH
+                        InkText {
+                            anchors.verticalCenter: parent.verticalCenter
                             text: "Auto-tag new tracks"
                             ink: "text"
                             font { pixelSize: Theme.fs(12); family: Theme.fontFamily }

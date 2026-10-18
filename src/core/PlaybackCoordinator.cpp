@@ -95,7 +95,8 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
         if (state_->hasTrack()) {
             const Track t = state_->currentTrack();
             QVariantMap track{{"id", t.id}, {"title", t.title}, {"channel", t.channel},
-                              {"duration", t.duration}, {"source", t.source}, {"thumbnail", t.thumbnail}};
+                              {"duration", t.duration}, {"source", t.source}, {"thumbnail", t.thumbnail},
+                              {"youtubeId", t.youtubeId}};
             if (trackExtras_) track.insert(trackExtras_(t.id));
             sidecar_->sendPlayerEvent("trackChanged", {{"track", track}});
         } else {

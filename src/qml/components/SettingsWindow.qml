@@ -1829,6 +1829,11 @@ Window {
                               onToggled: (v) => Settings.silenceSkip = v }
                 }
                 SRow {
+                    name: "Discord Rich Presence"
+                    SToggle { checked: Settings.discordStatus
+                              onToggled: (v) => Settings.discordStatus = v }
+                }
+                SRow {
                     name: "Add to Library"
                     SSelect { value: String(Settings.uiGet("libraryDefault", "library"))
                               options: [ { value: "library", label: "Add only" },

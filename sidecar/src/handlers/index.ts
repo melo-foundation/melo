@@ -16,6 +16,7 @@ import { LOCALES, REGIONS } from "../locales";
 import * as plug from "../plugins/manager";
 import { pluginSettings, setPluginSetting } from "../plugins/settings-store";
 import { EMPTY_GRANTS } from "../plugins/permissions";
+import { createPresence } from "../discord";
 
 const ck = () => {
   const s = loadSettings();
@@ -63,6 +64,8 @@ async function enrichTrack(track: any, mode: string, s: ReturnType<typeof loadSe
 }
 
 export function registerHandlers(): void {
+  const discord = createPresence({ log: (m) => log(m) });
+  discord.setEnabled(loadSettings().discordStatus === true);
   // --- YouTube data ---
   method("yt/search", ({ query, filters }) => it.fetchSearch(query, ...ck(), filters));
   method("yt/searchContinuation", ({ token }) => it.fetchSearchContinuation(token, ...ck()));
@@ -290,6 +293,7 @@ export function registerHandlers(): void {
     // and the settings window's profile picker alike — so the caches are
     // dropped once, here, rather than at each call site that could forget.
     if (touchesCookieIdentity(patch ?? {})) it.clearCookieCache();
+    if (patch && "discordStatus" in patch) discord.setEnabled(saved.discordStatus === true);
     return saved;
   });
 
@@ -335,5 +339,9 @@ export function registerHandlers(): void {
   // yt/getStream); a plugin failure rejects and surfaces via RpcCall::failed
   method("plugin/resolveStream", async ({ sourceId, trackId }) =>
     ({ ok: true, ...(await plug.pluginResolveStream(sourceId, trackId)) }));
-  method("player/event", ({ type, payload }) => { plug.dispatchPlayerEvent(type, payload); return {}; });
+  method("player/event", ({ type, payload }) => {
+    plug.dispatchPlayerEvent(type, payload);
+    discord.event(type, payload);
+    return {};
+  });
 }

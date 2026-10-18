@@ -95,7 +95,7 @@ export default function activate(melo) {
   })
 
   // --- playback events ---
-  melo.player.on("trackChanged", ({ track }) => {})   // { id,title,channel,duration,source,thumbnail }; album, albumArt for a library track
+  melo.player.on("trackChanged", ({ track }) => {})   // { id,title,channel,duration,source,thumbnail,youtubeId }; album, albumArt for a library track
   melo.player.on("stateChanged", ({ playing, position, duration }) => {})
   melo.player.on("seeked",       ({ position, duration }) => {})
   melo.player.on("stopped",      () => {})            // no track loaded

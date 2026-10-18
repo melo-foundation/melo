@@ -45,6 +45,7 @@
 - Mini player: a compact window with its own layout, and a pop-out queue and visualiser
 - Custom keyboard shortcuts
 - Media keys and MPRIS support
+- Discord Rich Presence: the track, its artwork and a progress bar (Settings → General, off by default)
 - Extensive plugin system for new music sources, player bar buttons, custom windows and more
 
 ## Download

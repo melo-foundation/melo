@@ -23,6 +23,7 @@ class SettingsStore : public QObject {
     Q_PROPERTY(double crossfadeSeconds READ crossfadeSeconds WRITE setCrossfadeSeconds NOTIFY changed)
     Q_PROPERTY(bool silenceSkip READ silenceSkip WRITE setSilenceSkip NOTIFY changed)
     Q_PROPERTY(bool sendPlayback READ sendPlayback WRITE setSendPlayback NOTIFY changed)
+    Q_PROPERTY(bool discordStatus READ discordStatus WRITE setDiscordStatus NOTIFY changed)
     Q_PROPERTY(QString homeSource READ homeSource WRITE setHomeSource NOTIFY changed)
     Q_PROPERTY(QString cookieProfile READ cookieProfile WRITE setCookieProfile NOTIFY changed)
     Q_PROPERTY(QString browser READ browser WRITE setBrowser NOTIFY changed)
@@ -55,6 +56,7 @@ public:
     double crossfadeSeconds() const { return s_["crossfadeSeconds"].toDouble(); }
     bool silenceSkip() const { return s_["silenceSkip"].toBool(); }
     bool sendPlayback() const { return s_["sendPlayback"].toBool(true); }
+    bool discordStatus() const { return s_["discordStatus"].toBool(false); }
     QString homeSource() const { return s_["homeSource"].toString(); }
     QString cookieProfile() const { return s_["cookieProfile"].toString(); }
     QString browser() const { return s_["browser"].toString(); }
@@ -76,6 +78,7 @@ public:
     void setSilenceSkip(bool v) { patch({{"silenceSkip", v}}); }
     void setPrefetchPercent(int v) { patch({{"prefetchPercent", v}}); }
     void setSendPlayback(bool v) { patch({{"sendPlayback", v}}); }
+    void setDiscordStatus(bool v) { patch({{"discordStatus", v}}); }
     void setHomeSource(const QString& v) { patch({{"homeSource", v}}); }
     void setCookieProfile(const QString& v) { patch({{"cookieProfile", v}}); }
     void setBrowser(const QString& v) { patch({{"browser", v}}); }

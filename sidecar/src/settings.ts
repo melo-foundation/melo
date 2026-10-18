@@ -69,6 +69,7 @@ export interface SettingsV2 {
   region: string;                // gl — content region; "" = system
   lastfmApiKey: string;
   lyricsAutoCaptions: boolean;
+  discordStatus: boolean;       // the playing track as the Discord activity
   ui: Record<string, unknown>;  // Qt-owned: theme, shortcuts, layout, backgrounds...
   plugins: {
     enabled: Record<string, boolean>;                    // per-plugin enable state
@@ -101,6 +102,7 @@ export function defaultSettings(): SettingsV2 {
     region: "",
     lastfmApiKey: "",
     lyricsAutoCaptions: false,
+    discordStatus: false,
     ui: {},
     plugins: { enabled: {}, grants: {}, settings: {} },
   };
