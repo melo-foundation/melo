@@ -152,8 +152,10 @@ void PlaybackCoordinator::playQueue(const QJsonArray& tracks, int startIndex) {
 
 // ---------------------------------------------------------------- playTrack
 
-void PlaybackCoordinator::playTrack(const Track& t, int forceCrossfade, PlayIntent intent) {
+void PlaybackCoordinator::playTrack(const Track& t, int forceCrossfade, PlayIntent intent, bool fresh) {
     if (!t.isValid()) return;
+    state_->clearFailure();
+    prefetchFailedId_.clear();
     std::fprintf(stderr, "[%9.1f] [timing] PRESS track=%s\n",
                  meloLogMs(), t.id.toUtf8().constData());
 
@@ -227,24 +229,20 @@ void PlaybackCoordinator::playTrack(const Track& t, int forceCrossfade, PlayInte
     else engine_->dropVideoDecks();   // the outgoing picture never plays under the new title
 
     const bool pluginSource = !t.source.isEmpty() && t.source != "youtube";
+    QJsonObject params{{"videoId", t.id}};
+    if (fresh) params["fresh"] = true;
     auto* c = pluginSource
         ? sidecar_->call("plugin/resolveStream", {{"sourceId", t.source}, {"trackId", t.id}}, 30000)
-        : sidecar_->call("yt/getStream", {{"videoId", t.id}}, sidecar_->ytdlpTimeoutMs(60000));
+        : sidecar_->call("yt/getStream", params, sidecar_->ytdlpTimeoutMs(60000));
     connect(c, &RpcCall::finished, this, [this, t, gen, wantCrossfade, intent](const QJsonValue& r) {
         onStreamResolved(t, gen, r.toObject(), wantCrossfade, intent);
     });
-    connect(c, &RpcCall::failed, this, [this, gen](int code, const QString& m) {
+    connect(c, &RpcCall::failed, this, [this, t, gen](int code, const QString& m) {
         if (playGen_ != gen) return;
-        state_->setLoading(false);
-        // onTrackEnded() returns immediately while crossfadeHandling_ is set,
-        // so a failed resolve during a crossfade must clear it too, or
-        // auto-advance stops for the rest of the session.
-        crossfadeHandling_ = false;
-        crossfadeTriggered_ = false;
         // WITH the code: an expired cookie wants "sign in again", a DNS
-        // failure wants "retry", and the surface cannot tell them apart from
+        // failure wants "retry", and the dialog cannot tell them apart from
         // the message alone.
-        state_->setErrorWithCode(m, code);
+        failPlay(t, code, m);
     });
     fetchSuggestions(ytIdOf(t));   // parallel with the stream fetch
 }
@@ -255,8 +253,7 @@ void PlaybackCoordinator::onStreamResolved(const Track& t, quint64 gen,
     if (playGen_ != gen) return;   // stale
 
     if (!res["ok"].toBool()) {
-        state_->setLoading(false);
-        state_->setError(res["error"].toString());
+        failPlay(t, 0, res["error"].toString());
         return;
     }
 
@@ -290,6 +287,54 @@ void PlaybackCoordinator::onStreamResolved(const Track& t, quint64 gen,
             skipStart_ = o["skipStart"].toDouble();
             skipEnd_ = o["skipEnd"].toDouble();
         });
+    }
+}
+
+void PlaybackCoordinator::failPlay(const Track& t, int code, const QString& reason) {
+    state_->setLoading(false);
+    // onTrackEnded() returns immediately while crossfadeHandling_ is set,
+    // so a failed resolve during a crossfade must clear it too, or
+    // auto-advance stops for the rest of the session.
+    crossfadeHandling_ = false;
+    crossfadeTriggered_ = false;
+    // A crossfade keeps the outgoing track playing until the new one has
+    // audio; left running, it played on under this track's title and then
+    // auto-advanced past the failure.
+    flushWatchtime();
+    engine_->stop();
+    state_->setIsPlaying(false);
+    state_->setPosition(0);
+    std::fprintf(stderr, "[%9.1f] [melo] can't play %s: %s (%d)\n", meloLogMs(),
+                 t.id.toUtf8().constData(), reason.toUtf8().constData(), code);
+    state_->setFailure(PlayerState::failCauseFor(code),
+                       reason.isEmpty() ? QStringLiteral("The track could not be loaded.") : reason);
+}
+
+void PlaybackCoordinator::answerFailure(const QString& action) {
+    state_->clearFailure();
+    const Track t = state_->currentTrack();
+    if (action == QLatin1String("skip")) { nextBuiltin(); return; }
+    if (!t.isValid()) return;
+    if (action == QLatin1String("retry")) { playTrack(t, 0, PlayIntent::UserSelect, true); return; }
+    if (action == QLatin1String("browser")) {
+        // the settings write reaches the sidecar ahead of the resolve
+        settings_->setStreamCookieSource(QStringLiteral("browser"));
+        playTrack(t, 0, PlayIntent::UserSelect, true);
+        return;
+    }
+    if (action == QLatin1String("update")) {
+        // loading while yt-dlp downloads; a play made meanwhile wins
+        const quint64 gen = ++playGen_;
+        state_->setLoading(true);
+        auto* c = sidecar_->call("ytdlp/setChannel", {{"channel", "nightly"}}, 360000);
+        auto then = [this, gen, t] {
+            settings_->refresh();
+            if (playGen_ != gen) return;
+            state_->setLoading(false);
+            playTrack(t, 0, PlayIntent::UserSelect, true);
+        };
+        connect(c, &RpcCall::finished, this, then);
+        connect(c, &RpcCall::failed, this, then);
     }
 }
 
@@ -932,8 +977,10 @@ void PlaybackCoordinator::requestPrefetch() {
     if (target >= 0) next = queue_->at(target);
     else next = suggestions_->autoplayTrack();
     // guards
+    // A failed prefetch is not repeated: with prefetchPercent 0 every tick
+    // asked again, a resolve every ~9 s against a walled address.
     if (!next.isValid() || next.id == currentTrackId_ || prefetching_ ||
-        prefetched_["videoId"].toString() == next.id) return;
+        prefetched_["videoId"].toString() == next.id || prefetchFailedId_ == next.id) return;
 
     prefetching_ = true;
     const bool pluginSource = !next.source.isEmpty() && next.source != "youtube";
@@ -945,7 +992,7 @@ void PlaybackCoordinator::requestPrefetch() {
         // NB: prefetching_ stays set until prefetched_ is assigned. Clearing
         // it here would leave both guards false during silence detection, and
         // every position tick would re-request the same stream (~15x a track).
-        if (!o["ok"].toBool()) { prefetching_ = false; return; }   // silent; playTrack re-fetches
+        if (!o["ok"].toBool()) { prefetching_ = false; prefetchFailedId_ = next.id; return; }   // silent; playTrack re-fetches
         if (state_->videoWanted()) requestVideo(next, true);
         QJsonObject pf{{"videoId", next.id}, {"source", next.source}, {"youtubeId", next.youtubeId},
                        {"url", o["url"]}, {"title", o["title"]},
@@ -971,7 +1018,10 @@ void PlaybackCoordinator::requestPrefetch() {
             prefetching_ = false;
         }
     });
-    connect(c, &RpcCall::failed, this, [this](int, const QString&) { prefetching_ = false; });
+    connect(c, &RpcCall::failed, this, [this, next](int, const QString&) {
+        prefetching_ = false;
+        prefetchFailedId_ = next.id;
+    });
 }
 
 // ---------------------------------------------------------------- video

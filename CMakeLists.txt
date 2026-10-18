@@ -1050,6 +1050,41 @@ if(Qt6Test_FOUND)
         Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Network Qt6::Test ZLIB::ZLIB ${MELO_GST_LIB})
     add_test(NAME advancepolicy COMMAND tst_advancepolicy)
 
+    # A track that cannot be loaded: the real coordinator against a fake
+    # sidecar (written by the test, run on the system node) that refuses
+    # yt/getStream with each error code.
+    add_executable(tst_playfailure
+        tests/cpp/tst_playfailure.cpp
+        src/plugins/MeloUi.cpp
+        src/plugins/MeloUi.h
+        src/plugins/MeloUiArchives.cpp
+        src/plugins/MeloUiArchives.h
+        src/plugins/SkinArchive.cpp
+        src/plugins/SkinImageProvider.cpp
+        src/plugins/ZipReader.cpp
+        src/plugins/MeloUiQueueView.cpp
+        src/plugins/MeloUiQueueView.h
+        src/core/PlayerState.h
+        src/core/QueueModel.h
+        src/core/SuggestionsModel.h
+        src/core/Track.h
+        src/core/PlaybackCoordinator.cpp
+        src/core/SettingsStore.cpp
+        src/rpc/SidecarService.cpp
+        src/rpc/RpcClient.cpp
+        src/rpc/SidecarProcess.cpp
+        src/rpc/NodeBootstrap.cpp
+        src/audio/AudioEngine.cpp
+        src/audio/SourceDeck.cpp
+        src/audio/VideoDeck.cpp
+        src/vis/SpectrumSource.cpp)
+    target_include_directories(tst_playfailure PRIVATE src/plugins src/core src/rpc src/audio src/vis)
+    target_compile_definitions(tst_playfailure PRIVATE
+        MELO_FAKE_SIDECAR="${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/data/fake-playfail-sidecar.mjs")
+    target_link_libraries(tst_playfailure PRIVATE
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Network Qt6::Test ZLIB::ZLIB ${MELO_GST_LIB})
+    add_test(NAME playfailure COMMAND tst_playfailure)
+
     # Window shaping from region.txt, on the real PluginWindowHost and real
     # offscreen QQuickWindows: the shape and the silence rule share
     # QWindow::setMask, so a stand-in host could not show a collision. The

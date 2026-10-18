@@ -19,7 +19,8 @@ export function log(...args: unknown[]): void {
   process.stderr.write(args.map(String).join(" ") + "\n");
 }
 
-// Error code bands: -32010 auth/cookies, -32020 yt-dlp, -32030 network, -32040 bot wall.
+// Error code bands: -32010 auth/cookies, -32020 yt-dlp, -32030 network, -32040 bot wall,
+// -32041 bot wall with the browser's cookies too.
 export class RpcError extends Error {
   constructor(public code: number, message: string, public data?: unknown) {
     super(message);

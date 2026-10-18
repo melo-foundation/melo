@@ -41,6 +41,11 @@ class PlayerState : public QObject {
     // should OFFER, decided from the code in one place rather than by a
     // string match in QML.
     Q_PROPERTY(QString errorAction READ errorAction NOTIFY errorChanged)
+    // The playing track could not be loaded: "" while nothing failed, else
+    // what kind of failure (failCauseFor). Shown as a dialog that waits for an
+    // answer (PlaybackCoordinator::answerFailure); the reason is the sidecar's line.
+    Q_PROPERTY(QString failCause READ failCause NOTIFY failureChanged)
+    Q_PROPERTY(QString failReason READ failReason NOTIFY failureChanged)
 
 public:
     enum View { Home, Library, Search, Playlist, Visualizer };
@@ -89,6 +94,19 @@ public:
         if (errorCode_ == -32040) return QStringLiteral("playbackCookies");
         return {};
     }
+    QString failCause() const { return failCause_; }
+    QString failReason() const { return failReason_; }
+    // The sidecar's code bands (rpc.ts), plus RpcClient's own -32001 timeout
+    // and -32002 sidecar died. 0: the resolve answered ok:false.
+    static QString failCauseFor(int code) {
+        switch (code) {
+        case -32040: return QStringLiteral("guestWall");
+        case -32041: return QStringLiteral("browserWall");
+        case -32010: return QStringLiteral("signin");
+        case -32020: case -32030: case -32001: case -32002: return QStringLiteral("network");
+        default: return QStringLiteral("other");
+        }
+    }
 
     // writes (coordinator-facing; simple setters emit only on change)
     void setTrack(const Track& t) { track_ = t; emit trackChanged(); }
@@ -127,6 +145,13 @@ public:
     void setErrorWithCode(const QString& e, int code) {
         error_ = e; errorCode_ = code; emit errorChanged();
     }
+    void setFailure(const QString& cause, const QString& reason) {
+        failCause_ = cause; failReason_ = reason; emit failureChanged();
+    }
+    void clearFailure() {
+        if (failCause_.isEmpty()) return;
+        failCause_.clear(); failReason_.clear(); emit failureChanged();
+    }
 
 signals:
     void trackChanged();
@@ -149,6 +174,7 @@ signals:
     void videoSupportedChanged();
     void panelModeChanged();
     void errorChanged();
+    void failureChanged();
 
 private:
     Track track_;
@@ -170,4 +196,5 @@ private:
     int panelMode_ = Suggestions;
     QString error_;
     int errorCode_ = 0;
+    QString failCause_, failReason_;
 };

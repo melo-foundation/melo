@@ -16,7 +16,7 @@ import {
   cookiesTxtPath,
 } from "./guest-cookies";
 import { getDownloadedUrl, getTrackMetadata } from "./library";
-import { resolveCookies } from "./innertube";
+import { hasAuthCookie, resolveCookies } from "./innertube";
 import { UNPACK_FAILED, unpackFailedMessage } from "./ytdlp-proc";
 import { relayUrl } from "./stream-relay";
 import { looksStale, ytdlp, ytdlpChannel } from "./ytdlp";
@@ -727,12 +727,81 @@ export function isBotWall(reason: string): boolean {
   return /confirm you.re not a bot/i.test(reason);
 }
 
-const BOT_WALL_MESSAGE = "YouTube is refusing guest playback from this address.";
+// -32040: walled, the browser's cookies not tried. -32041: walled, and the
+// browser's cookies were tried and did not get past it.
+export const BOT_WALL = -32040;
+export const BOT_WALL_BROWSER = -32041;
 
-/** The -32040 error; yt-dlp's own sentence rides in `data` for the log line. */
-function botWallError(reason: string): RpcError {
-  return new RpcError(-32040, BOT_WALL_MESSAGE, { ytdlp: botWallSentence(reason) });
+export const WALL_MESSAGES = {
+  guest: "YouTube is refusing guest playback from this address.",
+  none: "YouTube is refusing playback without an account from this address.",
+  browser: "YouTube is refusing playback from this address, even with your browser's account.",
+  browserSignedOut: "YouTube is refusing playback from this address, and your browser is not signed in to YouTube.",
+  browserUnread: "YouTube is refusing playback from this address, and your browser's cookies could not be read.",
+} as const;
+
+/** The wall as the identity that met it; yt-dlp's own sentence rides in `data`
+ *  for the log line. */
+function botWallError(reason: string, who: CookieSource = "guest"): RpcError {
+  return new RpcError(BOT_WALL, who === "none" ? WALL_MESSAGES.none : WALL_MESSAGES.guest,
+                      { ytdlp: botWallSentence(reason), identity: who });
 }
+
+type BrowserOutcome = "walled" | "unread" | "other";
+
+/** The wall after the browser's cookies failed too: the message says what the browser had. */
+async function browserWallError(reason: string, browser: string, outcome: BrowserOutcome): Promise<RpcError> {
+  let message: string = WALL_MESSAGES.browser;
+  let signedIn: boolean | null = null;
+  if (outcome === "unread") message = WALL_MESSAGES.browserUnread;
+  else {
+    signedIn = await browserSignedIn(browser);
+    if (signedIn === false) message = WALL_MESSAGES.browserSignedOut;
+  }
+  return new RpcError(BOT_WALL_BROWSER, message,
+                      { ytdlp: botWallSentence(reason), identity: "browser", signedIn });
+}
+
+// The browser's cookie store has YouTube's auth cookie; null when it cannot be read.
+async function storeSignedIn(browser: string): Promise<boolean | null> {
+  try { return hasAuthCookie(await resolveCookies("browser", browser, "")); }
+  catch { return null; }
+}
+let browserSignedIn = storeSignedIn;
+/** @internal test seam; null restores the real check. */
+export function setBrowserSignedInForTest(f: ((browser: string) => Promise<boolean | null>) | null): void {
+  browserSignedIn = f ?? storeSignedIn;
+}
+
+const cookiesUnreadable = (reason: string) =>
+  /cookies? database|could not (find|copy|read).*cookie|failed to decrypt|keyring|cookies-from-browser/i.test(reason)
+  && !isBotWall(reason);
+
+// yt-dlp got past the wall and found no format to match: not a wall.
+const isFormatMiss = (reason: string) => /requested format is not available|no video formats found/i.test(reason);
+
+// A track that met the wall answers with it again for a while, so playing a
+// track whose prefetch was walled shows the failure at once. Keyed with the
+// identities, so changing cookies asks again; `fresh` (Retry) asks again too.
+const WALL_TTL_MS = 5 * 60 * 1000;
+const walls = new Map<string, { error: RpcError; until: number }>();
+
+function wallKey(videoId: string): string {
+  return `${videoId}|${resolveIdentities(loadSettings()).map((i) => i.join(":")).join(",")}`;
+}
+function recentWall(videoId: string): RpcError | null {
+  const k = wallKey(videoId), w = walls.get(k);
+  if (!w) return null;
+  if (Date.now() < w.until) return w.error;
+  walls.delete(k);
+  return null;
+}
+function rememberWall(videoId: string, e: RpcError): RpcError {
+  walls.set(wallKey(videoId), { error: e, until: Date.now() + WALL_TTL_MS });
+  return e;
+}
+/** Forget every remembered wall: a new yt-dlp may get past them. */
+export function forgetWalls(): void { walls.clear(); }
 
 function botWallSentence(reason: string): string {
   return /[^.]*confirm you.re not a bot[^.]*\.?/i.exec(reason)?.[0].trim() ?? reason;
@@ -936,7 +1005,7 @@ export async function runYtdlpStream(videoId: string, id: Identity): Promise<Str
       console.error(`[streams] ${client ?? "default"} failed for ${videoId}: ${msg}`);
     }
   }
-  if (wallReason) throw botWallError(wallReason);
+  if (wallReason) throw botWallError(wallReason, id[0]);
   throw new ResolveFailed(ytdlpReason(lastRaw), lastRaw, identity);
 }
 
@@ -962,7 +1031,14 @@ function maybeReportStale(message: string): void {
   notify("ytdlp/stale", { message: message.slice(0, 200), channel: "stable" });
 }
 
-export async function fetchStreamUrl(videoId: string): Promise<StreamResult | StreamError> {
+// One resolve per video at a time: playing a track whose prefetch is still
+// running waits for that run instead of starting a second one.
+const resolving = new Map<string, Promise<StreamResult | StreamError>>();
+
+/** `fresh`: ask YouTube again even if this track met the wall a moment ago. */
+export async function fetchStreamUrl(
+  videoId: string, opts: { fresh?: boolean } = {},
+): Promise<StreamResult | StreamError> {
   // Local-first: downloaded library tracks play from disk.
   const localUrl = getDownloadedUrl(videoId);
   if (localUrl) {
@@ -982,18 +1058,38 @@ export async function fetchStreamUrl(videoId: string): Promise<StreamResult | St
     console.error(`[streams] cache hit for ${videoId}`);
     return toStreamResult(hit);
   }
+  if (opts.fresh) walls.delete(wallKey(videoId));
+  else {
+    const w = recentWall(videoId);
+    if (w) {
+      console.error(`[streams] ${videoId} met the bot wall under these cookies in the last ${WALL_TTL_MS / 60000} min`);
+      throw w;
+    }
+    const running = resolving.get(videoId);
+    if (running) return running;
+  }
+  const run = resolveStream(videoId);
+  resolving.set(videoId, run);
+  try { return await run; }
+  finally { if (resolving.get(videoId) === run) resolving.delete(videoId); }
+}
+
+async function resolveStream(videoId: string): Promise<StreamResult | StreamError> {
   // On a walled address the identities pass different videos, so the next one
   // is tried only when this one's failure is one cookies can change.
   const isNetwork = (raw: string) => /name resolution|timed? ?out|temporarily unavailable|network/i.test(raw);
   const rawOf = (e: any) => String(e?.stderr || e);
   let wall: RpcError | null = null;
   let lastMsg = "";
+  // what the browser's cookies did, when they were tried
+  let browser: { name: string; outcome: BrowserOutcome; reason: string } | null = null;
   for (const id of resolveIdentities(loadSettings())) {
     const declined: { why?: string } = {};
     const noteWall = (e: RpcError) => {
       const ytdlpSaid = (e.data as { ytdlp?: string } | undefined)?.ytdlp ?? e.message;
       console.error(`[streams] innertube declined: ${declined.why ?? "not tried"}; yt-dlp: ${ytdlpSaid} (${id[0]})`);
       wall = e;
+      if (id[0] === "browser") browser = { name: id[1], outcome: "walled", reason: ytdlpSaid };
     };
     try {
       if (FAST_STREAMS) {
@@ -1028,15 +1124,34 @@ export async function fetchStreamUrl(videoId: string): Promise<StreamResult | St
       }
       if (e instanceof RpcError) { noteWall(e); continue; }
       lastMsg = rawOf(e);
+      if (id[0] === "browser") {
+        const reason = ytdlpReason(lastMsg);
+        browser = { name: id[1], outcome: cookiesUnreadable(reason) ? "unread" : "other", reason };
+      }
       const cookiesMatter = (e instanceof ResolveFailed ? e.identity : failsWithIdentity(id, ytdlpReason(lastMsg)))
         || identitySensitive(declined.why ?? "");
       if (!cookiesMatter) break;
     }
   }
   // a thrown RpcError reaches the player with its code
-  if (wall) throw wall;
+  if (wall) return wallOutcome(videoId, wall, browser);
   maybeReportStale(lastMsg);
   return { ok: false, error: ytdlpReason(lastMsg) || "Failed to get stream" };
+}
+
+/** Every identity failed and one met the wall. The browser's cookies, when
+ *  tried, decide the answer: past the wall with no format to match is its own
+ *  reason, anything else is the wall as the browser met it. */
+async function wallOutcome(
+  videoId: string, wall: RpcError,
+  browser: { name: string; outcome: BrowserOutcome; reason: string } | null,
+  remember = true,
+): Promise<StreamError> {
+  const keep = (e: RpcError) => remember ? rememberWall(videoId, e) : e;
+  if (!browser) throw keep(wall);
+  if (isFormatMiss(browser.reason)) return { ok: false, error: browser.reason };
+  throw keep(await browserWallError(
+    (wall.data as { ytdlp?: string } | undefined)?.ytdlp ?? wall.message, browser.name, browser.outcome));
 }
 
 async function innertubeVideo(
@@ -1069,16 +1184,27 @@ async function innertubeVideo(
   };
 }
 
+const VCODEC_TAG: Record<VideoCodec, string> = { av1: "av01", vp9: "vp0?9", h264: "avc1" };
+
+/** yt-dlp's -f for the picture: a video-only stream under the cap, else one
+ *  with the audio muxed in (plain https before HLS). Signed-in sessions get
+ *  yt-dlp's tv_downgraded and web_safari clients, and web_safari offers only
+ *  muxed HLS; a video-only selector alone finds nothing there. */
+export function videoFormatSelector(maxHeight: number, codecs: VideoCodec[]): string {
+  const only = codecs.map((c) => `bv[height<=${maxHeight}][vcodec~='^${VCODEC_TAG[c]}']`);
+  const muxedHttp = codecs.map((c) => `b[height<=${maxHeight}][vcodec~='^${VCODEC_TAG[c]}'][protocol^=http]`);
+  const muxed = codecs.map((c) => `b[height<=${maxHeight}][vcodec~='^${VCODEC_TAG[c]}']`);
+  return [...only, ...muxedHttp, ...muxed].join("/");
+}
+
 async function ytdlpVideo(
   videoId: string, maxHeight: number, codecs: VideoCodec[], id: Identity,
-  last: { reason?: string; identity?: boolean; wall?: string } = {},
+  last: { reason?: string; identity?: boolean; wall?: string; formatMiss?: string } = {},
 ): Promise<CachedVideo | null> {
   const cookies = await cookieArgsFor(id);
   const haveIdentity = cookiesCarryIdentity(cookies);
   const pot = await mintPoToken(videoId);
-  const format = codecs
-    .map((c) => `bv[height<=${maxHeight}][vcodec~='^${({ av1: "av01", vp9: "vp0?9", h264: "avc1" })[c]}']`)
-    .join("/");
+  const format = videoFormatSelector(maxHeight, codecs);
   for (const client of STREAM_CLIENTS) {
     try {
       const { stdout } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
@@ -1093,6 +1219,7 @@ async function ytdlpVideo(
       const headers = ytdlpHttpHeaders(data);
       if (!(await tailIsReadable(raw, headers))) { last.identity = true; continue; }
       const kbps = Number(data.vbr ?? data.tbr ?? 0);
+      console.error(`[video] yt-dlp ${client ?? "default"} resolved ${videoId} at ${data.height ?? "?"}p (${id[0]})`);
       return {
         videoId, raw, headers,
         still: isStillFormat({ width: data.width, height: data.height, bitrate: kbps * 1000 }),
@@ -1102,7 +1229,8 @@ async function ytdlpVideo(
       last.reason = ytdlpReason(e?.stderr || String(e));
       if (failsWithIdentity(id, last.reason)) last.identity = true;
       if (isBotWall(last.reason)) last.wall ??= last.reason;
-      console.error(`[video] yt-dlp ${client ?? "default"} failed: ${last.reason}`);
+      if (isFormatMiss(last.reason)) last.formatMiss ??= last.reason;
+      console.error(`[video] yt-dlp ${client ?? "default"} failed: ${last.reason} (${id[0]})`);
     }
   }
   return null;
@@ -1117,9 +1245,10 @@ export async function fetchVideoStreamUrl(
   try {
     let found: CachedVideo | null = null;
     let wall: RpcError | null = null;
+    let browser: { name: string; outcome: BrowserOutcome; reason: string } | null = null;
     for (const id of resolveIdentities(loadSettings())) {
       const declined: { why?: string } = {};
-      const last: { reason?: string; identity?: boolean; wall?: string } = {};
+      const last: { reason?: string; identity?: boolean; wall?: string; formatMiss?: string } = {};
       if (FAST_STREAMS) {
         try { found = await innertubeVideo(videoId, maxHeight, codecs, id, declined); }
         catch (e) {
@@ -1129,14 +1258,20 @@ export async function fetchVideoStreamUrl(
       }
       if (!found) found = await ytdlpVideo(videoId, maxHeight, codecs, id, last);
       if (found) break;
-      if (last.wall) {
+      // a client that found no format got past the wall: this identity was not walled
+      if (last.wall && !last.formatMiss) {
         console.error(`[video] innertube declined: ${declined.why ?? "not tried"}; yt-dlp: ${botWallSentence(last.wall)} (${id[0]})`);
-        wall = botWallError(last.wall);
+        wall = botWallError(last.wall, id[0]);
+      }
+      if (id[0] === "browser") {
+        const reason = last.formatMiss ?? last.reason ?? "";
+        browser = { name: id[1], reason,
+                    outcome: last.wall && !last.formatMiss ? "walled" : cookiesUnreadable(reason) ? "unread" : "other" };
       }
       if (!last.identity && !identitySensitive(declined.why ?? "")) break;
     }
-    if (!found && wall) throw wall;
-    if (!found) return { ok: false, error: "No video for this track" };
+    if (!found && wall) return await wallOutcome(videoId, wall, browser, false);
+    if (!found) return { ok: false, error: browser?.reason || "No video for this track" };
     videoCache.set(key, found);
     return toVideoResult(found);
   } catch (err: any) {

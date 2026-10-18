@@ -34,6 +34,7 @@ vi.mock("./stream-relay", () => ({ relayUrl: async (raw: string) => raw }));
 import { fetchStreamUrl, setSessionBuilderForTest, fetchVideoStreamUrl, needsStreamRelay, ytdlpReason, streamIdentity, resolveIdentities, isBotWall } from "./streams";
 import type { SettingsV2 } from "./settings";
 import { invalidateStreamCache, invalidateVideoCache, primeVideoCacheForTest, primeStreamCacheForTest, videoCacheHas, streamCacheHas } from "./streams";
+import { WALL_MESSAGES, forgetWalls, setBrowserSignedInForTest, videoFormatSelector } from "./streams";
 
 describe("needsStreamRelay", () => {
   it("is true for googlevideo CDN hosts", () => {
@@ -170,6 +171,91 @@ describe("fetchStreamUrl identities", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     setSessionBuilderForTest(null);
+    setBrowserSignedInForTest(null);
+    forgetWalls();
+  });
+
+  it("says guest playback only when the guest was refused", async () => {
+    h.settings = { ...guestThenBrowser, streamCookieSource: "same" };
+    ytdlpAnswers(() => ({ err: WALL }));
+    const e = await fetchStreamUrl("idW1").catch((x) => x);
+    expect(e).toMatchObject({ code: -32040, message: WALL_MESSAGES.guest, data: { identity: "guest" } });
+  });
+
+  it("does not say guest when no cookies were sent", async () => {
+    h.settings = { ...guestThenBrowser, cookieSource: "none", streamCookieSource: "same" };
+    ytdlpAnswers(() => ({ err: WALL }));
+    const e = await fetchStreamUrl("idW2").catch((x) => x);
+    expect(e).toMatchObject({ code: -32040, message: WALL_MESSAGES.none, data: { identity: "none" } });
+    expect(e.message).not.toMatch(/guest/);
+  });
+
+  it("reports -32041 when the browser's cookies met the wall too", async () => {
+    setBrowserSignedInForTest(async () => true);
+    ytdlpAnswers(() => ({ err: WALL }));
+    const e = await fetchStreamUrl("idW3").catch((x) => x);
+    expect(e).toMatchObject({ code: -32041, message: WALL_MESSAGES.browser,
+                              data: { identity: "browser", signedIn: true } });
+    expect(e.message).not.toMatch(/guest/);
+  });
+
+  it("says the browser is signed out when its store has no YouTube login", async () => {
+    setBrowserSignedInForTest(async () => false);
+    ytdlpAnswers(() => ({ err: WALL }));
+    await expect(fetchStreamUrl("idW4")).rejects.toMatchObject({
+      code: -32041, message: WALL_MESSAGES.browserSignedOut, data: { signedIn: false } });
+  });
+
+  it("keeps the browser-only wall at -32041", async () => {
+    h.settings = { ...guestThenBrowser, cookieSource: "browser" };
+    setBrowserSignedInForTest(async () => null);
+    ytdlpAnswers(() => ({ err: WALL }));
+    await expect(fetchStreamUrl("idW5")).rejects.toMatchObject({ code: -32041, message: WALL_MESSAGES.browser });
+  });
+
+  it("answers a recent wall at once, and asks again when fresh", async () => {
+    h.settings = { ...guestThenBrowser, streamCookieSource: "same" };
+    ytdlpAnswers(() => ({ err: WALL }));
+    await expect(fetchStreamUrl("idW6")).rejects.toMatchObject({ code: -32040 });
+    expect(h.ytdlp).toHaveBeenCalledTimes(3);
+    await expect(fetchStreamUrl("idW6")).rejects.toMatchObject({ code: -32040 });
+    expect(h.ytdlp).toHaveBeenCalledTimes(3);   // remembered
+    ytdlpAnswers(() => ({ url: GOOD }));
+    expect((await fetchStreamUrl("idW6", { fresh: true })).ok).toBe(true);
+    expect(h.ytdlp).toHaveBeenCalledTimes(4);
+  });
+
+  it("asks again after the cookies change or the walls are forgotten", async () => {
+    h.settings = { ...guestThenBrowser, streamCookieSource: "same" };
+    ytdlpAnswers(() => ({ err: WALL }));
+    await expect(fetchStreamUrl("idW7")).rejects.toMatchObject({ code: -32040 });
+    h.settings = { ...guestThenBrowser };   // Use browser account
+    ytdlpAnswers((id) => id === "browser" ? { url: GOOD } : { err: WALL });
+    expect((await fetchStreamUrl("idW7")).ok).toBe(true);
+
+    h.settings = { ...guestThenBrowser, streamCookieSource: "same" };
+    ytdlpAnswers(() => ({ err: WALL }));
+    await expect(fetchStreamUrl("idW8")).rejects.toMatchObject({ code: -32040 });
+    forgetWalls();
+    const before = h.ytdlp.mock.calls.length;
+    await expect(fetchStreamUrl("idW8")).rejects.toMatchObject({ code: -32040 });
+    expect(h.ytdlp.mock.calls.length).toBe(before + 3);
+  });
+
+  it("shares one resolve between a prefetch and the play that follows it", async () => {
+    h.settings = { ...guestThenBrowser, streamCookieSource: "same" };
+    ytdlpAnswers(() => ({ err: WALL }));
+    const [a, b] = await Promise.all([fetchStreamUrl("idW9").catch((x) => x), fetchStreamUrl("idW9").catch((x) => x)]);
+    expect(a.code).toBe(-32040);
+    expect(b.code).toBe(-32040);
+    expect(h.ytdlp).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives the browser's own reason when it got past the wall to no format", async () => {
+    ytdlpAnswers((id) => id === "guest" ? { err: WALL }
+      : { err: "Requested format is not available. Use --list-formats for a list of available formats" });
+    expect(await fetchStreamUrl("idW10")).toEqual({ ok: false,
+      error: "Requested format is not available. Use --list-formats for a list of available formats" });
   });
 
   it("moves to the browser after a wall under the guest", async () => {
@@ -190,16 +276,17 @@ describe("fetchStreamUrl identities", () => {
     expect(h.ytdlp).toHaveBeenCalledTimes(1);
   });
 
-  it("reports the bot wall when the browser's cookies cannot be read", async () => {
+  it("reports the browser's wall when the browser's cookies cannot be read", async () => {
     ytdlpAnswers((id) => id === "guest"
       ? { err: WALL }
       : { err: "could not find firefox cookies database in /home/x/.mozilla/firefox" });
-    await expect(fetchStreamUrl("idI")).rejects.toMatchObject({ code: -32040 });
+    await expect(fetchStreamUrl("idI")).rejects.toMatchObject({
+      code: -32041, message: WALL_MESSAGES.browserUnread, data: { identity: "browser" } });
   });
 
-  it("reports the bot wall when the browser finds the video unavailable", async () => {
+  it("reports the browser's wall when the browser finds the video unavailable", async () => {
     ytdlpAnswers((id) => id === "guest" ? { err: WALL } : { err: "Video unavailable" });
-    await expect(fetchStreamUrl("idC")).rejects.toMatchObject({ code: -32040 });
+    await expect(fetchStreamUrl("idC")).rejects.toMatchObject({ code: -32041, message: WALL_MESSAGES.browser });
   });
 
   it("stops at an unavailable video without asking the browser", async () => {
@@ -256,5 +343,99 @@ describe("fetchStreamUrl identities", () => {
     }) as never);
     expect((await fetchStreamUrl("idH")).ok).toBe(true);
     expect(asked).toEqual(["YTMUSIC", "MWEB"]);
+  });
+});
+
+describe("videoFormatSelector", () => {
+  it("asks for video-only first, then a muxed stream over https, then any muxed stream", () => {
+    const f = videoFormatSelector(720, ["vp9", "h264"]).split("/");
+    expect(f).toEqual([
+      "bv[height<=720][vcodec~='^vp0?9']", "bv[height<=720][vcodec~='^avc1']",
+      "b[height<=720][vcodec~='^vp0?9'][protocol^=http]", "b[height<=720][vcodec~='^avc1'][protocol^=http]",
+      "b[height<=720][vcodec~='^vp0?9']", "b[height<=720][vcodec~='^avc1']",
+    ]);
+  });
+});
+
+// A format list per identity and client, and a selector evaluated against it the
+// way yt-dlp does: the first alternative with a match wins.
+type Fmt = { vcodec: string; acodec: string; height: number; protocol: string; url: string };
+function pick(selector: string, formats: Fmt[]): Fmt | null {
+  for (const alt of selector.split("/")) {
+    const m = /^(bv|b)((?:\[[^\]]+\])*)$/.exec(alt);
+    if (!m) continue;
+    const conds = [...m[2].matchAll(/\[([^\]]+)\]/g)].map((x) => x[1]);
+    const ok = formats.filter((f) => (m[1] === "bv" ? f.acodec === "none" : f.acodec !== "none") && f.vcodec !== "none"
+      && conds.every((c) => {
+        let k: RegExpExecArray | null;
+        if ((k = /^height<=(\d+)$/.exec(c))) return f.height <= Number(k[1]);
+        if ((k = /^vcodec~='(.+)'$/.exec(c))) return new RegExp(k[1]).test(f.vcodec);
+        if ((k = /^protocol\^=(\w+)$/.exec(c))) return f.protocol.startsWith(k[1]);
+        return false;
+      }));
+    if (ok.length) return ok.sort((a, b) => b.height - a.height)[0];
+  }
+  return null;
+}
+const DASH_720: Fmt = { vcodec: "vp09.00.31.08", acodec: "none", height: 720, protocol: "https",
+                        url: "https://rr1.googlevideo.com/videoplayback?expire=9999999999&clen=10&dash" };
+const HLS_720: Fmt = { vcodec: "avc1.4D401F", acodec: "mp4a.40.2", height: 720, protocol: "m3u8_native",
+                       url: "https://manifest.googlevideo.com/api/manifest/hls_playlist/expire/9999999999/x" };
+
+describe("fetchVideoStreamUrl identities", () => {
+  const guestThenBrowser = { cookieSource: "guest", browser: "firefox", cookieProfile: "Default",
+                             streamCookieSource: "browser" };
+  function formatsBy(table: (identity: string, client: string) => Fmt[] | { err: string }) {
+    h.ytdlp.mockImplementation(async (args: string[]) => {
+      const identity = args.includes("--cookies-from-browser") ? "browser"
+        : args.includes("--cookies") ? "guest" : "none";
+      const ex = args.find((a) => a.startsWith("youtube:player_client="));
+      const client = ex ? /player_client=([^;]+)/.exec(ex)![1] : "default";
+      const t = table(identity, client);
+      const fail = (m: string) => Object.assign(new Error("yt-dlp failed"), { stderr: `ERROR: [youtube] x: ${m}` });
+      if ("err" in t) throw fail(t.err);
+      const f = pick(args[args.indexOf("-f") + 1], t);
+      if (!f) throw fail("Requested format is not available. Use --list-formats for a list of available formats");
+      return { stdout: JSON.stringify({ url: f.url, height: f.height, width: f.height * 16 / 9, tbr: 2500 }) };
+    });
+  }
+  beforeEach(() => {
+    h.ytdlp.mockReset();
+    h.poTokenSession.mockResolvedValue(null);
+    h.settings = { ...guestThenBrowser };
+    vi.stubGlobal("fetch", vi.fn(async () => ({ status: 206, body: { cancel: () => {} }, text: async () => "" })));
+  });
+  afterEach(() => { vi.unstubAllGlobals(); setBrowserSignedInForTest(null); });
+
+  // The user's log: guest walled; under the browser the default client found no
+  // video-only format, web_music met the wall, web_embedded said unavailable.
+  const userCase = (muxed: Fmt[]) => (id: string, client: string) =>
+    id === "guest" ? { err: WALL }
+    : client === "default" ? muxed
+    : client === "web_music" ? { err: WALL } : { err: "This video is unavailable" };
+
+  it("plays the muxed stream the signed-in default client offers", async () => {
+    formatsBy(userCase([HLS_720]));
+    const r = await fetchVideoStreamUrl("vidU1", 720, ["vp9", "h264"]);
+    expect(r).toMatchObject({ ok: true, videoId: "vidU1", url: HLS_720.url });
+  });
+
+  it("still prefers a video-only stream when there is one", async () => {
+    formatsBy(userCase([HLS_720, DASH_720]));
+    const r = await fetchVideoStreamUrl("vidU2", 720, ["vp9", "h264"]);
+    expect(r).toMatchObject({ ok: true, url: DASH_720.url });
+  });
+
+  it("gives the browser's format reason, not the guest's wall, when nothing matches", async () => {
+    formatsBy(userCase([]));
+    const r = await fetchVideoStreamUrl("vidU3", 720, ["av1"]);
+    expect(r).toEqual({ ok: false, error: expect.stringMatching(/^Requested format is not available/) });
+  });
+
+  it("names the browser when every client under it met the wall", async () => {
+    setBrowserSignedInForTest(async () => true);
+    formatsBy(() => ({ err: WALL }));
+    await expect(fetchVideoStreamUrl("vidU4", 720, ["vp9"])).rejects.toMatchObject({
+      code: -32041, message: WALL_MESSAGES.browser });
   });
 });

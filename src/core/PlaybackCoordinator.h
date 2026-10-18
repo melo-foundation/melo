@@ -35,6 +35,12 @@ public:
     Q_INVOKABLE void previous();                                // falls back to history
     Q_INVOKABLE void togglePlay();
     Q_INVOKABLE void stop();                                    // offer("stop") then stopBuiltin
+    // The answer to PlayerState.failCause: "retry" resolves the same track
+    // again past the sidecar's remembered wall, "skip" plays the next,
+    // "browser" switches playback cookies to the browser's and retries,
+    // "update" pulls the nightly yt-dlp and retries; "signin" and "dismiss"
+    // only close it. Retry also works with no failure showing.
+    Q_INVOKABLE void answerFailure(const QString& action);
     void setInterceptOffer(std::function<bool(const QString& action)> fn);
     // extra fields for plugins' trackChanged, by track id (the library's album)
     void setTrackExtras(std::function<QVariantMap(const QString& id)> fn) { trackExtras_ = std::move(fn); }
@@ -135,8 +141,13 @@ private:
     bool offer(const QString& action);
     void beginAudio(PlayIntent intent);                         // after loadTrack/crossfadeTo
     void playOrPauseBuiltin();
+    // fresh: the sidecar resolves again even if this track met the bot wall a moment ago
     void playTrack(const Track& t, int forceCrossfade = -1,
-                   PlayIntent intent = PlayIntent::Advance);    // -1 auto, 0 no, 1 yes
+                   PlayIntent intent = PlayIntent::Advance, bool fresh = false);   // -1 auto, 0 no, 1 yes
+    // The playing track's resolve failed for good: nothing plays and the
+    // failure waits for an answer. code 0: the resolve answered ok:false.
+    void failPlay(const Track& t, int code, const QString& reason);
+    QString prefetchFailedId_;   // a prefetch that failed is not asked again for this track
     void onStreamResolved(const Track& t, quint64 gen, const QJsonObject& res, bool wantCrossfade,
                           PlayIntent intent);
     void fetchSuggestions(const QString& videoId);

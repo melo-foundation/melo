@@ -83,7 +83,7 @@ export function registerHandlers(): void {
   method("yt/recommendedContinuation", ({ token }) => it.fetchRecommendedContinuation(token, ...ck()));
   method("yt/getNext", ({ videoId }) => it.fetchNext(videoId, ...ck()));
   method("yt/nextContinuation", ({ token }) => it.fetchNextContinuation(token, ...ck()));
-  method("yt/getStream", ({ videoId }) => st.fetchStreamUrl(videoId));
+  method("yt/getStream", ({ videoId, fresh }) => st.fetchStreamUrl(videoId, { fresh: fresh === true }));
   method("yt/getVideoStream", ({ videoId, maxHeight, codecs }) =>
     st.fetchVideoStreamUrl(videoId, Number(maxHeight) || 720, parseCodecs(codecs)));
   method("lyrics/get", ({ videoId, artist, title, album, duration }) =>
@@ -285,7 +285,9 @@ export function registerHandlers(): void {
   // user accepted the nightly prompt: switch channel and pull it now
   method("ytdlp/setChannel", async ({ channel }) => {
     saveSettings({ ytdlpChannel: channel === "nightly" ? "nightly" : "stable" });
-    return { ok: await updateNow(channel === "nightly" ? "nightly" : "stable") };
+    const ok = await updateNow(channel === "nightly" ? "nightly" : "stable");
+    if (ok) st.forgetWalls();   // the new yt-dlp may get past them
+    return { ok };
   });
   method("settings/set", ({ patch, removeUi }) => {
     const saved = saveSettings(patch, Array.isArray(removeUi) ? removeUi : []);

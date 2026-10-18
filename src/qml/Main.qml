@@ -1629,6 +1629,8 @@ Window {
     DetachedWindow {
         id: queueWin
         kind: "queue"
+        failShown: root.failHost === kind
+        onFailAnswered: (a) => root.answerFailure(a)
         listEmpty: popupQueuePanel.empty
         defaultControls: root.detachedControls
         onFrameShown: root.windowFramed(queueWin)
@@ -1640,6 +1642,8 @@ Window {
     DetachedWindow {
         id: visWin
         kind: "vis"
+        failShown: root.failHost === kind
+        onFailAnswered: (a) => root.answerFailure(a)
         defaultControls: root.detachedControls
         onFrameShown: root.windowFramed(visWin)
         recordOpen: root.layoutRecording
@@ -1677,6 +1681,8 @@ Window {
     DetachedWindow {
         id: videoWin
         kind: "video"
+        failShown: root.failHost === kind
+        onFailAnswered: (a) => root.answerFailure(a)
         defaultControls: root.detachedControls
         onFrameShown: root.windowFramed(videoWin)
         recordOpen: root.layoutRecording
@@ -1751,6 +1757,14 @@ Window {
         visible: true
 
         HoverHandler { id: miniHover; enabled: root.miniPlayer }
+        PlayFailDialog {
+            parent: miniWin.contentItem
+            z: 9500
+            shown: root.failHost === "mini" && root.miniPlayer
+            cause: PlayerState.failCause
+            reason: PlayerState.failReason
+            onAnswered: (a) => root.answerFailure(a)
+        }
         ClickThroughBadge {
             id: miniClickBadge
             parent: miniWin.contentItem
@@ -3193,9 +3207,36 @@ Window {
             PlayerState.error = ""
             if (kind === "signin") root.settingsWindow().open()
             if (kind === "playbackCookies") Settings.streamCookieSource = "browser"
+            // trackInfo is YouTube's numbers, not a track: replaying it cleared the queue
             if ((kind === "retry" || kind === "playbackCookies") && PlayerState.hasTrack)
-                Player.playTrackData(PlayerState.trackInfo)
+                Player.answerFailure("retry")
         }
+    }
+
+    // The playing track could not be loaded: a dialog in the window in use,
+    // picked when the failure arrives.
+    property string failHost: ""
+    function pickFailHost() {
+        if (root.active && !root.miniPlayer) return "main"
+        if (miniWin.active && root.miniPlayer) return "mini"
+        for (const w of [queueWin, visWin, videoWin])
+            if (w.open && w.active) return w.kind
+        return root.miniPlayer ? "mini" : "main"
+    }
+    Connections {
+        target: PlayerState
+        function onFailureChanged() { root.failHost = PlayerState.failCause ? root.pickFailHost() : "" }
+    }
+    function answerFailure(action) {
+        if (action === "signin") root.settingsWindow().open()
+        Player.answerFailure(action)
+    }
+    PlayFailDialog {
+        id: playFailMain
+        shown: root.failHost === "main"
+        cause: PlayerState.failCause
+        reason: PlayerState.failReason
+        onAnswered: (a) => root.answerFailure(a)
     }
 
     Rectangle {   // lite build on system GStreamer with pieces missing

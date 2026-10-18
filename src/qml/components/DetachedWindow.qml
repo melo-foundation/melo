@@ -204,4 +204,15 @@ MeloWindow {
             onActiveChanged: if (active) { dw.reattachArmed = true; dw.startSystemMove() }
         }
     }
+    // the playing track's failure, when this is the window in use
+    property bool failShown: false
+    signal failAnswered(string action)
+    PlayFailDialog {
+        parent: dw.contentItem
+        z: 9500
+        shown: dw.failShown && dw.open
+        cause: PlayerState.failCause
+        reason: PlayerState.failReason
+        onAnswered: (a) => dw.failAnswered(a)
+    }
 }
