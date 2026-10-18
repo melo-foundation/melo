@@ -464,7 +464,7 @@ Window {
             // reveal content only after the KWin position move, or the
             // window shows at KWin's default placement for a frame before
             // it jumps to the saved position
-            const reveal = () => { root.ready = true; root.restoreLayout() }
+            const reveal = () => { playerBar.finishShown(); miniBar.finishShown(); root.ready = true; root.restoreLayout() }
             if (start.maximizeByKwin) whenMaximized(reveal)
             else reveal()
         }

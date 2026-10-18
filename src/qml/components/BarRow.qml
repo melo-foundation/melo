@@ -157,7 +157,8 @@ Item {
     }
     function cellAt(index) { return rep.itemAt(index) }
     function cellCount() { return rep.count }
-    function finish() { for (let i = 0; i < rep.count; ++i) { const c = rep.itemAt(i); if (c) c.finish() } }
+    // built and placed now: a cell left to the deferred relayout is not drawn on the next frame
+    function finish() { for (let i = 0; i < rep.count; ++i) { const c = rep.itemAt(i); if (c) c.finish() }; if (laid) relayout() }
 
     // The plate a run of cells sits on: a pale backing that swells around each button
     // and pinches between them. Cells naming the same `backing` share one, from the

@@ -31,7 +31,12 @@ Item {
     // the arranger's shelf — is placed by whoever holds it.
     property bool placed: true
     // a Loader made synchronous completes its incubation at once
-    function finish() { content.asynchronous = false }
+    // a Row content sizes itself at the next polish; forceLayout sizes it now
+    function finish() {
+        content.asynchronous = false
+        const row = content.item as Row
+        if (row) row.forceLayout()
+    }
     visible: shown && width > 0 && placed
     // the one being dragged, in the arranger's preview: faint, where it would land
     opacity: doc._drag === true ? 0.3 : 1

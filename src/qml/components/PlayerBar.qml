@@ -313,6 +313,8 @@ Rectangle {
     // above the bar; the volume toast stays outside it.
     property var pool: ({})
     property Item shownItem: null
+    // the shown layout's cells built now, so a reveal shows the bar whole
+    function finishShown() { const lay = shownItem as BarLayout; if (lay) lay.finish() }
     property Item leavingItem: null
     // the renderer a swap is waiting on: it starts its clock once that one
     // has been drawn (Qt's frameSwapped after its rows laid out), so the

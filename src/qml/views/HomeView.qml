@@ -424,6 +424,7 @@ Item {
         if (loadedOnce || !Settings.loaded) return
         if (width <= 0 || height <= 0) return
         if (recModel.count > 0 || sections.length > 0) return
+        if (chipModel.count === 0) resetChipPlaceholders()
         if (ytMusic) sections = placeholderSections()
         else flow = SkeletonModel.beginLoad(recModel, placeholderCount())
     }
@@ -616,7 +617,7 @@ Item {
         reuseItems: true
         cacheBuffer: 400
         remove: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 150 } }
-        add: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
+        add: Transition { enabled: view.loadedOnce; NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
 
         readonly property bool compact: view.layout === "compact"
 
@@ -794,7 +795,7 @@ Item {
         reuseItems: true
         cacheBuffer: 400
         remove: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 150 } }
-        add: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
+        add: Transition { enabled: view.loadedOnce; NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
 
         // text block is a fixed 144px design transform-scaled with the tile
         // (see tscale in the delegate) — reserve its SCALED height

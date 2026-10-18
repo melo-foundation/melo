@@ -615,12 +615,20 @@ int main(int argc, char** argv) {
     // the splash goes with the first frame that shows the window's content
     if (auto* win = qobject_cast<QQuickWindow*>(qml.rootObjects().value(0))) {
         auto* shown = new QMetaObject::Connection;
-        *shown = QObject::connect(win, &QQuickWindow::frameSwapped, &app, [win, &splash, shown] {
-            if (!win->property("ready").toBool()) return;
+        // main may draw no frame once a restored mini player is up: a timer asks too
+        auto* poll = new QTimer(&app);
+        poll->setInterval(50);
+        // a restored mini player is the window on screen: wait until it is up
+        auto tryClose = [win, &splash, shown, poll] {
+            if (!win->property("ready").toBool() || win->property("restoringMini").toBool()) return;
             splash.close();
             QObject::disconnect(*shown);
-            delete shown;
-        });
+            poll->stop();
+            poll->deleteLater();
+        };
+        *shown = QObject::connect(win, &QQuickWindow::frameSwapped, &app, tryClose);
+        QObject::connect(poll, &QTimer::timeout, &app, tryClose);
+        poll->start();
     } else {
         splash.close();
     }

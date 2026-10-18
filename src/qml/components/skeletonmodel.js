@@ -26,8 +26,10 @@ function toRow(r) {
 }
 
 function seed(model, count) {
-    model.clear()
-    for (let i = 0; i < count; i++) model.append(blank())
+    let keep = 0
+    while (keep < model.count && keep < count && model.get(keep).placeholder === true) keep++
+    if (keep < model.count) model.remove(keep, model.count - keep)
+    for (let i = keep; i < count; i++) model.append(blank())
 }
 
 // Start a load: seed `count` placeholders, return flow state.
