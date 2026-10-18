@@ -94,9 +94,10 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
     connect(state_, &PlayerState::trackChanged, this, [this] {
         if (state_->hasTrack()) {
             const Track t = state_->currentTrack();
-            sidecar_->sendPlayerEvent("trackChanged", {{"track", QVariantMap{
-                {"id", t.id}, {"title", t.title}, {"channel", t.channel},
-                {"duration", t.duration}, {"source", t.source}}}});
+            QVariantMap track{{"id", t.id}, {"title", t.title}, {"channel", t.channel},
+                              {"duration", t.duration}, {"source", t.source}, {"thumbnail", t.thumbnail}};
+            if (trackExtras_) track.insert(trackExtras_(t.id));
+            sidecar_->sendPlayerEvent("trackChanged", {{"track", track}});
         } else {
             sidecar_->sendPlayerEvent("stopped", {});
         }
@@ -125,7 +126,7 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
     connect(state_, &PlayerState::isPlayingChanged, this, [this] {
         sidecar_->sendPlayerEvent("stateChanged",
             {{"playing", state_->isPlaying()},
-             {"position", state_->position()}});
+             {"position", state_->position()}, {"duration", state_->duration()}});
     });
 }
 
@@ -657,7 +658,7 @@ void PlaybackCoordinator::seek(double seconds) {
     // keep showing the pre-seek time until resume; reflect the seek now
     const double pos = std::max(0.0, seconds);
     state_->setPosition(pos);
-    sidecar_->sendPlayerEvent("seeked", {{"position", pos}});   // clamped, matches state_
+    sidecar_->sendPlayerEvent("seeked", {{"position", pos}, {"duration", state_->duration()}});   // clamped, matches state_
     emit seeked(pos);
 }
 void PlaybackCoordinator::setVolume(double v) { engine_->setMasterVolume(v); state_->setVolume(v); }

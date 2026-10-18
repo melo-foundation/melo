@@ -26,11 +26,9 @@ function interceptGrants(p) {
 function rows(p) {
     const out = []
     if (!p) return out
-    // ui is granted by enabling the plugin (⚠ on that row), so it has no
-    // grant row; nested here it reads as a second plugin.
+    // ui and rawNetwork are granted by enabling the plugin (⚠ on that row), so
+    // they have no grant row; nested here they read as a second plugin.
     const perms = p.permissions || {}
-    if (perms.rawNetwork)
-        out.push({ kind: "rawNetwork", name: "rawNetwork" })
     const ic = perms.intercept || []
     for (let i = 0; i < ic.length; i++)
         out.push({ kind: "intercept", name: String(ic[i]), action: String(ic[i]) })

@@ -34,9 +34,8 @@ Templates in the repo: `sidecar/test-fixtures/sample-source/` (a source),
    folder** opens it).
 2. Open **Settings → Plugins**. The tab rescans the folder; no restart.
 3. Turn the plugin on. A plugin with a ⚠ warning needs **Enable anyway**; every
-   `ui` plugin has one. Enabling a `ui` plugin loads its QML.
-4. Turn on any grant rows under it: `rawNetwork` (needs **Allow anyway**) and
-   one row per `intercept` action.
+   `ui` and `rawNetwork` plugin has one. Enabling grants `ui` and `rawNetwork`.
+4. Turn on the row under it for each `intercept` action you allow.
 
 ## manifest.json
 
@@ -72,7 +71,7 @@ disables the plugin and shows the message in the Plugins tab.
 | `settings` | rows on the plugin's settings page; see [Settings schema](#settings-schema) |
 | `commands` | `{ id, label, default? }[]` for a `ui` plugin, invoked as `<pluginId>.<id>`; see [Commands](#commands) |
 | `permissions.network` | hostnames `fetch` may reach. `*.x.com` matches `x.com` and any subdomain |
-| `permissions.rawNetwork` | `true` to request `node:net`/`tls`/`dgram`/`http`/`https`/`http2` and `WebSocket`. Takes effect only when the user turns on the `rawNetwork` row; the `network` allowlist does not apply to those sockets |
+| `permissions.rawNetwork` | `true` to request `node:net`/`tls`/`dgram`/`http`/`https`/`http2` and `WebSocket`. Granted when the user enables the plugin; the `network` allowlist does not apply to those sockets |
 | `permissions.intercept` | [catalog](#intercepts) actions to handle before melo does. Each becomes a grant row the user turns on |
 
 `entry` needs `sidecar`, `qml`, or both. A permissions key other than these three
@@ -96,9 +95,9 @@ export default function activate(melo) {
   })
 
   // --- playback events ---
-  melo.player.on("trackChanged", ({ track }) => {})   // { id,title,channel,duration,source }
-  melo.player.on("stateChanged", ({ playing, position }) => {})
-  melo.player.on("seeked",       ({ position }) => {})
+  melo.player.on("trackChanged", ({ track }) => {})   // { id,title,channel,duration,source,thumbnail }; album, albumArt for a library track
+  melo.player.on("stateChanged", ({ playing, position, duration }) => {})
+  melo.player.on("seeked",       ({ position, duration }) => {})
   melo.player.on("stopped",      () => {})            // no track loaded
 
   // --- storage (JSON kv, persisted in the plugin's data dir) ---
@@ -676,7 +675,7 @@ Each plugin runs as a separate Node process launched with `--permission`:
   host rejects with `melo: <host> is not in this plugin's manifest network allowlist`.
   Low-level socket modules and `globalThis.WebSocket` throw
   `melo: <module> is not available to this plugin (rawNetwork is not granted)`
-  until the user turns on `rawNetwork`. The socket-module block needs Node ≥ 22.15.
+  unless the plugin declares `rawNetwork` and is enabled. The socket-module block needs Node ≥ 22.15.
 - **Limit:** the network restriction is JavaScript-level. A plugin granted
   `rawNetwork`, or one exploiting a Node escape, is not contained. Review a
   plugin before you install it.
@@ -688,9 +687,8 @@ imports, `eval`/`new Function`/`process.binding`/`process.getBuiltinModule`,
 
 ## Lifecycle
 
-- Enabled plugins start with melo and when switched on in Settings. A
-  `rawNetwork` grant change takes effect when the plugin is turned off and on,
-  or on restart.
+- Enabled plugins start with melo and when switched on in Settings. A grant
+  change restarts an enabled plugin.
 - A plugin that exits is restarted up to 3 times in 60 s, then marked
   **crashed** until the user turns it on again.
 - A plugin that throws during load, or has no default-exported `activate`, is

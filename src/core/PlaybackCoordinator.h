@@ -36,6 +36,8 @@ public:
     Q_INVOKABLE void togglePlay();
     Q_INVOKABLE void stop();                                    // offer("stop") then stopBuiltin
     void setInterceptOffer(std::function<bool(const QString& action)> fn);
+    // extra fields for plugins' trackChanged, by track id (the library's album)
+    void setTrackExtras(std::function<QVariantMap(const QString& id)> fn) { trackExtras_ = std::move(fn); }
     void setInterceptOccupied(std::function<bool(const QString& action)> fn);
     void playBuiltin();
     void pauseBuiltin();
@@ -164,6 +166,7 @@ private:
     SuggestionsModel* suggestions_;
     SettingsStore* settings_;
     std::function<bool(const QString& action)> interceptOffer_;
+    std::function<QVariantMap(const QString& id)> trackExtras_;
     std::function<bool(const QString& action)> interceptOccupied_;
 
     // guards

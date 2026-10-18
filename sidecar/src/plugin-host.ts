@@ -140,7 +140,10 @@ try {
     throw new Error("plugin has no default-exported activate(melo) function");
   await mod.default(melo);
 } catch (e) {
-  notifyParent("fatal", { error: String((e as Error)?.stack || e) });
+  // the settings row shows one line; the stack goes to the log
+  const err = e as Error;
+  if (err?.stack) notifyParent("log", { msg: err.stack });
+  notifyParent("fatal", { error: String(err?.message || e).split("\n")[0] });
   process.exit(1);
 }
 notifyParent("registered", {

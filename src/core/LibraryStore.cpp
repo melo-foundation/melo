@@ -136,6 +136,17 @@ QVariantMap LibraryStore::toPlayable(const QJsonObject& t) const {
              { "downloaded", t["downloaded"].toBool() } };   // extra key; ignored by playQueue
 }
 
+QVariantMap LibraryStore::albumOf(const QString& id) const {
+    const int i = trackAt(id);
+    if (i < 0) return {};
+    const QJsonObject md = rawTracks_[i].toObject()["metadata"].toObject();
+    QVariantMap out;
+    if (!md["album"].toString().isEmpty()) out["album"] = md["album"].toString();
+    const QString art = md["albumArt"].toString();
+    if (art.startsWith(QLatin1String("http"))) out["albumArt"] = art;
+    return out;
+}
+
 int LibraryStore::trackAt(const QString& id) const {
     return trackIndex_.value(id, -1);
 }

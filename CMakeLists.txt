@@ -615,6 +615,13 @@ if(Qt6Test_FOUND)
     set_tests_properties(themeswatches PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    # the Discord plugin against a fake Discord socket; plugins/ is not in public melo
+    find_program(MELO_NODE node)
+    if(MELO_NODE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/plugins/discord-presence.test.mjs")
+        add_test(NAME discordpresence COMMAND ${MELO_NODE} --test
+                 "${CMAKE_CURRENT_SOURCE_DIR}/plugins/discord-presence.test.mjs")
+    endif()
+
     # builtIn stays off disk: old files load without it, a forged one is a user theme
     add_executable(tst_themebuiltin
         tests/cpp/tst_themebuiltin.cpp

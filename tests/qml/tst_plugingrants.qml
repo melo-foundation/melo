@@ -129,10 +129,9 @@ Item {
         function test_g_rows_and_warning_copy() {
             const p = root.plugin("a", { ui: false, rawNetwork: false, intercept: [] })
             const rs = PG.rows(p)
-            compare(rs.length, 3)
-            compare(rs[0].kind, "rawNetwork")
-            compare(rs[1].action, "play")
-            compare(rs[2].action, "seek")
+            compare(rs.length, 2)
+            compare(rs[0].action, "play")
+            compare(rs[1].action, "seek")
             compare(PG.warning(p, "ui"),
                     "⚠ Runs code inside melo, and can reach the network from its own interface.")
             compare(PG.warning(p, "rawNetwork"),

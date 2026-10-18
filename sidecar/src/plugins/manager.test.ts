@@ -196,6 +196,28 @@ describe("plugin manager", () => {
     expect(b.error).toMatch(/boom on activate/);
     expect(b.enabled).toBe(false);   // fatal disables, no restart
   });
+  it("a load failure is one line; the stack is not in the error", async () => {
+    cpSync(BROKEN, join(root, "plugins", "broken"), { recursive: true });
+    boot({ sample: false, broken: true });
+    await until(() => listPlugins().find((p) => p.id === "broken")?.state === "error");
+    expect(listPlugins().find((p) => p.id === "broken")!.error).toBe("boom on activate");
+  });
+  it("enabling a rawNetwork plugin grants it and starts it; its node:net import is not warned twice", async () => {
+    const dir = join(root, "plugins", "rawnet");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "main.js"), 'import net from "node:net";\nexport default function activate(melo) { melo.player.on("stopped", () => net); }\n');
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify({
+      id: "rawnet", name: "rawnet", version: "1.0.0", apiVersion: 1,
+      capabilities: ["events"], entry: { sidecar: "main.js" }, permissions: { rawNetwork: true },
+    }));
+    boot({ sample: false });
+    const rn = () => listPlugins().find((p) => p.id === "rawnet")!;
+    expect(rn().warnings.some((w) => w.includes("low-level network module"))).toBe(false);
+    expect(rn().warnings.some((w) => w.includes("not limited"))).toBe(true);
+    setPluginEnabled("rawnet", true);
+    expect(rn().grants.rawNetwork).toBe(true);
+    await until(() => rn().state === "running");
+  });
   it("rescan picks up a folder dropped in after boot (as stopped), no restart", async () => {
     rmSync(join(root, "plugins", "sample"), { recursive: true, force: true });
     initPlugins({ pluginsDir: join(root, "plugins"), pluginDataRoot: join(root, "plugin-data"),

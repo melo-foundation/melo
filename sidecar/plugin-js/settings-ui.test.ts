@@ -44,10 +44,10 @@ describe("plugin settings placement", () => {
   });
 
   it("draws holes a plugin actually asked for, and nothing else", () => {
-    // rawNetwork and each declared intercept are real extra holes and keep
-    // their own confirmed rows; they are driven off `permissions`, so a plugin
-    // that declares neither (Winamp) shows no nested rows at all.
-    expect(grants).toMatch(/if \(perms\.rawNetwork\)/);
+    // Each declared intercept keeps its own confirmed row, driven off
+    // `permissions`; rawNetwork, like ui, is granted by enabling the plugin,
+    // so a plugin that declares no intercept shows no nested rows at all.
+    expect(grants).not.toMatch(/out\.push\(\{\s*kind:\s*"rawNetwork"/);
     expect(grants).toMatch(/const ic = perms\.intercept \|\| \[\]/);
   });
 });

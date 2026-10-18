@@ -38,8 +38,10 @@ function startHost(dir = FIXTURE, grantsJson?: string) {
   const next = () => new Promise<any>((res) => {
     if (lines.length) res(lines.shift()); else waiters.push(res);
   });
+  // the next message of one kind; a load failure logs its stack before `fatal`
+  const nextOf = async (method: string) => { for (;;) { const m = await next(); if (m.method === method) return m; } };
   const send = (m: object) => p.stdin!.write(JSON.stringify(m) + "\n");
-  return { p, next, send };
+  return { p, next, nextOf, send };
 }
 
 describe("plugin host", () => {
@@ -84,9 +86,8 @@ describe("plugin host", () => {
 
   it("reports a load failure as a structured `fatal`, not a bare crash", async () => {
     const h = startHost(BROKEN);
-    const m = await h.next();
-    expect(m.method).toBe("fatal");
-    expect(m.params.error).toMatch(/boom on activate/);
+    const m = await h.nextOf("fatal");
+    expect(m.params.error).toBe("boom on activate");
   }, 20000);
 
   it("withholds net when the manifest declares rawNetwork but the grant is false", async () => {
@@ -100,8 +101,7 @@ describe("plugin host", () => {
     writeFileSync(join(dir, "main.js"),
       "export default async function activate() { await import('net'); }\n");
     const h = startHost(dir, JSON.stringify({ ui: false, rawNetwork: false, intercept: [] }));
-    const m = await h.next();
-    expect(m.method).toBe("fatal");
+    const m = await h.nextOf("fatal");
     expect(m.params.error).toMatch(/net is not available/);
   }, 20000);
 
@@ -122,8 +122,7 @@ describe("plugin host", () => {
       + "  throw new Error('REACHED node:http: ' + typeof http.request);\n"
       + "}\n");
     const h = startHost(dir, JSON.stringify({ ui: false, rawNetwork: false, intercept: [] }));
-    const m = await h.next();
-    expect(m.method).toBe("fatal");
+    const m = await h.nextOf("fatal");
     expect(m.params.error).not.toMatch(/REACHED/);
     expect(m.params.error).toMatch(/getBuiltinModule is not a function/);
   }, 20000);

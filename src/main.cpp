@@ -443,6 +443,7 @@ int main(int argc, char** argv) {
     LibraryStore library(&sidecar, &settings);
     PlaybackCoordinator coordinator(&engine, &sidecar, &playerState,
                                     &queueModel, &suggestionsModel, &settings);
+    coordinator.setTrackExtras([&library](const QString& id) { return library.albumOf(id); });
     WindowController windowCtl;
 
     // interactive resize -> freeze tick-driven UI updates (see coordinator)

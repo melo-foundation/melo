@@ -65,6 +65,8 @@ public:
     Q_INVOKABLE QVariantList allTracks() const;
     // one entry as the player takes it (edited title and artist, art), or {}
     Q_INVOKABLE QVariantMap playable(const QString& id) const;
+    // what the queue's track does not carry: { album, albumArt (a web address) }, or {}
+    QVariantMap albumOf(const QString& id) const;
     Q_INVOKABLE QVariantList playlistTracks(const QString& playlistId) const;
     Q_INVOKABLE QVariantList albumTracks(const QString& album) const;
 

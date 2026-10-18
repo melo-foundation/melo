@@ -176,6 +176,8 @@ export function loadPluginDir(dir: string, takenKeys: Set<string> = new Set()): 
   out.warnings = [...permissionWarnings({
     capabilities: caps, permissions: permRes.permissions,
   }), ...unknownPerms,
-     ...commandLoadWarnings(m.id, commandRes.commands, takenKeys), ...scanSource(dir)];
+     ...commandLoadWarnings(m.id, commandRes.commands, takenKeys),
+     // a declared rawNetwork already warns about the network; its socket imports repeat it
+     ...scanSource(dir).filter((w) => !(permRes.permissions?.rawNetwork && w.includes("low-level network module")))];
   return out;
 }

@@ -471,8 +471,9 @@ Window {
     // the sidecar sets state "stopped" and leaves the old error in place. Read
     // the STATE, and show the message only where it is still the live one.
     function pluginStatus(p) {
-        if (p.state === "error")   return "⚠ " + (p.error || "invalid")
-        if (p.state === "crashed") return "⚠ " + (p.error || "crashed")
+        // one line: a stack trace belongs in the log
+        if (p.state === "error")   return String(p.error || "invalid").split("\n")[0]
+        if (p.state === "crashed") return String(p.error || "crashed").split("\n")[0]
         return ""
     }
     function openPluginSettings(id) {
@@ -1052,8 +1053,11 @@ Window {
 
             // a setting row: full width, the theme's settings insets, hover overlay
             component SRow: Surface {
+                id: sRow
                 property string name
                 property string desc
+                // what went wrong, on its own line under the name
+                property string error
                 // width kept clear on the right for the control(s). Rows with
                 // more than one control raise it, or the label runs underneath.
                 property real reserve: 176
@@ -1088,6 +1092,10 @@ Window {
                            elide: Text.ElideRight
                            text: parent.parent.name; ink: "text"
                            font { pixelSize: Theme.fs(13); family: Theme.fontFamily } }
+                    InkText { width: parent.width; text: sRow.error; ink: "danger"
+                           visible: text.length > 0
+                           wrapMode: Text.Wrap
+                           font { pixelSize: Theme.fs(11); family: Theme.fontFamily } }
                     InkText { width: parent.width; text: parent.parent.desc; ink: "textFaint"
                            visible: text.length > 0
                            wrapMode: Text.Wrap
@@ -4140,8 +4148,7 @@ Window {
                             reserve: 100 + (pluginRow.confirming ? 150 : 0)
                                          + ((pluginBlock.modelData.settings || []).length > 0 ? 42 : 0)
                             name: pluginBlock.modelData.name + "  " + pluginBlock.modelData.version
-                                 + (win.pluginStatus(pluginBlock.modelData).length > 0
-                                    ? "  " + win.pluginStatus(pluginBlock.modelData) : "")
+                            error: win.pluginStatus(pluginBlock.modelData)
                             desc: (pluginBlock.modelData.description || "")
                                  + win.pluginNetworkDesc(pluginBlock.modelData)
                                  + (pluginBlock.warned

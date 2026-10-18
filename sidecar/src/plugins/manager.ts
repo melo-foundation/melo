@@ -62,10 +62,16 @@ function sanitizeGrants(g: unknown, loaded: LoadedPlugin): PluginGrants {
   };
 }
 
-// Enable is the ui grant. The Plugins list shows a ⚠, not a nested UI row.
-function grantUiOnEnable(id: string, rt: Runtime): void {
-  if (rt.loaded.manifest?.capabilities.includes("ui") !== true) return;
-  rt.grants = sanitizeGrants({ ...rt.grants, ui: true }, rt.loaded);
+// Enable is the ui and rawNetwork grant: the ⚠ lines on the plugin's row are
+// what the user agrees to, with no nested row per grant.
+function grantOnEnable(id: string, rt: Runtime): void {
+  const m = rt.loaded.manifest;
+  if (!m) return;
+  const patch: Partial<PluginGrants> = {};
+  if (m.capabilities.includes("ui")) patch.ui = true;
+  if (m.permissions?.rawNetwork) patch.rawNetwork = true;
+  if (Object.keys(patch).length === 0) return;
+  rt.grants = sanitizeGrants({ ...rt.grants, ...patch }, rt.loaded);
   if (cfg) cfg.grants[id] = rt.grants;
 }
 
@@ -102,7 +108,7 @@ export function initPlugins(opts: { pluginsDir: string; pluginDataRoot: string; 
     };
     plugins.set(id, rt);
     if (rt.enabled && !loaded.error) {
-      grantUiOnEnable(id, rt);
+      grantOnEnable(id, rt);
       spawnPlugin(id);
     }
   }
@@ -274,7 +280,7 @@ export function setPluginEnabled(id: string, on: boolean): PluginInfo[] {
   }
   rt.enabled = on;
   rt.restarts = [];
-  if (on) grantUiOnEnable(id, rt);
+  if (on) grantOnEnable(id, rt);
   if (on && !rt.proc) spawnPlugin(id);
   // a ui-only plugin has no rt.proc — it still has to leave "running"
   else if (!on) { rt.proc?.kill(); rt.state = "stopped"; }
@@ -285,8 +291,11 @@ export function setPluginEnabled(id: string, on: boolean): PluginInfo[] {
 export function setPluginGrants(id: string, patch: Partial<PluginGrants>): PluginInfo[] {
   const rt = plugins.get(id);
   if (rt && !rt.loaded.error) {
+    const before = JSON.stringify(rt.grants);
     rt.grants = sanitizeGrants({ ...rt.grants, ...patch }, rt.loaded);
     if (cfg) cfg.grants[id] = rt.grants;
+    // grants are fixed at spawn: an enabled plugin restarts to get the new ones
+    if (rt.enabled && JSON.stringify(rt.grants) !== before) doRestart(id);
     cfg?.onChanged();
   }
   return listPlugins();
@@ -329,7 +338,7 @@ export function rescanPlugins(): PluginInfo[] {
           takenKeys = candidateTakenKeys;
           rt.grants = sanitizeGrants(rt.grants, loaded);
           if (rt.enabled) {
-            grantUiOnEnable(existingId, rt);
+            grantOnEnable(existingId, rt);
             spawnPlugin(existingId);
           }
           else { rt.state = "stopped"; rt.error = null; }
@@ -362,6 +371,7 @@ function doRestart(id: string): void {
   const rt = plugins.get(id);
   if (!rt || rt.loaded.error) return;
   rt.enabled = true;
+  grantOnEnable(id, rt);
   rt.restarts = [];              // clear the park counter
   if (rt.proc) rt.proc.kill();   // onExit respawns it (enabled, counter reset)
   else spawnPlugin(id);          // crashed/stopped: spawn directly
