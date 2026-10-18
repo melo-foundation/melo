@@ -78,12 +78,22 @@ Item {
         objectName: "sliderTrack"
         role: sld.trackRole
     }
-    Surface {
+    // the fill is laid out at the track's width and clipped to the value, so a
+    // fill that changes along the track is revealed rather than squeezed
+    Item {
         y: sld.trackY
         width: Math.max(0, Math.min(parent.width, sld.knobAt))
-        height: sld.trackH; radius: Theme.trackRadius(sld.partTrackShape, height)
+        height: sld.trackH
+        clip: true
         objectName: "sliderFill"
-        role: sld.fillRole
+        readonly property alias role: fillFace.role
+        readonly property alias radius: fillFace.radius
+        Surface {
+            id: fillFace
+            width: sld.width; height: parent.height
+            radius: Theme.trackRadius(sld.partTrackShape, height)
+            role: sld.fillRole
+        }
     }
     Surface {
         y: sld.trackY + (sld.trackH - height) / 2

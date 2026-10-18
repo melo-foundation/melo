@@ -4376,7 +4376,9 @@ Window {
             }
         }
     }
-    MScrollBar { id: settingsBar; scroller: settingsFlick; edge: settingsFlick }
+    // inside what a shaped frame cuts, as the rows are: the page runs to the frame
+    MScrollBar { id: settingsBar; scroller: settingsFlick; edge: settingsFlick
+                 x: settingsFlick.x + settingsFlick.width - width - (win.shaped ? win.cutBodyR : 0) }
 
     // window-local overlays (this is a separate window from Main's);
     // selects use a REAL popup window so they can cross the window edge

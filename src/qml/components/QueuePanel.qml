@@ -22,22 +22,16 @@ Rectangle {
 
     // The panel's ground as a role, so a theme can blend or adapt it like any
     // other surface rather than only colour it.
-    Surface { anchors.fill: parent; z: -1; role: "panel" }
-    // a window of its own with no blur behind it: the window colour, opaque,
-    // under the ground, so the desktop does not show through unblurred
-    property bool solid: false
-    Rectangle {
-        anchors.fill: parent; z: -2
-        visible: panel.solid
-        readonly property color w: Theme.roleColour("window")
-        color: Qt.rgba(w.r, w.g, w.b, 1)
-    }
+    // in the popup or its own window it is the window's ground, glass and all;
+    // over the main window's page it is a panel, which the master leaves solid
+    Surface { anchors.fill: parent; z: -1; role: panel.miniHost ? "window" : "panel" }
     clip: true
     // no corners or outline of its own: the popup and the queue window draw the
     // theme's corners and frame round it
 
     property var contextMenu: null   // ContextMenu instance from Main
     property var menuTail: null      // returns the host's entries, after each row's own
+    property var menuHost: null      // the window the rows are in, when not the menu's own
     property bool fullWidth: false   // mini queue popup: spans the bar, no side border
 
     // the mini popup has no app tab bar, so now playing lives here for it;
@@ -92,13 +86,14 @@ Rectangle {
             component QTab: SelectTab {
                 property int mode: 0
                 active: PlayerState.panelMode === mode
-                hover: qtMa.containsMouse; pressed: qtMa.pressed
+                hover: qtHover.hovered; pressed: qtTap.pressed
                 style: Theme.pageTabs
                 fontSize: 12
                 height: line ? parent.height : Theme.tabHeight
                 anchors.verticalCenter: parent.verticalCenter
-                MouseArea { id: qtMa; anchors.fill: parent; hoverEnabled: true
-                            onClicked: PlayerState.panelMode = parent.mode }
+                // handlers, not a MouseArea: a drag past the threshold goes on to the window's move
+                HoverHandler { id: qtHover }
+                TapHandler { id: qtTap; onTapped: PlayerState.panelMode = parent.mode }
             }
             SegmentTrack { strip: qtabs; style: Theme.pageTabs }
             Row {
@@ -397,7 +392,7 @@ Rectangle {
                                                 "https://www.youtube.com/watch?v=" + t.id) })
                             if (panel.menuTail)
                                 panel.menuTail().forEach((a, k) => acts.push(k === 0 ? Object.assign({ rule: true }, a) : a))
-                            panel.contextMenu.open(p.x, p.y, acts)
+                            panel.contextMenu.open(p.x, p.y, acts, panel.menuHost)
                             return
                         }
                         if (panel.queueMode) Player.jumpQueue(row.index)

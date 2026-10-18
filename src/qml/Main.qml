@@ -699,11 +699,14 @@ Window {
         const to = miniPlayer ? mainLayoutNow : "barMini:" + Theme.barMini
         playerBar.quiet = miniPlayer      // expanding: main is the one revealed
         miniBar.quiet = !miniPlayer       // collapsing: mini is
-        // a restored mini player starts at its own layout: main was never on screen
-        handoverLayout = from !== to && !restoringMini ? from : ""
+        // a restored mini player starts at its own layout: main was never on screen.
+        // With no transition the revealed bar draws its own layout through the settle:
+        // KWin shows the settle's last frame, cut to the window it lands in
+        const plays = Theme.barTransition !== "none"
+        handoverLayout = restoringMini || from === to ? "" : plays ? from : to
         const fromBack = miniPlayer ? Theme.backMini : mainBackingNow
         const toBack = miniPlayer ? mainBackingNow : Theme.backMini
-        handoverBacking = fromBack !== toBack && !restoringMini ? fromBack : ""
+        handoverBacking = restoringMini || fromBack === toBack ? "" : plays ? fromBack : toBack
         // the flip waits only for the window move to land
         toggleSettleTimer.interval = 50
         toggleSettleTimer.restart()
@@ -1560,10 +1563,9 @@ Window {
             visible: root.queueInWindow ? queueWin.open : !root.miniVisWanted
             fullWidth: true
             miniHost: true
-            // the popup and the queue window are their own glass: opaque where none can blur
-            solid: Theme.glassBlur === "off" || !WindowCtl.blurAvailable
             contextMenu: contextMenu   // main-window overlays work in mini mode
-            menuTail: root.queueInWindow ? null : root.popupActs
+            menuHost: root.queueInWindow ? queueWin : null
+            menuTail: root.queueInWindow ? () => root.windowActs(queueWin) : root.popupActs
         }
         Surface {   // visualizer popup backing (the shared viz reparents in)
             id: miniVisSlot
@@ -1860,6 +1862,8 @@ Window {
         PlayerBar {
             id: miniBar
             objectName: "miniBar"
+            // root.barH reads this: the mini slot's height, never the handover's
+            settleLayout: "barMini:" + Theme.barMini
             barMenu: (sx, sy, host) => root.openBarMenu(sx, sy, host)
             anchors.fill: parent
             // inside a frame round the mini window; a framed card moves in itself
@@ -3093,7 +3097,8 @@ Window {
     }
 
     // a detached window's right click: its picture's entries, then the window's
-    function openWindowMenu(w, sx, sy) {
+    function openWindowMenu(w, sx, sy) { contextMenu.open(sx, sy, windowActs(w), w) }
+    function windowActs(w) {
         const acts = w.kind === "video" ? videoActs() : []
         if (w.kind === "vis" && vizLoader.item)
             acts.push({ label: "Previous preset", act: () => vizLoader.item.backPreset() })
@@ -3109,7 +3114,7 @@ Window {
         if (root.miniPlayer && WindowCtl.canPlaceWindows)
             acts.push({ label: "Attach to mini player", rule: acts.length > 0, act: () => root.reattach(w) })
         acts.push({ label: "Close", rule: !root.miniPlayer && acts.length > 0, act: () => w.hide() })
-        contextMenu.open(sx, sy, acts, w)
+        return acts
     }
     // the mini player's queue popup: the queue window's entries, for the popup
     function openPopupMenu(sx, sy) { contextMenu.open(sx, sy, popupActs(), root) }
@@ -3723,6 +3728,15 @@ Window {
             else if (n.x > 0.35) e |= Qt.RightEdge
             if (n.y < -0.35) e |= Qt.TopEdge
             else if (n.y > 0.35) e |= Qt.BottomEdge
+            // a square corner faces one way but at its point: the edge within 14 px
+            // of a corner drags the corner, as the tool windows' corners do
+            if (e) {
+                const c = 14
+                if (x < c) e = (e & ~Qt.RightEdge) | Qt.LeftEdge
+                else if (x > width - c) e = (e & ~Qt.LeftEdge) | Qt.RightEdge
+                if (y < c) e = (e & ~Qt.BottomEdge) | Qt.TopEdge
+                else if (y > height - c) e = (e & ~Qt.TopEdge) | Qt.BottomEdge
+            }
             return e
         }
         readonly property int hovered: containsMouse ? edgesAt(mouseX, mouseY) : 0

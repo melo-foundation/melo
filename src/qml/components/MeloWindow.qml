@@ -21,6 +21,7 @@ Window {
     readonly property Item body: bodyItem
     // a window's own controls in the title bar, left of the close
     readonly property Item titleTools: titleToolsItem
+    readonly property Item titleBarItem: titleBar
     // the frame and title bar around `body`, for a window that sizes to its content
     readonly property real chromeHeight: titleBar.y + titleBar.height + titleGap + (shaped ? 0 : frB)
     // the close in the title bar and Escape; hides unless the window says otherwise

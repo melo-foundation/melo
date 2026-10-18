@@ -172,10 +172,11 @@ MeloWindow {
             onActiveChanged: if (active) dw.startSystemMove()
         }
     }
-    Item {   // over it: Ctrl+drag, let go next to the bar, goes back under it
+    // the window's menu: over the picture; under the queue, whose rows have their own
+    Item {
         parent: dw.body
         anchors.fill: parent
-        z: 30
+        z: dw.kind === "queue" ? -1 : 30
         TapHandler {
             acceptedButtons: Qt.RightButton
             onTapped: (ev) => {
@@ -183,6 +184,19 @@ MeloWindow {
                 dw.menuRequested(g.x, g.y)
             }
         }
+    }
+    TapHandler {   // and on the title bar
+        parent: dw.titleBarItem
+        acceptedButtons: Qt.RightButton
+        onTapped: (ev) => {
+            const g = parent.mapToItem(null, ev.position.x, ev.position.y)
+            dw.menuRequested(g.x, g.y)
+        }
+    }
+    Item {   // over it: Ctrl+drag, let go next to the bar, goes back under it
+        parent: dw.body
+        anchors.fill: parent
+        z: 30
         DragHandler {
             target: null
             acceptedModifiers: Qt.ControlModifier

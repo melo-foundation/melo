@@ -228,6 +228,7 @@ WindowController::~WindowController() {
     unload(winWatchScriptId_, winWatchScriptPath_, winWatchScriptName_);
     unload(pluginGlueScriptId_, pluginGlueScriptPath_, pluginGlueScriptName_);
     unload(glueScriptId_, glueScriptPath_, glueScriptName_);
+    unload(pinHoldScriptId_, pinHoldScriptPath_, pinHoldScriptName_);
 }
 
 #ifdef MELO_X11
@@ -840,12 +841,69 @@ bool WindowController::setWindowKeepAbove(QQuickWindow* win, bool on) {
     if (!win) return false;
     if (pinMode_ == QLatin1String("flag")) { win->setFlag(Qt::WindowStaysOnTopHint, on); return true; }
     if (pinMode_ != QLatin1String("kwin") || !kwinAvailable_) return false;
+    if (on) installPinHold();
     QString t = win->title();
     t.replace(QLatin1Char('"'), QString());
     return runKwinScript(QStringLiteral(
         "for (const w of workspace.windowList())\n"
         "  if (w.pid === %1 && w.caption === \"%2\") w.keepAbove = %3;\n")
         .arg(QString::number(QCoreApplication::applicationPid()), t, on ? "true" : "false"));
+}
+
+// KWin raises a clicked transient's main window and all its transients with
+// it. While a kept-above melo window is active, other apps' windows the main
+// window passes go back over it, in their old order.
+void WindowController::installPinHold() {
+    if (pinHoldScriptId_ >= 0) return;
+    static int seq = 0;
+    pinHoldScriptPath_ = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                         + QStringLiteral("/melo-kwin-pinhold-%1-%2.js")
+                               .arg(QCoreApplication::applicationPid()).arg(++seq);
+    pinHoldScriptName_ = kwinScriptName(pinHoldScriptPath_);
+    QFile f(pinHoldScriptPath_);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        pinHoldScriptName_.clear();
+        pinHoldScriptPath_.clear();
+        return;
+    }
+    f.write(QStringLiteral(
+        "const pid = %1;\n"
+        "let prev = workspace.stackingOrder.slice();\n"
+        "let fixing = false;\n"
+        "const changed = () => {\n"
+        "  if (fixing) return;\n"
+        "  const now = workspace.stackingOrder;\n"
+        "  const a = workspace.activeWindow;\n"
+        "  if (a && a.pid === pid && a.keepAbove && a.transientFor) {\n"
+        "    const main = a.transientFor;\n"
+        "    const was = prev.indexOf(main), at = now.indexOf(main);\n"
+        "    const over = was < 0 ? [] : prev.slice(was + 1).filter((w) =>\n"
+        "      w.pid !== pid && !w.keepAbove && now.indexOf(w) >= 0 && now.indexOf(w) < at);\n"
+        "    fixing = true;\n"
+        "    for (const w of over) workspace.raiseWindow(w);\n"
+        "    fixing = false;\n"
+        "  }\n"
+        "  prev = workspace.stackingOrder.slice();\n"
+        "};\n"
+        // workspace has no stacking signal in scripts; every window has one
+        "const arm = (w) => w.stackingOrderChanged.connect(changed);\n"
+        "for (const w of workspace.windowList()) arm(w);\n"
+        "workspace.windowAdded.connect(arm);\n")
+        .arg(QCoreApplication::applicationPid()).toUtf8());
+    f.close();
+
+    const KWinObject scripting("/Scripting", "org.kde.kwin.Scripting");
+    QDBusReply<int> id = scripting.call("loadScript", pinHoldScriptPath_, pinHoldScriptName_);
+    if (!id.isValid() || id.value() < 0) {
+        warnLoadRefused(pinHoldScriptName_, id);
+        QFile::remove(pinHoldScriptPath_);
+        pinHoldScriptName_.clear();
+        pinHoldScriptPath_.clear();
+        return;
+    }
+    pinHoldScriptId_ = id.value();
+    const KWinObject runner(QStringLiteral("/Scripting/Script%1").arg(pinHoldScriptId_), "org.kde.kwin.Script");
+    runner.call("run");
 }
 
 #ifdef MELO_NATIVE_BLUR

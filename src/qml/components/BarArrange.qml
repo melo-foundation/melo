@@ -117,7 +117,11 @@ Item {
         target: ed.visible ? ed.Window.window : null
         function onAfterAnimating() { ed.refresh() }
     }
-    onRowsChanged: { settle.restart(); if (Keys.isCell(picked) && !pickedCell) picked = ""
+    // looked up in the new rows here: pickedCell may not have re-read them yet, and a
+    // knob that renames its spacer would read as gone and drop the selection
+    onRowsChanged: { settle.restart()
+                     if (Keys.isCell(picked) && (!rows[pickedRow]
+                         || Keys.indexOfKey(rows[pickedRow].cells || [], Keys.pickKey(picked)) < 0)) picked = ""
                      if (dragCell === null) rebuildHandles() }
     onWidthChanged: settle.restart()
     onVisibleChanged: if (visible) settle.restart()
@@ -482,10 +486,12 @@ Item {
             // it, re-entrantly inside the beginDrag that set `dragCell`. Only
             // the frame is hidden.
             visible: rc !== undefined || ed.dragCell !== null
+            // a spacer draws nothing and measures 0 tall: its handle spans its row
+            readonly property var band: rc && rc.height < 8 ? ed.rowRects[modelData.r] : null
             x: rc ? rc.x - 2 : 0
-            y: rc ? rc.y - 2 : 0
+            y: band ? band.y - 2 : (rc ? rc.y - 2 : 0)
             width: rc ? Math.max(8, rc.width) + 4 : 0
-            height: rc ? rc.height + 4 : 0
+            height: band ? band.height + 4 : (rc ? rc.height + 4 : 0)
             z: 20
             Surface {
                 anchors.fill: parent

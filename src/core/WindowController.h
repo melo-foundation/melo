@@ -438,6 +438,11 @@ private:
     // re-issue with an unchanged caption set free (no KWin round trip).
     QString winWatchBody_;
     void unloadWindowWatcher();
+    // Holds melo's other windows in place while a kept-above window is
+    // clicked (setWindowKeepAbove); loaded on the first pin, kept until quit.
+    int pinHoldScriptId_ = -1;
+    QString pinHoldScriptPath_, pinHoldScriptName_;
+    void installPinHold();
     // Plugin dock movement is distinct from the built-in mini queue glue: the
     // latter may be active before/after provider changes, while this follows
     // the current PluginWindowHost's dynamic attachment graph.
