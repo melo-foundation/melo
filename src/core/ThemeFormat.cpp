@@ -49,6 +49,19 @@ QJsonObject foldOpacityScale(const QJsonObject& settings) {
     return out;
 }
 
+QJsonObject migrateSettings(const QJsonObject& settings, const QStringList& partKeys) {
+    const QString old = QStringLiteral("visualizerBg"), mode = QStringLiteral("visualizerOpacityMode");
+    if (!settings.contains(old)) return settings;
+    QJsonObject out = settings;
+    bool hasPart = partKeys.isEmpty();
+    for (const QString& k : partKeys) if (settings.contains(k)) { hasPart = true; break; }
+    if (hasPart && !out.contains(mode))
+        out[mode] = out.value(old).toString() == QLatin1String("transparent")
+            ? QStringLiteral("master") : QStringLiteral("opaque");
+    out.remove(old);
+    return out;
+}
+
 bool isSurfaceRole(const QString& key) {
     for (const char* r : kSurfaceRoles) if (key == QLatin1String(r)) return true;
     return false;

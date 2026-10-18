@@ -54,7 +54,8 @@ static QJsonObject defaultSettingsJson() {
     return QJsonObject{
         {"hoverOpacity", 0.3}, {"miniHoverOpacity", 0.3},
         {"fadeMode", "off"}, {"miniFadeMode", "off"},
-        {"visualizerBg", "transparent"},
+        {"videoOpacityMode", "opaque"}, {"videoOpacity", 1.0},
+        {"visualizerOpacityMode", "opaque"}, {"visualizerOpacity", 1.0},
         {"opacityScale", 1.0}, {"opacity", opacityJson(0.65)},
         {"glassBlur", "off"}, {"glassContrast", 1.0}, {"glassSaturation", 1.0},
         {"glassHoverDelay", 0}, {"hoverFadeMs", 180}, {"menuBlur", "off"},
@@ -129,9 +130,11 @@ static QList<QJsonObject> builtInThemes() {
     const QJsonObject defs = defaultSettingsJson();
     // A built-in carries every part, melo's defaults under its own scheme,
     // so picking one is a whole reset.
-    const QJsonObject glassy = merged(defs, schemeGlass());
+    // the see-through ones' visualizer follows the master, as it always has
+    const QJsonObject masterVis{{"visualizerOpacityMode", "master"}};
+    const QJsonObject glassy = merged(merged(defs, schemeGlass()), masterVis);
     const QJsonObject solid = merged(defs, schemeSolid());
-    const QJsonObject transparent = merged(defs, schemeTransparent());
+    const QJsonObject transparent = merged(merged(defs, schemeTransparent()), masterVis);
     const QJsonObject lightDefs{{"fontWeight", 500}};
 
     const QJsonObject darkPalette = jpal({
@@ -213,7 +216,6 @@ static QList<QJsonObject> builtInThemes() {
         mk("midnight-stars", "Midnight Stars", midnightPalette,
            merged(glassy, {
                {"opacityScale", 0.5}, {"opacity", opacityJson(0.85)},
-               {"visualizerBg", "transparent"},
                {"background", QJsonObject{
                    {"type", "starfield"}, {"opacity", 0.35}, {"blur", 11},
                    {"scale", 1}, {"positionX", 0}, {"positionY", 0},
@@ -279,7 +281,8 @@ static QList<QJsonObject> builtInThemes() {
 // live appearance keys (the slice a theme selection copies into settings)
 static const char* kAppearanceKeys[] = {
     "hoverOpacity", "miniHoverOpacity", "fadeMode", "miniFadeMode",
-    "visualizerBg", "opacityScale", "opacity",
+    "videoOpacityMode", "videoOpacity", "visualizerOpacityMode", "visualizerOpacity",
+    "opacityScale", "opacity",
     "glassBlur", "glassContrast", "glassSaturation", "glassHoverDelay", "hoverFadeMs",
     "menuBlur", "cornerStyle",
     "font", "uiScale", "fontScale", "fontWeight", "titleFontSize", "titleFontWeight",
@@ -311,6 +314,7 @@ static const char* kTypeKeys[] = {
 static const char* kSurfacesKeys[] = { "opacity" };
 static const char* kTransparencyKeys[] = {
     "opacityScale", "glassBlur", "glassContrast", "glassSaturation", "menuBlur",
+    "videoOpacityMode", "videoOpacity", "visualizerOpacityMode", "visualizerOpacity",
 };
 static const char* kBehaviourKeys[] = {
     "fadeMode", "miniFadeMode", "hoverOpacity", "miniHoverOpacity",
@@ -337,7 +341,7 @@ static const char* kPlayerKeys[] = { "barMain", "barNp", "barMini", "barTransiti
                                      "backMain", "backNp", "backMini", "barResize", "barSwapMs",
                                      "floatInset", "floatOffset" };
 static const char* kSchemeKeys[] = { "opacityScale", "glassBlur", "fadeMode", "miniFadeMode", "menuBlur" };
-static const char* kBackgroundKeys[] = { "background", "visualizerBg" };
+static const char* kBackgroundKeys[] = { "background" };
 // How big everything is. Its own part because it is the one people change
 // first and change often, and because "compact" is a choice about size, not
 // about how the window is painted.
@@ -361,6 +365,25 @@ static QStringList keysFor(const QString& kind) {
     else if (kind == QLatin1String("insets")) take(kInsetsKeys);
     else if (kind == QLatin1String("glyphs")) take(kGlyphsKeys);
     return out;   // "palette" carries no settings keys; it is the palette object
+}
+// the transparency keys a file older than the video and visualizer modes has
+static QStringList oldTransparencyKeys() {
+    QStringList out;
+    for (const QString& k : keysFor(QStringLiteral("transparency")))
+        if (!k.startsWith(QLatin1String("video")) && !k.startsWith(QLatin1String("visualizer"))) out << k;
+    return out;
+}
+static QJsonObject migratedTheme(QJsonObject t) {
+    if (t.contains(QStringLiteral("settings")))
+        t[QStringLiteral("settings")] = ThemeFormat::migrateSettings(
+            t[QStringLiteral("settings")].toObject(), oldTransparencyKeys());
+    return t;
+}
+static QJsonObject migratedPreset(QJsonObject p) {
+    if (p.contains(QStringLiteral("body")))
+        p[QStringLiteral("body")] = ThemeFormat::migrateSettings(
+            p[QStringLiteral("body")].toObject(), oldTransparencyKeys());
+    return p;
 }
 
 using ThemeFormat::builtInLayout;
@@ -513,16 +536,21 @@ static QList<QJsonObject> builtInPresetsFrom(const QList<QJsonObject>& themes) {
     };
     for (const KV& sf : kSurfaces)
         add(QStringLiteral("surfaces"), QStringLiteral("bi-surf-") + QLatin1String(sf.id), QLatin1String(sf.name), sf.body);
+    // The menu as the schemes have it: opaque when off, 65% over a blur
+    // otherwise. A mode only, so a custom video or visualizer value survives.
     const KV kTransparency[] = {
-        // the menu as the schemes have it: opaque when off, 65% over a blur otherwise
         {"off",     "Off",     QJsonObject{{"opacityScale", 1.0}, {"glassBlur", "off"}, {"glassContrast", 1.0},
-                                           {"glassSaturation", 1.0}, {"menuBlur", "off"}, {"menuOpacity", 1.0}}},
+                                           {"glassSaturation", 1.0}, {"menuBlur", "off"}, {"menuOpacity", 1.0},
+                                           {"videoOpacityMode", "opaque"}, {"visualizerOpacityMode", "opaque"}}},
         {"glass",   "Glass",   QJsonObject{{"opacityScale", 0.5}, {"glassBlur", "focus"}, {"glassContrast", 1.2},
-                                           {"glassSaturation", 1.3}, {"menuBlur", "on"}, {"menuOpacity", 0.65}}},
+                                           {"glassSaturation", 1.3}, {"menuBlur", "on"}, {"menuOpacity", 0.65},
+                                           {"videoOpacityMode", "opaque"}, {"visualizerOpacityMode", "master"}}},
         {"frosted", "Frosted", QJsonObject{{"opacityScale", 0.35}, {"glassBlur", "always"}, {"glassContrast", 1.3},
-                                           {"glassSaturation", 1.5}, {"menuBlur", "on"}, {"menuOpacity", 0.65}}},
+                                           {"glassSaturation", 1.5}, {"menuBlur", "on"}, {"menuOpacity", 0.65},
+                                           {"videoOpacityMode", "master"}, {"visualizerOpacityMode", "master"}}},
         {"clear",   "Clear",   QJsonObject{{"opacityScale", 0.75}, {"glassBlur", "off"}, {"glassContrast", 1.0},
-                                           {"glassSaturation", 1.0}, {"menuBlur", "on"}, {"menuOpacity", 0.65}}},
+                                           {"glassSaturation", 1.0}, {"menuBlur", "on"}, {"menuOpacity", 0.65},
+                                           {"videoOpacityMode", "opaque"}, {"visualizerOpacityMode", "master"}}},
     };
     for (const KV& tr : kTransparency)
         add(QStringLiteral("transparency"), QStringLiteral("bi-tr-") + QLatin1String(tr.id), QLatin1String(tr.name), tr.body);
@@ -607,6 +635,17 @@ ThemeStore::ThemeStore(SettingsStore* settings, QObject* parent)
     // saved theme id + live appearance values arrive with the settings; any
     // later ui.* change (theme editor) re-derives the merged appearance
     connect(settings_, &SettingsStore::changed, this, [this] {
+        // an older melo's visualizerBg, as the mode it means; the write
+        // re-enters here with the key gone
+        if (settings_->uiHas(QStringLiteral("visualizerBg"))) {
+            const QJsonObject m = ThemeFormat::migrateSettings(QJsonObject{
+                {"visualizerBg", QJsonValue::fromVariant(settings_->uiGet("visualizerBg"))}});
+            QVariantMap set;
+            if (!settings_->uiHas(QStringLiteral("visualizerOpacityMode")))
+                set[QStringLiteral("visualizerOpacityMode")] = m.value(QStringLiteral("visualizerOpacityMode")).toString();
+            settings_->uiApply(set, {QStringLiteral("visualizerBg")});
+            return;
+        }
         const QString saved = settings_->uiGet("activeThemeId", activeId_).toString();
         if (!saved.isEmpty() && saved != activeId_ && !findTheme(saved).isEmpty()) {
             activeId_ = saved;
@@ -646,7 +685,7 @@ void ThemeStore::loadUserThemes() {
                          qPrintable(name), raw["version"].toInt(), kThemeVersion);
             continue;
         }
-        QJsonObject t = raw;
+        QJsonObject t = migratedTheme(raw);
         // builtIn marks the compiled-in themes: a file never sets it, and one that does loses it
         t.remove(QStringLiteral("builtIn"));
         // the layouts a theme file carries become custom layouts, and its
@@ -1181,7 +1220,7 @@ QString ThemeStore::importTheme(const QString& path) {
     emit lastErrorChanged();
     QFile f(portalPath(path));
     if (!f.open(QIODevice::ReadOnly)) return {};
-    QJsonObject t = QJsonDocument::fromJson(f.readAll()).object();
+    QJsonObject t = migratedTheme(QJsonDocument::fromJson(f.readAll()).object());
     // a theme without a palette is not one; settings may legitimately be empty
     if (t.isEmpty() || !t.contains("palette")) return {};
     if (t["version"].toInt() < kThemeVersion) {
@@ -1349,7 +1388,7 @@ void ThemeStore::loadUserPresets() {
         for (const QString& name : dir.entryList({"*.json"}, QDir::Files, QDir::Name)) {
             QFile f(dir.filePath(name));
             if (!f.open(QIODevice::ReadOnly)) continue;
-            QJsonObject p = QJsonDocument::fromJson(f.readAll()).object();
+            QJsonObject p = migratedPreset(QJsonDocument::fromJson(f.readAll()).object());
             if (p["id"].toString().isEmpty()) continue;
             p["kind"] = kind;          // the folder is the authority, not the file
             p.remove(QStringLiteral("builtIn"));
@@ -1582,7 +1621,7 @@ QString ThemeStore::matchingPreset(const QString& kind) const {
 QString ThemeStore::importPreset(const QString& path) {
     QFile f(portalPath(path));
     if (!f.open(QIODevice::ReadOnly)) return {};
-    QJsonObject p = QJsonDocument::fromJson(f.readAll()).object();
+    QJsonObject p = migratedPreset(QJsonDocument::fromJson(f.readAll()).object());
     const QString kind = p["kind"].toString();
     if (!isPresetKind(kind)) return {};
     if (p["body"].toObject().isEmpty()) return {};

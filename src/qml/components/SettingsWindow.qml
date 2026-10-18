@@ -310,6 +310,9 @@ Window {
         if (kind === "palette") { ThemeBackend.discardRoles(Theme.inkRoles, false); return }
         if (kind === "surfaces") { ThemeBackend.discardRoles(Theme.inkRoles, true); ThemeBackend.discardPart("surfaces"); return }
         ThemeBackend.discardPart(kind)
+        // a transparency preset writes every surface's opacity (the master): the
+        // theme's transparency is its opacities too
+        if (kind === "transparency") ThemeBackend.discardPart("surfaces")
     }
     function newSwatchId() { return "s" + Date.now().toString(36) + Math.floor(Math.random() * 4096).toString(36) }
     function dropThemeSwatch(id) {
@@ -824,6 +827,9 @@ Window {
             if (seen[k] === undefined && !/Ink$/.test(k)) out.push({ key: k, label: k })
         return out.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
     }
+    readonly property var opacityModes: [ { value: "opaque", label: "Opaque" },
+                                          { value: "master", label: "Master" },
+                                          { value: "custom", label: "Custom" } ]
     function ts(key, fallback) {
         const v = ThemeBackend.settings[key]
         return v !== undefined ? v : fallback
@@ -3034,6 +3040,32 @@ Window {
                         SToggle { checked: Theme.menuBlur
                                   onToggled: (v) => ThemeBackend.setThemeSetting("menuBlur", v ? "on" : "off") }
                     }
+                    SRow {
+                        name: "Video"
+                        SSelect { value: Theme.videoOpacityMode; options: win.opacityModes
+                                  onPicked: (v) => ThemeBackend.setThemeSetting("videoOpacityMode", v) }
+                    }
+                    SRow {
+                        visible: Theme.videoOpacityMode === "custom"
+                        name: "Video opacity"
+                        desc: Math.round(vidOpS.shown * 100) + "%"
+                        SSlider { id: vidOpS; from: 0; to: 1; step: 0.05
+                                  value: Number(win.ts("videoOpacity", 1))
+                                  onCommitted: (v) => ThemeBackend.setThemeSetting("videoOpacity", Math.round(v * 100) / 100) }
+                    }
+                    SRow {
+                        name: "Visualizer"
+                        SSelect { value: Theme.visualizerOpacityMode; options: win.opacityModes
+                                  onPicked: (v) => ThemeBackend.setThemeSetting("visualizerOpacityMode", v) }
+                    }
+                    SRow {
+                        visible: Theme.visualizerOpacityMode === "custom"
+                        name: "Visualizer opacity"
+                        desc: Math.round(visOpS.shown * 100) + "%"
+                        SSlider { id: visOpS; from: 0; to: 1; step: 0.05
+                                  value: Number(win.ts("visualizerOpacity", 1))
+                                  onCommitted: (v) => ThemeBackend.setThemeSetting("visualizerOpacity", Math.round(v * 100) / 100) }
+                    }
                 }
 
                 SectionHead { title: "CONTROLS"; kind: "controls" }
@@ -4102,13 +4134,6 @@ Window {
                         reserve: 150
                         SSwatchList { csv: String(win.bgOpt("colors", "#cc3333,#4a9eff,#4daa5c"))
                                       onChanged: (v) => win.setBgOpt({ colors: v }) }
-                    }
-                    SRow {
-                        name: "Visualizer background"
-                        SSelect { value: String(win.ts("visualizerBg", "solid"))
-                                  options: [ { value: "solid", label: "Solid" },
-                                             { value: "transparent", label: "Transparent" } ]
-                                  onPicked: (v) => ThemeBackend.setThemeSetting("visualizerBg", v) }
                     }
                 }
                 }

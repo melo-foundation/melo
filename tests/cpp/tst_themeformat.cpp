@@ -66,6 +66,27 @@ private slots:
         const QJsonObject lost{{"id", "lost"}, {"palette", QJsonObject{}}, {"parts", QJsonObject{{"type", "nope"}}}};
         QVERIFY(ThemeFormat::partsOf(lost, keys, lookup).isEmpty());
     }
+    // visualizerBg reads as the visualizer's mode: transparent is the master,
+    // anything else opaque; a mode already there wins
+    void theOldVisualizerKeyIsTheMode() {
+        using ThemeFormat::migrateSettings;
+        QCOMPARE(migrateSettings({{"visualizerBg", "transparent"}})["visualizerOpacityMode"].toString(), QStringLiteral("master"));
+        QCOMPARE(migrateSettings({{"visualizerBg", "solid"}})["visualizerOpacityMode"].toString(), QStringLiteral("opaque"));
+        QCOMPARE(migrateSettings({{"visualizerBg", "#202020"}})["visualizerOpacityMode"].toString(), QStringLiteral("opaque"));
+        const QJsonObject both = migrateSettings({{"visualizerBg", "transparent"}, {"visualizerOpacityMode", "custom"}});
+        QCOMPARE(both["visualizerOpacityMode"].toString(), QStringLiteral("custom"));
+        QVERIFY(!both.contains("visualizerBg"));
+        // with the part's keys: a settings object without any drops it
+        const QStringList part{"opacityScale", "glassBlur"};
+        QCOMPARE(migrateSettings({{"visualizerBg", "transparent"}, {"glassBlur", "off"}}, part)["visualizerOpacityMode"].toString(),
+                 QStringLiteral("master"));
+        const QJsonObject bare = migrateSettings({{"visualizerBg", "transparent"}, {"font", "Inter"}}, part);
+        QVERIFY(!bare.contains("visualizerBg"));
+        QVERIFY(!bare.contains("visualizerOpacityMode"));
+        // nothing to migrate: untouched
+        const QJsonObject plain{{"font", "Inter"}};
+        QCOMPARE(migrateSettings(plain), plain);
+    }
     void theRoleListIsTheFormats() {
         const QStringList roles = ThemeFormat::surfaceRoles();
         QCOMPARE(roles.size(), 27);

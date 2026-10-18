@@ -25,6 +25,12 @@ QJsonObject opacityJson(double content);
 // once, here.
 QJsonObject foldOpacityScale(const QJsonObject& settings);
 
+// The keys older files carry, read as today's: visualizerBg "transparent" is
+// visualizerOpacityMode "master", any other value "opaque". With partKeys (a
+// theme's transparency keys) a theme that has none of them drops the key
+// instead, so it does not gain a transparency part.
+QJsonObject migrateSettings(const QJsonObject& settings, const QStringList& partKeys = {});
+
 // The built-in bar layouts as documents (docs/bar-layout.md): rows,
 // centre, strip, ministrip.
 QJsonObject builtInLayout(const QString& id);

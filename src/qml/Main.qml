@@ -1580,7 +1580,7 @@ Window {
                 source: PlayerState.trackThumbnail
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
-                opacity: 1 - popupVideo.opacity
+                opacity: 1 - popupVideo.fade
                 visible: root.popupVideoMode && opacity > 0.01
             }
             Skeleton {
@@ -1599,12 +1599,13 @@ Window {
                          && PlayerState.hasVideo
                 frozen: root.resizeFreeze || !PlayerState.isPlaying
                 fit: root.videoFit
-                opacity: hasFrame ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: 300 } }
+                property real fade: hasFrame ? 1 : 0
+                Behavior on fade { NumberAnimation { duration: 300 } }
+                opacity: fade * Theme.videoOpacity
                 visible: opacity > 0.01
                 TapHandler {
                     acceptedButtons: Qt.RightButton
-                    enabled: popupVideo.opacity > 0.5
+                    enabled: popupVideo.fade > 0.5
                     onTapped: (ev) => {
                         const g = popupVideo.mapToItem(null, ev.position.x, ev.position.y)
                         root.openVideoMenu(g.x, g.y, root)
@@ -1695,7 +1696,7 @@ Window {
             source: PlayerState.trackThumbnail
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
-            opacity: 1 - windowVideo.opacity
+            opacity: 1 - windowVideo.fade
             visible: videoWin.open && opacity > 0.01
         }
         VideoSurface {
@@ -1705,8 +1706,9 @@ Window {
             running: videoWin.open && PlayerState.hasVideo
             frozen: root.resizeFreeze || !PlayerState.isPlaying
             fit: root.videoFit
-            opacity: hasFrame ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 300 } }
+            property real fade: hasFrame ? 1 : 0
+            Behavior on fade { NumberAnimation { duration: 300 } }
+            opacity: fade * Theme.videoOpacity
             visible: opacity > 0.01
         }
         Row {
@@ -2459,8 +2461,7 @@ Window {
                         // 1px top gap in the mini slot)
                         anchors.margins: parent === miniVisSlot
                             ? Math.max(1, Theme.windowRadius) : 0
-                        // visualizerBg "transparent": glass shows through
-                        opacity: Theme.ts.visualizerBg === "transparent" ? Theme.opacityScale : 1
+                        opacity: Theme.visualizerOpacity
                         // click-to-preset: left = next (or a RANDOM preset with
                         // visRandomClick on), right = back through the history
                         // of what actually played — every switch source (click,

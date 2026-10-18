@@ -132,7 +132,7 @@ Item {
         fillMix: Math.min(1, s.p * 2)   // zooms to fill by halfway to the record: the ground always fills
         running: s.np.showVideo && PlayerState.hasVideo && s.visible && PlayerState.videoWanted
         frozen: Player.uiFrozen
-        opacity: s.videoIn
+        opacity: s.videoIn * Theme.videoOpacity
         visible: videoSurf.opacity > 0.01
         layer.enabled: s.shaderOk && visible
         // HueLum turns this layer on for its backdrop; without shaders it must stay plain
@@ -162,7 +162,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Qt.alpha(Theme.page.a > 0.05 ? Theme.page : Theme.window, 1)
-        opacity: s.p * 0.75 * s.videoIn
+        opacity: s.p * 0.75 * s.videoIn * Theme.videoOpacity
         visible: opacity > 0.01
     }
 

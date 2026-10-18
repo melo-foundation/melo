@@ -1133,6 +1133,19 @@ QtObject {
     readonly property var opacityMap: JSON.parse(opacityKey)
     // the master: multiplies every non-floating surface
     readonly property real opacityScale: ts.opacityScale !== undefined ? ts.opacityScale : 1
+    // A mode's opacity: "opaque" 1, "master" the master, "custom" its own value.
+    function modeOpacity(mode, value, master) {
+        if (mode === "master") return master
+        if (mode !== "custom") return 1
+        const v = Number(value)
+        return isNaN(v) ? 1 : Math.max(0, Math.min(1, v))
+    }
+    readonly property string videoOpacityMode: ts.videoOpacityMode || "opaque"
+    readonly property string visualizerOpacityMode: ts.visualizerOpacityMode || "opaque"
+    // what the video and the visualizer draw at (settings.videoOpacity and
+    // settings.visualizerOpacity are the custom values)
+    readonly property real videoOpacity: modeOpacity(videoOpacityMode, ts.videoOpacity, opacityScale)
+    readonly property real visualizerOpacity: modeOpacity(visualizerOpacityMode, ts.visualizerOpacity, opacityScale)
 
     // An entry as one colour, its layer opacity folded into alpha, for everything
     // that cannot draw layers (colorOf alone would draw a 50% layer at full). The
