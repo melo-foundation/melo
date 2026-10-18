@@ -1,6 +1,5 @@
 import QtQuick
 import Melo 1.0
-import ".."
 
 // One layer of a stack drawn through a hardware blend mode (multiply, screen,
 // darken, lighten, subtract).

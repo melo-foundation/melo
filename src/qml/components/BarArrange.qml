@@ -630,7 +630,7 @@ Item {
                         // no outline here either: the card's own ground is
                         // what separates one element from the next
                         Surface { anchors.fill: parent; radius: Theme.radiusMd
-                                  role: ed.picked.length && ed.picked === sMa.pick ? "selected" : sMa.containsMouse ? "hover" : "button" }
+                                  role: ed.picked.length && ed.picked === pMa.pick ? "selected" : pMa.containsMouse ? "hover" : "button" }
                         BarCell {
                             id: shelfCell
                             doc: ed.shelfCell(parent.modelData)
@@ -647,7 +647,7 @@ Item {
                         // second button. A click on an element already on the
                         // bar picks that one, which is the only way to reach a
                         // cell the window is too narrow to show.
-                        Handle { id: sMa; anchors.fill: parent; entry: parent.modelData
+                        Handle { id: pMa; anchors.fill: parent; entry: parent.modelData
                                  pick: parent.placed ? (function() {
                                      const f = ed.find(parent.modelData); if (!f) return ""
                                      return Keys.cellPick(f.r, Keys.cellKeys(ed.rows[f.r].cells || [])[f.c] || "")

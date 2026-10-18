@@ -526,13 +526,19 @@ private slots:
         e.setVideoWanted(true);
         e.loadTrack(audio, QStringLiteral("A"));
         e.attachVideo(video, false, QStringLiteral("A"));
-        QTRY_VERIFY_WITH_TIMEOUT(e.position() > 0.5, 5000);
-        QTRY_VERIFY_WITH_TIMEOUT(e.videoView().main != nullptr, 5000);
-        // the surface asks every 16 ms; 6 s spans three 2 s frames
-        QElapsedTimer t; t.start();
+        // start-up is slow on a loaded machine (7 s seen with eight runs at once)
+        QTRY_VERIFY_WITH_TIMEOUT(e.position() > 0.5, 15000);
+        QTRY_VERIFY_WITH_TIMEOUT(e.videoView().main != nullptr, 15000);
+        // the surface asks every 16 ms
         int seeks = 0;
         QSignalSpy seeked(&e, &AudioEngine::seeked);
-        while (t.elapsed() < 6000) { e.videoView(); QTest::qWait(16); }
+        // the attach's own seek to the audio's place lands late under load: a quiet second first
+        for (int n = -1; n != seeked.count(); ) { n = seeked.count(); QTest::qWait(1000); }
+        seeked.clear();
+        // into the tail: the last frame is at 8 s and the audio runs to 10
+        QElapsedTimer t; t.start();
+        while (e.position() < 9.7 && t.elapsed() < 20000) { e.videoView(); QTest::qWait(16); }
+        QVERIFY2(e.position() >= 9.7, "did not play into the video's tail");
         seeks = seeked.count();
         QCOMPARE(seeks, 0);
         VideoDeck::joinAllTeardowns();

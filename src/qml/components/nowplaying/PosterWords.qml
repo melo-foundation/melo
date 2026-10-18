@@ -1,5 +1,4 @@
 import QtQuick
-import ".."
 import "../.."
 
 // Lyrics on a full-bleed photograph. A stripe across the middle takes just

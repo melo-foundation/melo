@@ -5,7 +5,7 @@ import "../components"
 
 // One part of the logo: a palette entry filled through one mask.
 Item {
-    id: layer
+    id: part
     property var entry: "#ffffff"
     property url art: ""
     readonly property var r: Theme.roleOfEntry(entry)
@@ -15,8 +15,8 @@ Item {
         width: 0; height: 0; clip: true
         Image {
             id: shape
-            width: layer.width; height: layer.height
-            source: layer.art
+            width: part.width; height: part.height
+            source: part.art
             smooth: true
             mipmap: true
         }
@@ -24,7 +24,7 @@ Item {
     StyledFill {
         anchors.fill: parent
         mask: shape
-        layers: layer.r.layers
+        layers: part.r.layers
         fieldDensity: Screen.devicePixelRatio
     }
 }

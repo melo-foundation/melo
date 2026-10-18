@@ -75,6 +75,8 @@ struct Picture {
 
     explicit Picture(QSGNode* p) : parent(p) {}
     ~Picture() { clear(); }
+    Picture(const Picture&) = delete;
+    Picture& operator=(const Picture&) = delete;
     bool empty() const { return !frame; }
     QSize size() const { return frame ? QSize(frame->width, frame->height) : QSize(); }
 

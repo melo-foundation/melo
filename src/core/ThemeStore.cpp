@@ -647,6 +647,8 @@ void ThemeStore::loadUserThemes() {
             continue;
         }
         QJsonObject t = raw;
+        // builtIn marks the compiled-in themes: a file never sets it, and one that does loses it
+        t.remove(QStringLiteral("builtIn"));
         // the layouts a theme file carries become custom layouts, and its
         // slots point at them; the file is rewritten without them
         if (t.contains("layouts")) {
@@ -1058,7 +1060,7 @@ QString ThemeStore::saveThemeAs(const QString& name, const QVariantMap& choices)
         foldLayoutOverrides(QString(), name.isEmpty() ? activeName() + QStringLiteral(" Copy") : name);
     const QString id = QStringLiteral("custom-%1").arg(QDateTime::currentMSecsSinceEpoch());
     QJsonObject t{{"version", kThemeVersion}, {"id", id},
-                  {"name", name.isEmpty() ? activeName() + QStringLiteral(" Copy") : name}, {"builtIn", false}};
+                  {"name", name.isEmpty() ? activeName() + QStringLiteral(" Copy") : name}};
     QJsonObject palette, settings, parts;
     for (const char* p : kThemeParts) {
         const QString part = QLatin1String(p);
@@ -1133,6 +1135,7 @@ bool ThemeStore::saveActive() {
 bool ThemeStore::exportTheme(const QString& id, const QString& path) {
     QJsonObject t = findTheme(id.isEmpty() ? activeId_ : id);
     if (t.isEmpty()) return false;
+    t.remove(QStringLiteral("builtIn"));
     // The theme travels with its swatches, for the same reason it travels with
     // its bar: on another machine the shelf they came from is not there.
     {
@@ -1218,8 +1221,12 @@ QString ThemeStore::importTheme(const QString& path) {
                 : it.value().toString();
             if (!it.value().isString() && !it.value().isObject()) { bad << it.key(); continue; }
             // QColor::isValidColorName covers names, #rgb/#rrggbb/#aarrggbb,
-            // and rejects everything else without throwing.
-            if (!QColor::isValidColorName(v)) bad << (it.key() + " = " + v);
+            // and rejects everything else without throwing. The built-ins'
+            // "systemaccent[:colour]" and "system:<role>" resolve in applyPalette.
+            const bool sys = v == QLatin1String("systemaccent")
+                || (v.startsWith(QLatin1String("systemaccent:")) && QColor::isValidColorName(v.mid(13)))
+                || (v.startsWith(QLatin1String("system:")) && v.size() > 7);
+            if (!sys && !QColor::isValidColorName(v)) bad << (it.key() + " = " + v);
         }
         if (!bad.isEmpty()) {
             lastError_ = QStringLiteral("not a colour: %1").arg(bad.join(QStringLiteral(", ")));
@@ -1233,7 +1240,7 @@ QString ThemeStore::importTheme(const QString& path) {
     // already here
     const QString id = QStringLiteral("custom-%1").arg(QDateTime::currentMSecsSinceEpoch());
     t["id"] = id;
-    t["builtIn"] = false;
+    t.remove(QStringLiteral("builtIn"));
     if (t["name"].toString().isEmpty()) t["name"] = QStringLiteral("Imported theme");
     userThemes_.append(t);
     writeUserTheme(t);
@@ -1253,7 +1260,7 @@ QString ThemeStore::importTheme(const QString& path) {
             const QJsonObject preset{
                 {"id", QStringLiteral("background-%1").arg(QDateTime::currentMSecsSinceEpoch())},
                 {"name", t["name"].toString()},
-                {"kind", QStringLiteral("background")}, {"builtIn", false}, {"body", body}};
+                {"kind", QStringLiteral("background")}, {"body", body}};
             userPresets_.append(preset);
             writeUserPreset(preset);
         }
@@ -1345,14 +1352,16 @@ void ThemeStore::loadUserPresets() {
             QJsonObject p = QJsonDocument::fromJson(f.readAll()).object();
             if (p["id"].toString().isEmpty()) continue;
             p["kind"] = kind;          // the folder is the authority, not the file
-            p["builtIn"] = false;
+            p.remove(QStringLiteral("builtIn"));
             userPresets_.append(p);
         }
     }
     if (builtInPresets_.isEmpty()) builtInPresets_ = builtInPresetsFrom(builtIns_);
 }
 
-void ThemeStore::writeUserPreset(const QJsonObject& preset) {
+void ThemeStore::writeUserPreset(const QJsonObject& in) {
+    QJsonObject preset = in;
+    preset.remove(QStringLiteral("builtIn"));
     const QString kind = preset["kind"].toString();
     QDir().mkpath(presetsDir_ + "/" + kind);
     QSaveFile f(presetsDir_ + "/" + kind + "/" + preset["id"].toString() + ".json");
@@ -1386,7 +1395,7 @@ QString ThemeStore::savePreset(const QString& kind, const QString& name) {
     if (body.isEmpty()) return {};
     const QString id = kind + QStringLiteral("-%1").arg(QDateTime::currentMSecsSinceEpoch());
     const QJsonObject p{{"id", id}, {"name", name.isEmpty() ? kind : name},
-                        {"kind", kind}, {"builtIn", false}, {"body", body}};
+                        {"kind", kind}, {"body", body}};
     userPresets_.append(p);
     writeUserPreset(p);
     emit themesChanged();
@@ -1496,7 +1505,7 @@ bool ThemeStore::exportCurrent(const QString& kind, const QString& name,
     const QJsonObject body = currentBody(kind);
     if (body.isEmpty()) return false;
     const QJsonObject p{{"id", kind}, {"name", name.isEmpty() ? kind : name},
-                        {"kind", kind}, {"builtIn", false}, {"body", body}};
+                        {"kind", kind}, {"body", body}};
     QSaveFile f(portalPath(path));
     if (!f.open(QIODevice::WriteOnly)) return false;
     f.write(QJsonDocument(p).toJson(QJsonDocument::Indented));
@@ -1578,7 +1587,7 @@ QString ThemeStore::importPreset(const QString& path) {
     if (!isPresetKind(kind)) return {};
     if (p["body"].toObject().isEmpty()) return {};
     p["id"] = kind + QStringLiteral("-%1").arg(QDateTime::currentMSecsSinceEpoch());
-    p["builtIn"] = false;
+    p.remove(QStringLiteral("builtIn"));
     if (p["name"].toString().isEmpty()) p["name"] = kind;
     userPresets_.append(p);
     writeUserPreset(p);
@@ -1586,7 +1595,9 @@ QString ThemeStore::importPreset(const QString& path) {
     return p["id"].toString();
 }
 
-void ThemeStore::writeUserTheme(const QJsonObject& theme) {
+void ThemeStore::writeUserTheme(const QJsonObject& in) {
+    QJsonObject theme = in;
+    theme.remove(QStringLiteral("builtIn"));
     QDir().mkpath(themesDir_);
     QSaveFile f(themesDir_ + "/" + theme["id"].toString() + ".json");
     if (!f.open(QIODevice::WriteOnly)) return;
@@ -1611,7 +1622,7 @@ QString ThemeStore::saveLayoutDoc(const QVariantMap& doc, const QString& name) {
     QJsonObject body = QJsonObject::fromVariantMap(unwrapJs(doc).toMap());
     body["id"] = id;
     body["name"] = name.isEmpty() ? QStringLiteral("Layout") : name;
-    const QJsonObject p{{"id", id}, {"name", body["name"]}, {"kind", "layout"}, {"builtIn", false}, {"body", body}};
+    const QJsonObject p{{"id", id}, {"name", body["name"]}, {"kind", "layout"}, {"body", body}};
     userPresets_.append(p);
     writeUserPreset(p);
     emit themesChanged();
@@ -1720,7 +1731,7 @@ bool ThemeStore::exportLayoutDoc(const QVariantMap& doc, const QString& path) {
     QJsonObject body = QJsonObject::fromVariantMap(unwrapJs(doc).toMap());
     const QJsonObject p{{"id", body["id"].toString().isEmpty() ? QStringLiteral("layout") : body["id"].toString()},
                         {"name", body["name"].toString().isEmpty() ? QStringLiteral("Layout") : body["name"].toString()},
-                        {"kind", "layout"}, {"builtIn", false}, {"body", body}};
+                        {"kind", "layout"}, {"body", body}};
     QSaveFile f(portalPath(path));
     if (!f.open(QIODevice::WriteOnly)) return false;
     f.write(QJsonDocument(p).toJson(QJsonDocument::Indented));

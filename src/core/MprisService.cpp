@@ -123,13 +123,9 @@ void MprisRootAdaptor::Quit() { QCoreApplication::quit(); }
 // ---------------- player ----------------
 
 QString MprisPlayerAdaptor::playbackStatus() const {
-    // "Stopped" after Stop(), not "Paused". A remote showing Paused offers
-    // resume for a position melo has already thrown away, and MPRIS defines
-    // Stopped as exactly this: a track is loaded and the position is 0.
+    // Stop() is pause and rewind, so a loaded track that is not playing is Paused
     if (!s_->state()->hasTrack()) return QStringLiteral("Stopped");
-    if (s_->state()->isPlaying()) return QStringLiteral("Playing");
-    return s_->state()->position() <= 0.0 ? QStringLiteral("Stopped")
-                                          : QStringLiteral("Paused");
+    return s_->state()->isPlaying() ? QStringLiteral("Playing") : QStringLiteral("Paused");
 }
 
 double MprisPlayerAdaptor::volume() const { return s_->state()->volume(); }

@@ -1,6 +1,5 @@
 import QtQuick
 import ".."
-import "../.."
 
 MSlider {
     required property var host

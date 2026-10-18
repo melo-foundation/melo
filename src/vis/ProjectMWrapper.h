@@ -13,6 +13,8 @@ public:
     ProjectMWrapper(int fbWidth, int fbHeight,
                     const std::string& presetDir, const std::string& dataDir);
     ~ProjectMWrapper();
+    ProjectMWrapper(const ProjectMWrapper&) = delete;
+    ProjectMWrapper& operator=(const ProjectMWrapper&) = delete;
 
     void resize(int fbWidth, int fbHeight);   // -> projectM_resetGL (framebuffer pixels)
     void renderFrame();                       // GL thread only

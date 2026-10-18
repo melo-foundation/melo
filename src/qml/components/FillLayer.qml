@@ -10,7 +10,6 @@ ShaderEffect {
     id: fill
     property Item host: null
     property var modelData: null
-    property int index: 0
     // the picture for an image layer, which the host builds one of per layer
     property var picture: null
 

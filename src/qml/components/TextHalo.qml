@@ -1,5 +1,4 @@
 import QtQuick
-import ".."
 
 // The effect an ink asks for, drawn beneath its words: Halo with the label
 // as the shape. `label` is the Text being decorated; it is never touched.

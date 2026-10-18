@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Effects
-import "barstyles"
 import ".."
 import "barswap.js" as Swap
 

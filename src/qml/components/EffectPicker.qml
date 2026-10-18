@@ -89,7 +89,7 @@ Item {
                         borderWidth: 1; borderColor: Theme.border
                     }
                     Text {
-                        id: sample
+                        id: sampleText
                         anchors.centerIn: parent
                         text: "Aa Bb 123"
                         color: ep.inkKey.length > 0 ? Theme[ep.inkKey] : Theme.text
@@ -99,10 +99,10 @@ Item {
                             active: ep.on
                             source: "TextHalo.qml"
                             onLoaded: {
-                                item.label = sample
+                                item.label = sampleText
                                 item.inside = true
                                 item.effect = Qt.binding(() => ep.eff)
-                                item.colour = Qt.binding(() => ep.eff ? Theme.effectColour(ep.eff, sample.color) : "#000000")
+                                item.colour = Qt.binding(() => ep.eff ? Theme.effectColour(ep.eff, sampleText.color) : "#000000")
                                 item.backdrop = sampleGround
                             }
                         }
@@ -209,7 +209,7 @@ Item {
                             anchors.verticalCenterOffset: Theme.pressShift(cMa.pressed)
                             width: Theme.ctl(44); height: Theme.ctl(14)
                             entry: ep.eff ? ep.eff.colour : "#000000"
-                            fallback: ep.eff ? Theme.effectColour(ep.eff, sample.color) : "#000000"
+                            fallback: ep.eff ? Theme.effectColour(ep.eff, sampleText.color) : "#000000"
                         }
                         MouseArea {
                             id: cMa; anchors.fill: parent; hoverEnabled: true

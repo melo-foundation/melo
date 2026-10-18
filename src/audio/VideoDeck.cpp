@@ -314,8 +314,9 @@ std::optional<VideoFrame> VideoDeck::frameAt(double position) {
     if (auto f = ring_.take(position)) lastShown_ = *f;
     if (!lastShown_.px) return std::nullopt;
     // Over 0.5 s behind the audio, jump (at most once a second) rather than drain
-    // the queue at several times real speed; a seek in flight is not behind.
-    if (lastShown_.gen == ring_.generation()) {
+    // the queue at several times real speed; a seek in flight is not behind, and
+    // nor is a video past its last frame (a still tail, or shorter than the audio).
+    if (lastShown_.gen == ring_.generation() && !gst_app_sink_is_eos(GST_APP_SINK(appsink_))) {
         const double newest = ring_.newestPts().value_or(lastShown_.pts);
         const gint64 now = g_get_monotonic_time();
         if (position - newest > 0.5 && now - lastCatchUpUs_ >= G_USEC_PER_SEC && !seekRefused_.load()) {

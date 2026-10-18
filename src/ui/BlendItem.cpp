@@ -211,11 +211,9 @@ bool BlendShader::updateUniformData(RenderState& state, QSGMaterial* newMat, QSG
     // std140: mat4 at 0 (64 bytes), vec4 at 64 (16), float at 80.
     QByteArray* buf = state.uniformData();
     Q_ASSERT(buf->size() >= 84);
-    bool changed = false;
     if (state.isMatrixDirty()) {
         const QMatrix4x4 m = state.combinedMatrix();
         std::memcpy(buf->data(), m.constData(), 64);
-        changed = true;
     }
     const auto* mat = static_cast<BlendMaterial*>(newMat);
     // NOT premultiplied. The scene graph's usual materials premultiply because
@@ -227,7 +225,6 @@ bool BlendShader::updateUniformData(RenderState& state, QSGMaterial* newMat, QSG
     if (state.isOpacityDirty()) {
         const float o = state.opacity();
         std::memcpy(buf->data() + 80, &o, 4);
-        changed = true;
     }
     return true;
 }

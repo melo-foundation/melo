@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls as QQC
-import QtQuick.Effects
 import Qt5Compat.GraphicalEffects
 import ".."
 import "../components"
@@ -896,15 +895,15 @@ Item {
                     // shelf is rows, as the YouTube feed's are
                     Grid {
                         id: songGrid
-                        readonly property bool rows: secCol.songShelf || view.layout !== "grid"
+                        readonly property bool asRows: secCol.songShelf || view.layout !== "grid"
                         readonly property bool compact: view.layout === "compact"
-                        visible: rows
+                        visible: asRows
                         width: parent.width
                         columns: view.layout === "grid" ? Math.max(1, Math.floor(width / Theme.ctl(300))) : 1
                         columnSpacing: Theme.gap(8)
                         rowSpacing: Theme.gap(2)
                         Repeater {
-                            model: songGrid.rows ? secCol.modelData.items : []
+                            model: songGrid.asRows ? secCol.modelData.items : []
                             Surface {
                                 id: sRow
                                 required property var modelData
@@ -989,11 +988,11 @@ Item {
                         }
                     }
                     Flow {
-                        visible: !songGrid.rows
+                        visible: !songGrid.asRows
                         width: parent.width
                         spacing: Theme.gap(8)
                         Repeater {
-                            model: songGrid.rows ? [] : secCol.modelData.items
+                            model: songGrid.asRows ? [] : secCol.modelData.items
                             Surface {
                                 id: pCard
                                 required property var modelData

@@ -38,18 +38,18 @@ Window {
                              "=", ((t1 - t0) / Math.max(1, made.length)).toFixed(3) + "ms each")
                 // what one tile is actually made of, and which roles it asks for
                 if (made.length > 0) {
-                    var tally = ({}), roles = [], total = 0
+                    let tally = ({}), roles = [], total = 0
                     function walk(o) {
                         if (!o) return
-                        var t = String(o).split("(")[0].split("_QML")[0].replace(/QQuick/, "")
+                        let t = String(o).split("(")[0].split("_QML")[0].replace(/QQuick/, "")
                         tally[t] = (tally[t] || 0) + 1; total++
                         if (t === "Surface" && o.role !== undefined) roles.push(String(o.role))
-                        var k = o.children
-                        if (k) for (var j = 0; j < k.length; j++) walk(k[j])
+                        let k = o.children
+                        if (k) for (let j = 0; j < k.length; j++) walk(k[j])
                     }
                     walk(made[0])
-                    var out = ""
-                    for (var key in tally) if (tally[key] > 1 || key.indexOf("Fill") >= 0
+                    let out = ""
+                    for (let key in tally) if (tally[key] > 1 || key.indexOf("Fill") >= 0
                                                || key === "Surface") out += key + "=" + tally[key] + " "
                     console.warn("[tb] one tile: objects=" + total + "  " + out)
                     console.warn("[tb] surface roles:", roles.join(", "))
@@ -1021,8 +1021,8 @@ Window {
         // X11's host spans the screen and the popup follows the bar's place; after a
         // move carried it off, it is refitted here, hidden until drawn at its new place
         if (isX11) {
-            const a = miniWin.screen ? miniWin.screen.availableGeometry : null
-            if (a && (x > a.x || x + width < a.x + a.width)) {
+            const a = WindowCtl.availableGeometry(miniWin)
+            if (a.width > 0 && (x > a.x || x + width < a.x + a.width)) {
                 revealPending = true; revealReady = false
                 applyWindowOpacity()
                 revealFallback.restart()
@@ -1629,7 +1629,7 @@ Window {
         kind: "queue"
         listEmpty: popupQueuePanel.empty
         defaultControls: root.detachedControls
-        onFramed: root.windowFramed(queueWin)
+        onFrameShown: root.windowFramed(queueWin)
         recordOpen: root.layoutRecording
         onReattachRequested: root.reattach(queueWin)
         onResizeStarting: root.beginDetachedResize(queueWin)
@@ -1639,7 +1639,7 @@ Window {
         id: visWin
         kind: "vis"
         defaultControls: root.detachedControls
-        onFramed: root.windowFramed(visWin)
+        onFrameShown: root.windowFramed(visWin)
         recordOpen: root.layoutRecording
         onReattachRequested: root.reattach(visWin)
         onResizeStarting: root.beginDetachedResize(visWin)
@@ -1676,7 +1676,7 @@ Window {
         id: videoWin
         kind: "video"
         defaultControls: root.detachedControls
-        onFramed: root.windowFramed(videoWin)
+        onFrameShown: root.windowFramed(videoWin)
         recordOpen: root.layoutRecording
         onReattachRequested: root.reattach(videoWin)
         onResizeStarting: root.beginDetachedResize(videoWin)

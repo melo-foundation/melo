@@ -99,8 +99,18 @@ WindowController::WindowController(QObject* parent) : QObject(parent) {
         // hang at startup.
         auto* bus = QDBusConnection::sessionBus().interface();
         const bool onBus = bus && bus->isServiceRegistered(QStringLiteral("org.kde.KWin"));
-        kwinAvailable_ = kwinScriptingFor(QGuiApplication::platformName(), onBus,
-                                          qEnvironmentVariable("KDE_SESSION_VERSION"));
+        const QString session = qEnvironmentVariable("KDE_SESSION_VERSION");
+        bool known = false;
+        session.trimmed().toInt(&known);
+        // no session version: KWin's own, bounded so a busy KWin cannot stall startup
+        QString info;
+        if (onBus && !known) {
+            const auto msg = QDBusMessage::createMethodCall(QStringLiteral("org.kde.KWin"),
+                QStringLiteral("/KWin"), QStringLiteral("org.kde.KWin"), QStringLiteral("supportInformation"));
+            const QDBusReply<QString> r = QDBusConnection::sessionBus().call(msg, QDBus::Block, 500);
+            if (r.isValid()) info = r.value();
+        }
+        kwinAvailable_ = kwinScriptingFor(QGuiApplication::platformName(), onBus, session, info);
     }
     canPlaceWindows_ = kwinAvailable_ && qEnvironmentVariable("MELO_NO_PLACEMENT") != QLatin1String("1");
     pinMode_ = pinModeFor(QGuiApplication::platformName(),

@@ -54,26 +54,36 @@ private slots:
         QTest::addColumn<QString>("platform");
         QTest::addColumn<bool>("onBus");
         QTest::addColumn<QString>("version");
+        QTest::addColumn<QString>("info");
         QTest::addColumn<bool>("want");
 
-        QTest::newRow("plasma 6 wayland") << "wayland" << true << "6" << true;
-        QTest::newRow("plasma 6 x11") << "xcb" << true << "6" << true;
-        QTest::newRow("plasma 7") << "wayland" << true << "7" << true;
-        QTest::newRow("wayland-egl") << "wayland-egl" << true << "6" << true;
-        QTest::newRow("plasma 5 x11") << "xcb" << true << "5" << false;
-        QTest::newRow("plasma 5 wayland") << "wayland" << true << "5" << false;
-        QTest::newRow("version unset") << "xcb" << true << "" << true;
-        QTest::newRow("version junk") << "xcb" << true << "six" << true;
-        QTest::newRow("no kwin on the bus") << "xcb" << false << "6" << false;
-        QTest::newRow("offscreen") << "offscreen" << true << "6" << false;
-        QTest::newRow("padded") << "wayland" << true << " 6 " << true;
+        const QString none;
+        const QString k5 = QStringLiteral("Version\n=======\nKWin version: 5.27.11\nQt Version: 5.15.13\n");
+        const QString k6 = QStringLiteral("Version\n=======\nKWin version: 6.7.5\nQt Version: 6.10.3\n");
+        QTest::newRow("plasma 6 wayland") << "wayland" << true << "6" << none << true;
+        QTest::newRow("plasma 6 x11") << "xcb" << true << "6" << none << true;
+        QTest::newRow("plasma 7") << "wayland" << true << "7" << none << true;
+        QTest::newRow("wayland-egl") << "wayland-egl" << true << "6" << none << true;
+        QTest::newRow("plasma 5 x11") << "xcb" << true << "5" << none << false;
+        QTest::newRow("plasma 5 wayland") << "wayland" << true << "5" << none << false;
+        QTest::newRow("version unset") << "xcb" << true << "" << none << true;
+        QTest::newRow("version junk") << "xcb" << true << "six" << none << true;
+        QTest::newRow("no kwin on the bus") << "xcb" << false << "6" << none << false;
+        QTest::newRow("offscreen") << "offscreen" << true << "6" << none << false;
+        QTest::newRow("padded") << "wayland" << true << " 6 " << none << true;
+        QTest::newRow("unset, kwin 5") << "xcb" << true << "" << k5 << false;
+        QTest::newRow("unset, kwin 6") << "xcb" << true << "" << k6 << true;
+        QTest::newRow("junk, kwin 5 wayland") << "wayland" << true << "six" << k5 << false;
+        QTest::newRow("session over kwin") << "xcb" << true << "6" << k5 << true;
+        QTest::newRow("unset, no version line") << "xcb" << true << "" << "KWin Support Information:" << true;
     }
     void kwinScripting() {
         QFETCH(QString, platform);
         QFETCH(bool, onBus);
         QFETCH(QString, version);
+        QFETCH(QString, info);
         QFETCH(bool, want);
-        QCOMPARE(kwinScriptingFor(platform, onBus, version), want);
+        QCOMPARE(kwinScriptingFor(platform, onBus, version, info), want);
     }
 };
 

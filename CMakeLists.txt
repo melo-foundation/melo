@@ -615,6 +615,22 @@ if(Qt6Test_FOUND)
     set_tests_properties(themeswatches PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    # builtIn stays off disk: old files load without it, a forged one is a user theme
+    add_executable(tst_themebuiltin
+        tests/cpp/tst_themebuiltin.cpp
+        src/core/ThemeStore.cpp
+        src/core/ThemeFormat.cpp
+        src/core/SettingsStore.cpp
+        src/rpc/SidecarService.cpp
+        src/rpc/SidecarProcess.cpp
+        src/rpc/RpcClient.cpp
+        src/rpc/NodeBootstrap.cpp)
+    target_include_directories(tst_themebuiltin PRIVATE src/core src/rpc)
+    target_link_libraries(tst_themebuiltin PRIVATE Qt6::Gui Qt6::Qml Qt6::Test)
+    add_test(NAME themebuiltin COMMAND tst_themebuiltin)
+    set_tests_properties(themebuiltin PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     add_executable(tst_earlysettings
         tests/cpp/tst_earlysettings.cpp
         src/core/ThemeStore.cpp
@@ -717,6 +733,12 @@ if(Qt6Test_FOUND)
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2")
     else()
         message(WARNING "qmltestrunner not found — the QML suites will not run")
+    endif()
+    # the baseline is Qt 6.12's qmllint output; other versions warn differently
+    if(Qt6_VERSION VERSION_GREATER_EQUAL 6.12 AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/qmllint.sh)
+        add_test(NAME qmllint
+                 COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/scripts/qmllint.sh)
+        set_tests_properties(qmllint PROPERTIES ENVIRONMENT "MELO_QT=${_melo_qt_bin}/..")
     endif()
     # these draw with the GPU and compare grabs; in parallel they miss frames
     foreach(t tst_styledfills tst_edgefills tst_imagefills tst_imagefills_dpr

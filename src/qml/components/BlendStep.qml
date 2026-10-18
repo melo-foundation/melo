@@ -1,5 +1,4 @@
 import QtQuick
-import ".."
 
 // One rung of the stack: `below` (everything under this layer) and `above` (the
 // layer) blended and composited; the next rung takes the result as its `below`.

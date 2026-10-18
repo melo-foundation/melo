@@ -1,6 +1,5 @@
 import QtQuick
 import "nowplaying"
-import ".."
 
 // Data host for the now-playing page. This file owns the track, the lyrics
 // fetch and the tab state; nowplaying/ owns the look and nothing else.

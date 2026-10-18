@@ -1,5 +1,4 @@
 import QtQuick
-import ".."
 
 // Large-radius background blur. MultiEffect's blur is a fixed pyramid whose reach
 // saturates (Qt documents the useful range up to 64), and blurring a downscaled

@@ -26,7 +26,7 @@ MeloWindow {
     property bool reattachArmed: false
     // armed by whoever waits on this window's next frame (a swap)
     property bool awaitingFrame: false
-    signal framed()
+    signal frameShown()
     signal reattachRequested()
     // a right click anywhere in the window, at (x, y) in its coordinates
     signal menuRequested(real x, real y)
@@ -125,7 +125,7 @@ MeloWindow {
             else if (mapped && !open) reveal(false)
         } else if (awaitingFrame) {
             awaitingFrame = false
-            framed()
+            frameShown()
         }
     }
     readonly property bool x11Places: !mapped && Qt.platform.pluginName === "xcb"

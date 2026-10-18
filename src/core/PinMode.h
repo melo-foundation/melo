@@ -34,17 +34,31 @@ inline QString pinModeFor(const QString& platform, const QString& desktops,
     return QStringLiteral("none");
 }
 
+// KWin's major version from its supportInformation() text ("KWin version: 5.27.11"); 0 when absent.
+inline int kwinMajorFrom(const QString& supportInfo) {
+    const QString key = QStringLiteral("KWin version:");
+    const int at = supportInfo.indexOf(key);
+    if (at < 0) return 0;
+    bool ok = false;
+    const int v = supportInfo.mid(at + key.size()).trimmed().section(QLatin1Char('.'), 0, 0).toInt(&ok);
+    return ok ? v : 0;
+}
+
 // Whether melo drives KWin through its scripting API. Plasma 6 only: Plasma 5
 // names workspace.windowList() clientList(), and every script melo loads calls
-// it. `kdeSessionVersion` is KDE_SESSION_VERSION; unset or unreadable counts
-// as Plasma 6, since a launcher can strip the variable and Plasma 5 is the rare case.
+// it. `kdeSessionVersion` is KDE_SESSION_VERSION; when it is unset or unreadable,
+// `kwinSupportInfo` (KWin's supportInformation()) decides, and without either it
+// counts as Plasma 6. A Kubuntu 24.04 live terminal has no KDE_SESSION_VERSION.
 // Wayland and X11 clients alike; offscreen and the rest never.
 inline bool kwinScriptingFor(const QString& platform, bool kwinOnBus,
-                             const QString& kdeSessionVersion) {
+                             const QString& kdeSessionVersion,
+                             const QString& kwinSupportInfo = {}) {
     if (!kwinOnBus) return false;
     if (platform != QLatin1String("xcb") && !platform.startsWith(QLatin1String("wayland")))
         return false;
     bool ok = false;
     const int v = kdeSessionVersion.trimmed().toInt(&ok);
-    return !ok || v >= 6;
+    if (ok) return v >= 6;
+    const int k = kwinMajorFrom(kwinSupportInfo);
+    return k == 0 || k >= 6;
 }

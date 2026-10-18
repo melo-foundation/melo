@@ -12,6 +12,7 @@
 #include <QSize>
 #include <QString>
 #include <QStringList>
+#include <QScreen>
 #include <QVariantList>
 #include <QtGlobal>
 
@@ -247,6 +248,10 @@ public:
     Q_INVOKABLE void restackBelow(QQuickWindow* win, QQuickWindow* sibling);
     // the pointer's global position, for traces
     Q_INVOKABLE QPoint cursorPos() const { return QCursor::pos(); }
+    // the window's screen less its panels (KWin's MaximizeArea); empty without a screen
+    Q_INVOKABLE QRect availableGeometry(QQuickWindow* win) const {
+        return win && win->screen() ? win->screen()->availableGeometry() : QRect();
+    }
     // X11: each window's place in the stacking order, for traces. Empty elsewhere.
     Q_INVOKABLE QString stackOrder(QQuickWindow* a, QQuickWindow* b);
     // The detached windows ("melo-queue", "melo-vis", "melo-video").
