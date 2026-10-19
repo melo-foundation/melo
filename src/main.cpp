@@ -31,6 +31,22 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
+#ifdef Q_OS_UNIX
+#include <QSocketNotifier>
+#include <csignal>
+#include <sys/socket.h>
+#include <unistd.h>
+// SIGTERM and SIGINT end in a normal quit, so the destructors run: they unload
+// melo's KWin scripts and remove their files. A second signal ends melo at once.
+static int g_quitFd[2] = {-1, -1};
+static void onQuitSignal(int sig) {
+    struct sigaction dfl {};
+    dfl.sa_handler = SIG_DFL;
+    sigaction(sig, &dfl, nullptr);
+    const char c = 1;
+    [[maybe_unused]] const ssize_t n = ::write(g_quitFd[0], &c, 1);
+}
+#endif
 
 #include "VideoSurface.h"
 #include "VisualizerItem.h"
@@ -274,6 +290,24 @@ int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
     app.setApplicationName("melo");
     app.setApplicationVersion(QStringLiteral(MELO_VERSION));   // project(VERSION) in CMakeLists.txt
+#ifdef Q_OS_UNIX
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, g_quitFd) == 0) {
+        auto* quitNote = new QSocketNotifier(qintptr(g_quitFd[1]), QSocketNotifier::Read, &app);
+        QObject::connect(quitNote, &QSocketNotifier::activated, &app, [quitNote] {
+            char c;
+            [[maybe_unused]] const ssize_t n = ::read(g_quitFd[1], &c, 1);
+            quitNote->setEnabled(false);
+            std::fprintf(stderr, "[melo] quit signal: quitting\n");
+            QCoreApplication::quit();
+        });
+        struct sigaction sa {};
+        sa.sa_handler = onQuitSignal;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESTART;
+        sigaction(SIGTERM, &sa, nullptr);
+        sigaction(SIGINT, &sa, nullptr);
+    }
+#endif
 
     // One instance per config directory: two sidecars writing the same library
     // and settings files means the last writer silently discards the other's

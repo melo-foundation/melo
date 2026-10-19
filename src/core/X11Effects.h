@@ -80,6 +80,13 @@ void x11PresentSync(QQuickWindow* w);
 // frame. No-op off xcb.
 void x11HideUntilDrawn(const QStringList& skip);
 
+// Keeps w above other windows (_NET_WM_STATE_ABOVE): a request to the window manager
+// while it is shown, and the state again on each show. Not Qt::WindowStaysOnTopHint:
+// Qt gives a window a new X window on the next show after that flag changes, and the
+// new one has none of the states, shapes and properties melo set on the old.
+// False off xcb.
+bool x11SetKeepAbove(QWindow* w, bool on);
+
 // The windows titled in titles, and every "melo-plugin-" window, stay off the
 // taskbar and pager (_NET_WM_STATE_SKIP_TASKBAR/SKIP_PAGER), set on each show.
 // No-op off xcb.

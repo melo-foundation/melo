@@ -593,9 +593,12 @@ MeloWindow {
 
     function open(entry, ctx) {
         picker.load(entry, ctx)
-        // the size it was left at, else what this entry's controls need
+        // the size this view was left at, else what this entry's controls need; a plain
+        // colour and a layered fill keep separate sizes, so one never opens at the other's
         // (no Settings in a standalone test run: the natural size, then)
-        const kept = typeof Settings !== "undefined" ? Settings.uiGet("colourPickerSize", null) : null
+        sizeView = picker.showSources ? "layers" : "plain"
+        const all = typeof Settings !== "undefined" ? Settings.uiGet("colourPickerSizes", null) : null
+        const kept = all ? all[sizeView] : null
         width = kept && kept.w > 0 ? Math.max(minimumWidth, kept.w)
                                    : Math.round(Theme.sp(picker.showSources ? 460 : 340))
         userSized = kept && kept.h > 0
@@ -626,14 +629,29 @@ MeloWindow {
         if (visible && Math.abs(height - fitted) > 1) userSized = true   // a drag on the frame
         if (visible) sizeKeep.restart()
     }
+    property string sizeView: "plain"
+    // Simple <-> Advanced while open: the other view's size, or a fit
+    onShowSourcesChanged: {
+        if (!visible) return
+        sizeView = showSources ? "layers" : "plain"
+        const all = typeof Settings !== "undefined" ? Settings.uiGet("colourPickerSizes", null) : null
+        const kept = all ? all[sizeView] : null
+        width = kept && kept.w > 0 ? Math.max(minimumWidth, kept.w) : Math.round(Theme.sp(showSources ? 460 : 340))
+        userSized = kept && kept.h > 0
+        if (userSized) height = Math.max(minimumHeight, kept.h)
+        else fitHeight()
+    }
     Timer {
         id: sizeKeep
         interval: 400
-        onTriggered: if (typeof Settings !== "undefined")
-                         Settings.uiSet("colourPickerSize", ({ w: Math.round(picker.width),
-                                                               // only a height someone chose: one this
-                                                               // fitted would stop it fitting again
-                                                               h: picker.userSized ? Math.round(picker.height) : 0 }))
+        onTriggered: {
+            if (typeof Settings === "undefined") return
+            const all = Object.assign({}, Settings.uiGet("colourPickerSizes", null) || {})
+            // only a height someone chose: one this fitted would stop it fitting again
+            all[picker.sizeView] = { w: Math.round(picker.width),
+                                     h: picker.userSized ? Math.round(picker.height) : 0 }
+            Settings.uiSet("colourPickerSizes", all)
+        }
     }
     onVisibleChanged: Theme.previewing += visible ? 1 : -1
     // A popup does not dismiss itself: it is its own window, so a click inside

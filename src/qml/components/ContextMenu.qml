@@ -29,19 +29,25 @@ Item {
     // the menu inset, as a dropdown's
     function pad(side) { return Theme.inset("menu", side) }
     property Item owner: null   // the head that opened it, if one did
+    // A row's label sits between the same margins the row draws with, so it never
+    // elides unless it is wider than the cap.
+    function fitWidth(actionList) {
+        const chrome = pad("left") + pad("right") + Theme.gap(10) + Theme.gap(8) + 2
+        let w = 120
+        for (const a of actionList) {
+            tm.text = a.label
+            // a submenu row gives up its right end to the chevron, a checked one to the tick
+            w = Math.max(w, tm.advanceWidth + chrome + (a.sub === true || a.check === true ? 10 : 0))
+        }
+        return Math.min(Theme.sp(420), Math.ceil(w))
+    }
     function open(x, y, actionList, host_, owner_) {
         const host = host_ || menuLayer.Window.window
         if (!host) return
         owner = owner_ === undefined ? null : owner_
         menuLayer.hostWin = host
         menuRepeater.model = actionList
-        let w = 120
-        for (const a of actionList) {
-            tm.text = a.label
-            // a submenu row gives up its right end to the chevron, a checked one to the tick
-            w = Math.max(w, tm.width + 30 + (a.sub === true || a.check !== undefined ? 20 : 0))
-        }
-        pop.width = Math.min(300, Math.ceil(w))
+        pop.width = fitWidth(actionList)
         pop.transientParent = host
         // host-window content coords -> global (Wayland reports the host at
         // 0,0, so this is a no-op there; X11 adds the real position)
@@ -120,6 +126,7 @@ Item {
 
             Column {
                 id: menuColumn
+                objectName: "menuColumn"
                 anchors.fill: parent
                 anchors.leftMargin: menuLayer.pad("left")
                 anchors.topMargin: menuLayer.pad("top")

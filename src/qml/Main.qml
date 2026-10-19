@@ -2812,8 +2812,9 @@ Window {
          : Theme.lockPlace === "left" ? Theme.gap(8)
          : Theme.lockPlace === "right" ? parent.width - width - Theme.gap(8)
          : (parent.width - width) / 2
-        // on the title row's centre line, as its buttons are; a tab hangs from the edge
-        y: look === "tab" ? 0 : titleSpot.y
+        // on the title row's centre line, as its buttons are, but never above the window:
+        // a pill is taller than a short title row; a tab hangs from the edge
+        y: look === "tab" ? 0 : Math.max(0, titleSpot.y)
         z: 9000
         visible: root.clickThrough && !root.miniPlayer
         onXChanged: if (visible) root.updateMainInput()

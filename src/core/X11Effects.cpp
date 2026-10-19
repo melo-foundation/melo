@@ -518,6 +518,63 @@ private:
 };
 }  // namespace
 
+namespace {
+// Adds _NET_WM_STATE_ABOVE between QShowEvent and the map to a window x11SetKeepAbove
+// keeps above: the window manager clears the property on every unmap.
+class AboveOnShow : public QObject {
+public:
+    AboveOnShow(xcb_connection_t* c) : QObject(qGuiApp), m_c(c) {
+        m_state = internAtom(c, "_NET_WM_STATE");
+        m_above = internAtom(c, "_NET_WM_STATE_ABOVE");
+    }
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (e->type() != QEvent::Show) return false;
+        auto* w = qobject_cast<QWindow*>(o);
+        if (!w || !w->handle() || !w->property("meloX11Above").toBool()) return false;
+        const xcb_window_t xid = xcb_window_t(w->winId());
+        std::vector<xcb_atom_t> atoms;
+        if (auto* r = xcb_get_property_reply(m_c, xcb_get_property(m_c, false, xid, m_state, XCB_ATOM_ATOM, 0, 1024), nullptr)) {
+            const auto* a = static_cast<const xcb_atom_t*>(xcb_get_property_value(r));
+            atoms.assign(a, a + xcb_get_property_value_length(r) / int(sizeof(xcb_atom_t)));
+            std::free(r);
+        }
+        if (std::find(atoms.begin(), atoms.end(), m_above) == atoms.end()) atoms.push_back(m_above);
+        xcb_change_property(m_c, XCB_PROP_MODE_REPLACE, xid, m_state, XCB_ATOM_ATOM, 32,
+                            quint32(atoms.size()), atoms.data());
+        xcb_flush(m_c);
+        return false;
+    }
+    xcb_atom_t m_state = 0, m_above = 0;
+
+private:
+    xcb_connection_t* m_c;
+};
+}  // namespace
+
+bool x11SetKeepAbove(QWindow* w, bool on) {
+    xcb_connection_t* c = connection();
+    if (!w || !c) return false;
+    static AboveOnShow* filter = nullptr;
+    if (!filter) { filter = new AboveOnShow(c); QCoreApplication::instance()->installEventFilter(filter); }
+    w->setProperty("meloX11Above", on);
+    if (!w->handle() || !w->isVisible()) return true;   // the next show adds it
+    // EWMH: a mapped window's state changes by a client message to the root
+    xcb_client_message_event_t ev{};
+    ev.response_type = XCB_CLIENT_MESSAGE;
+    ev.format = 32;
+    ev.window = xcb_window_t(w->winId());
+    ev.type = filter->m_state;
+    ev.data.data32[0] = on ? 1 : 0;   // _NET_WM_STATE_ADD / _REMOVE
+    ev.data.data32[1] = filter->m_above;
+    ev.data.data32[2] = 0;
+    ev.data.data32[3] = 1;            // from an application
+    xcb_send_event(c, false, rootOf(c),
+                   XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
+                   reinterpret_cast<const char*>(&ev));
+    xcb_flush(c);
+    return true;
+}
+
 void x11SkipTaskbar(const QStringList& titles) {
     static TaskbarSkip* skip = nullptr;
     xcb_connection_t* c = connection();

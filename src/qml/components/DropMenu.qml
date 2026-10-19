@@ -52,20 +52,27 @@ Window {
     // the head that opened it, if one did: it draws active while this shows
     property Item owner: null
 
+    // A row's label sits between the same margins the row draws with, so it never
+    // elides unless it is wider than the cap. At least as wide as the field it
+    // drops from, so a menu under a wide field does not hang off its left edge.
+    function fitWidth(actionList) {
+        const chrome = Theme.inset("menu", "left") + Theme.inset("menu", "right") + Theme.gap(6) + Theme.gap(8) + 2
+        let w = 100
+        for (const a of actionList) {
+            tm.text = a.label
+            // the label starts after the entry chip, which sits at gap(8) even when absent
+            const lead = Theme.gap(8) + (a.entry !== undefined ? Theme.ctl(16) + Theme.gap(6) : Theme.gap(10))
+            w = Math.max(w, tm.advanceWidth + chrome + lead + (a.check === true ? Theme.ctl(10) : 0))
+        }
+        return Math.max(owner && owner.width ? Math.ceil(owner.width) : 0, Math.min(Theme.sp(420), Math.ceil(w)))
+    }
+
     function openAt(parentWindow, wx, wy, actionList, owner_) {
         transientParent = parentWindow
         actions = actionList
         owner = owner_ === undefined ? null : owner_
         openedAt = Date.now()
-        let w = 100
-        for (const a of actionList) {
-            tm.text = a.label
-            w = Math.max(w, tm.width + 30 + (a.entry !== undefined ? Theme.ctl(16) + Theme.gap(4) : 0))
-        }
-        // At least as wide as the field it drops from, so a menu under a wide
-        // field does not hang off its left edge. A long label still widens it
-        // past a narrow field.
-        width = Math.max(owner && owner.width ? Math.ceil(owner.width) : 0, Math.min(300, Math.ceil(w)))
+        width = fitWidth(actionList)
         x = parentWindow.x + wx
         y = parentWindow.y + wy
         visible = true

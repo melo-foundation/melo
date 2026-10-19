@@ -229,6 +229,8 @@ WindowController::~WindowController() {
     unload(pluginGlueScriptId_, pluginGlueScriptPath_, pluginGlueScriptName_);
     unload(glueScriptId_, glueScriptPath_, glueScriptName_);
     unload(pinHoldScriptId_, pinHoldScriptPath_, pinHoldScriptName_);
+    unload(popupWatchId_, popupWatchPath_, popupWatchName_);
+    unload(alwaysUpScriptId_, alwaysUpScriptPath_, alwaysUpScriptName_);
 }
 
 #ifdef MELO_X11
@@ -817,16 +819,22 @@ bool WindowController::raisePopupWindow(const QString& caption) {
         .arg(lit, QString::number(QCoreApplication::applicationPid())));
 }
 
+// pin mode "flag": on X11 the window manager's state itself (x11SetKeepAbove), since
+// toggling the Qt flag gives the window a new X window on its next show
+static void setFlagAbove(QWindow* w, bool on) {
+#ifdef MELO_X11
+    if (x11SetKeepAbove(w, on)) return;
+#endif
+    w->setFlag(Qt::WindowStaysOnTopHint, on);
+}
+
 bool WindowController::setKeepAbove(bool on) {
     if (pinMode_ == QLatin1String("flag")) {
-        // setFlag keeps FramelessWindowHint and the rest. Qt sends the
-        // _NET_WM_STATE change to a mapped window at once, and builds the new
-        // X window after a hide/show with the flag already set.
         bool any = false;
         for (QWindow* w : QGuiApplication::topLevelWindows()) {
             const QString t = w->title();
             if (t != QLatin1String("melo") && t != QLatin1String("melo-mini")) continue;
-            w->setFlag(Qt::WindowStaysOnTopHint, on);
+            setFlagAbove(w, on);
             any = true;
         }
         return any;
@@ -839,7 +847,7 @@ bool WindowController::setKeepAbove(bool on) {
 
 bool WindowController::setWindowKeepAbove(QQuickWindow* win, bool on) {
     if (!win) return false;
-    if (pinMode_ == QLatin1String("flag")) { win->setFlag(Qt::WindowStaysOnTopHint, on); return true; }
+    if (pinMode_ == QLatin1String("flag")) { setFlagAbove(win, on); return true; }
     if (pinMode_ != QLatin1String("kwin") || !kwinAvailable_) return false;
     if (on) installPinHold();
     QString t = win->title();
