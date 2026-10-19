@@ -1,0 +1,136 @@
+{
+ "contents": {
+  "singleColumnMusicWatchNextResultsRenderer": {
+   "tabbedRenderer": {
+    "watchNextTabbedResultsRenderer": {
+     "tabs": [
+      {
+       "tabRenderer": {
+        "content": {
+         "musicQueueRenderer": {
+          "content": {
+           "playlistPanelRenderer": {
+            "contents": [
+             {
+              "playlistPanelVideoRenderer": {
+               "title": {
+                "runs": [
+                 {
+                  "text": "Veridis Quo (Edit)"
+                 }
+                ]
+               },
+               "longBylineText": {
+                "runs": [
+                 {
+                  "text": "Daft Punk",
+                  "navigationEndpoint": {
+                   "browseEndpoint": {
+                    "browseId": "UCRr1xG_2WIDs18a6cIiCxeA",
+                    "browseEndpointContextSupportedConfigs": {
+                     "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                     }
+                    }
+                   }
+                  }
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "Veridis Quo",
+                  "navigationEndpoint": {
+                   "browseEndpoint": {
+                    "browseId": "MPREb_ACdoDdB5hLk",
+                    "browseEndpointContextSupportedConfigs": {
+                     "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                     }
+                    }
+                   }
+                  }
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "2001"
+                 }
+                ]
+               },
+               "shortBylineText": {
+                "runs": [
+                 {
+                  "text": "Daft Punk"
+                 }
+                ]
+               },
+               "thumbnail": {
+                "thumbnails": [
+                 {
+                  "url": "https://yt3.googleusercontent.com/krM0KEoLIpAlhIVElhwK2BA7ltTcqXV8KUR4R7arZABEjKkEmVcVmhAu-kyDW7jXw8eZPawgONGs-g4drQ=w60-h60-l90-rj",
+                  "width": 60,
+                  "height": 60
+                 },
+                 {
+                  "url": "https://yt3.googleusercontent.com/krM0KEoLIpAlhIVElhwK2BA7ltTcqXV8KUR4R7arZABEjKkEmVcVmhAu-kyDW7jXw8eZPawgONGs-g4drQ=w120-h120-l90-rj",
+                  "width": 120,
+                  "height": 120
+                 },
+                 {
+                  "url": "https://yt3.googleusercontent.com/krM0KEoLIpAlhIVElhwK2BA7ltTcqXV8KUR4R7arZABEjKkEmVcVmhAu-kyDW7jXw8eZPawgONGs-g4drQ=w180-h180-l90-rj",
+                  "width": 180,
+                  "height": 180
+                 },
+                 {
+                  "url": "https://yt3.googleusercontent.com/krM0KEoLIpAlhIVElhwK2BA7ltTcqXV8KUR4R7arZABEjKkEmVcVmhAu-kyDW7jXw8eZPawgONGs-g4drQ=w226-h226-l90-rj",
+                  "width": 226,
+                  "height": 226
+                 },
+                 {
+                  "url": "https://yt3.googleusercontent.com/krM0KEoLIpAlhIVElhwK2BA7ltTcqXV8KUR4R7arZABEjKkEmVcVmhAu-kyDW7jXw8eZPawgONGs-g4drQ=w302-h302-l90-rj",
+                  "width": 302,
+                  "height": 302
+                 },
+                 {
+                  "url": "https://yt3.googleusercontent.com/krM0KEoLIpAlhIVElhwK2BA7ltTcqXV8KUR4R7arZABEjKkEmVcVmhAu-kyDW7jXw8eZPawgONGs-g4drQ=w544-h544-l90-rj",
+                  "width": 544,
+                  "height": 544
+                 }
+                ]
+               },
+               "lengthText": {
+                "runs": [
+                 {
+                  "text": "2:45"
+                 }
+                ]
+               },
+               "videoId": "uSFXOBaqiR8",
+               "navigationEndpoint": {
+                "watchEndpoint": {
+                 "videoId": "uSFXOBaqiR8",
+                 "watchEndpointMusicSupportedConfigs": {
+                  "watchEndpointMusicConfig": {
+                   "hasPersistentPlaylistPanel": true,
+                   "musicVideoType": "MUSIC_VIDEO_TYPE_ATV"
+                  }
+                 }
+                }
+               }
+              }
+             }
+            ]
+           }
+          }
+         }
+        }
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

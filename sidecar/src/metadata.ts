@@ -5,10 +5,12 @@ export { suggestMetadata, stripTags, cleanChannelAsArtist, splitTitle, parseTopi
 export type { TrackMetadata } from "./metadata-heuristic";
 
 import type { TrackMetadata } from "./metadata-heuristic";
+import { fetchMusicWatchInfo, knownMusicInfo, isMusicArt, musicArtAt, type MusicWatchInfo } from "./innertube";
+import { loadSettings } from "./settings";
 
 // --- API lookups ---
 
-// The rate gate is a promise chain shared by the three APIs. Each caller
+// The rate gate is a promise chain shared by the APIs. Each caller
 // queues behind the previous one's slot, so the wait is cumulative and two
 // overlapping lookups cannot read the same "now" and fire together.
 // MusicBrainz's rule is 1 req/s and it blocks clients that break it.
@@ -19,12 +21,16 @@ let apiGate: Promise<void> = Promise.resolve();
 // are happier with a real one too.
 const UA = "melo/0.3.1 ( https://github.com/melo-foundation/melo )";
 
-async function rateLimitedFetch(url: string, minInterval: number): Promise<Response> {
+function rateSlot(minInterval: number): Promise<void> {
   // Claim the next slot before awaiting anything, so a second caller entering
   // while we are still waiting chains onto us rather than onto the same past.
   const mine = apiGate.then(() => new Promise<void>((r) => setTimeout(r, minInterval)));
   apiGate = mine.catch(() => {});   // a rejected slot must not wedge the chain
-  await mine;
+  return mine;
+}
+
+async function rateLimitedFetch(url: string, minInterval: number): Promise<Response> {
+  await rateSlot(minInterval);
   return fetch(url, { headers: { "User-Agent": UA } });
 }
 
@@ -337,42 +343,96 @@ export async function lookupDeezerTitleOnly(title: string): Promise<TrackMetadat
   }
 }
 
-// Which services a lookup asks, in chain order (settings: tagLastfm,
-// tagMusicBrainz, tagDeezer; Last.fm also needs a key). Every service query,
-// fallbacks included, goes by it, so a switched-off service is never contacted.
-export interface TagServices { lastfm: boolean; musicbrainz: boolean; deezer: boolean }
-export const ALL_SERVICES: TagServices = { lastfm: true, musicbrainz: true, deezer: true };
-export type TagService = "lastfm" | "musicbrainz" | "deezer";
+// --- YouTube Music, by video id ---
 
-export function lookupOrder(services: TagServices, lastfmKey?: string): TagService[] {
+const MUSIC_ART_PX = 1000;   // Deezer's cover_xl size
+
+/** YouTube Music's word on a track, as tags; null without an album. */
+export function musicMetadata(info: { title: string; artist: string; album?: string; year?: number; cover?: string } | null | undefined): TrackMetadata | null {
+  if (!info?.album) return null;
+  const r: TrackMetadata = { album: info.album, source: "ytmusic" };
+  if (info.artist) r.artist = info.artist;
+  if (info.title) r.cleanTitle = info.title;
+  if (info.year) r.year = info.year;
+  if (info.cover && isMusicArt(info.cover)) r.albumArt = musicArtAt(info.cover, MUSIC_ART_PX);
+  return r;
+}
+
+/** An official video takes the album and cover of the audio track YouTube Music pairs it with; an upload has none. */
+export function watchMetadata(info: MusicWatchInfo | null): TrackMetadata | null {
+  if (!info || info.type === "UGC") return null;
+  return musicMetadata(info.type === "OMV" && info.counterpart?.album ? info.counterpart : info);
+}
+
+let watchInfoFor = (videoId: string): Promise<MusicWatchInfo | null> => {
+  const s = loadSettings();
+  return fetchMusicWatchInfo(videoId, s.cookieSource, s.browser, s.cookieProfile);
+};
+/** @internal test seam for the YouTube Music request. */
+export function __setWatchInfoForTest(fn: (videoId: string) => Promise<MusicWatchInfo | null>): void {
+  watchInfoFor = fn;
+}
+
+/** YouTube Music: what it already listed this session, else one /next request for the video. */
+export async function lookupYoutubeMusic(videoId: string): Promise<TrackMetadata | null> {
+  const known = musicMetadata(knownMusicInfo(videoId));
+  if (known) {
+    console.log(`[metadata] YouTube Music (listed): ${videoId} "${known.artist}" - "${known.cleanTitle}" [${known.album}]`);
+    return known;
+  }
+  console.log(`[metadata] YouTube Music lookup: ${videoId}`);
+  try {
+    await rateSlot(300);
+    const info = await watchInfoFor(videoId);
+    const hit = watchMetadata(info);
+    if (hit) console.log(`[metadata] YouTube Music hit (${info!.type}${info!.type === "OMV" && info!.counterpart?.album ? ", from its audio track" : ""}): "${hit.artist}" - "${hit.cleanTitle}" [${hit.album}]${hit.year ? ` (${hit.year})` : ""}`);
+    else console.log(`[metadata] YouTube Music: no album for ${videoId} (${info?.type || "not listed"})`);
+    return hit;
+  } catch (err) {
+    console.error("[metadata] YouTube Music lookup error:", err);
+    return null;
+  }
+}
+
+// Which services a lookup asks, in chain order (settings: tagYoutubeMusic,
+// tagLastfm, tagMusicBrainz, tagDeezer; Last.fm also needs a key, YouTube Music
+// a video id). Every service query, fallbacks included, goes by it, so a
+// switched-off service is never contacted.
+export interface TagServices { ytmusic: boolean; lastfm: boolean; musicbrainz: boolean; deezer: boolean }
+export const ALL_SERVICES: TagServices = { ytmusic: true, lastfm: true, musicbrainz: true, deezer: true };
+export type TagService = "ytmusic" | "lastfm" | "musicbrainz" | "deezer";
+
+export function lookupOrder(services: TagServices, lastfmKey?: string, videoId?: string): TagService[] {
   const out: TagService[] = [];
+  if (services.ytmusic && videoId) out.push("ytmusic");
   if (services.lastfm && lastfmKey) out.push("lastfm");
   if (services.musicbrainz) out.push("musicbrainz");
   if (services.deezer) out.push("deezer");
   return out;
 }
 
-async function lookupFrom(service: TagService, artist: string, title: string, lastfmKey?: string): Promise<TrackMetadata | null> {
+async function lookupFrom(service: TagService, artist: string, title: string, lastfmKey?: string, videoId?: string): Promise<TrackMetadata | null> {
+  if (service === "ytmusic") return lookupYoutubeMusic(videoId!);
   if (service === "lastfm") return lookupLastfm(artist, title, lastfmKey!);
   if (service === "musicbrainz") return lookupMusicBrainz(artist, title);   // cover art via coverartarchive
   return lookupDeezer(artist, title);
 }
 
 /** Run the lookup chain for a single artist/title pair, over the services that are on */
-async function runLookupChain(artist: string, title: string, lastfmKey: string | undefined, services: TagServices): Promise<TrackMetadata | null> {
-  for (const service of lookupOrder(services, lastfmKey)) {
-    const hit = await lookupFrom(service, artist, title, lastfmKey);
+async function runLookupChain(artist: string, title: string, lastfmKey: string | undefined, services: TagServices, videoId?: string): Promise<TrackMetadata | null> {
+  for (const service of lookupOrder(services, lastfmKey, videoId)) {
+    const hit = await lookupFrom(service, artist, title, lastfmKey, videoId);
     if (hit) return hit;
   }
   return null;
 }
 
 /** Try to find album art URL from the services that are on (skips the source that already failed) */
-export async function lookupAlbumArt(artist: string, title: string, lastfmKey?: string, skipSource?: string, services: TagServices = ALL_SERVICES): Promise<string | null> {
+export async function lookupAlbumArt(artist: string, title: string, lastfmKey?: string, skipSource?: string, services: TagServices = ALL_SERVICES, videoId?: string): Promise<string | null> {
   console.log(`[metadata] Album art fallback lookup: "${artist}" - "${title}" (skip: ${skipSource})`);
-  for (const service of lookupOrder(services, lastfmKey)) {
+  for (const service of lookupOrder(services, lastfmKey, videoId)) {
     if (service === skipSource) continue;
-    const hit = await lookupFrom(service, artist, title, lastfmKey);
+    const hit = await lookupFrom(service, artist, title, lastfmKey, videoId);
     if (hit?.albumArt) return hit.albumArt;
   }
   return null;
@@ -396,8 +456,8 @@ function maybeTagInstrumental(result: TrackMetadata, instrumental: boolean): Tra
   return { ...result, cleanTitle: `${result.cleanTitle} (Instrumental)` };
 }
 
-/** Chain: Last.fm → MusicBrainz → Deezer, with optional raw artist retry */
-export async function lookupMetadata(artist: string, title: string, lastfmKey?: string, rawArtist?: string, services: TagServices = ALL_SERVICES): Promise<TrackMetadata | null> {
+/** Chain: YouTube Music (with a video id) → Last.fm → MusicBrainz → Deezer, with optional raw artist retry */
+export async function lookupMetadata(artist: string, title: string, lastfmKey?: string, rawArtist?: string, services: TagServices = ALL_SERVICES, videoId?: string): Promise<TrackMetadata | null> {
   // Detect and strip instrumental markers before searching
   const { cleaned: searchTitle, wasInstrumental } = stripInstrumental(title);
   const actualTitle = wasInstrumental ? searchTitle : title;
@@ -409,7 +469,10 @@ export async function lookupMetadata(artist: string, title: string, lastfmKey?: 
 
   console.log(`[metadata] Starting lookup chain for: "${artist}" - "${actualTitle}"${wasInstrumental ? " (instrumental)" : ""}`);
 
-  const result = await runLookupChain(artist, actualTitle, lastfmKey, services);
+  // YouTube Music names the video itself, instrumental or not; it is asked once,
+  // so the raw-artist retry below leaves it out
+  const result = await runLookupChain(artist, actualTitle, lastfmKey, services, videoId);
+  if (result?.source === "ytmusic") return result;
   if (result) return maybeTagInstrumental(result, wasInstrumental);
 
   // Retry with raw artist name (e.g. Japanese name vs romanized)

@@ -30,6 +30,7 @@ class SettingsStore : public QObject {
     Q_PROPERTY(QString lastfmApiKey READ lastfmApiKey WRITE setLastfmApiKey NOTIFY changed)
     Q_PROPERTY(QString metadataAutoEnrich READ metadataAutoEnrich WRITE setMetadataAutoEnrich NOTIFY changed)
     // which services tagging may contact; on unless switched off
+    Q_PROPERTY(bool tagYoutubeMusic READ tagYoutubeMusic WRITE setTagYoutubeMusic NOTIFY changed)
     Q_PROPERTY(bool tagLastfm READ tagLastfm WRITE setTagLastfm NOTIFY changed)
     Q_PROPERTY(bool tagMusicBrainz READ tagMusicBrainz WRITE setTagMusicBrainz NOTIFY changed)
     Q_PROPERTY(bool tagDeezer READ tagDeezer WRITE setTagDeezer NOTIFY changed)
@@ -62,6 +63,7 @@ public:
     QString browser() const { return s_["browser"].toString(); }
     QString lastfmApiKey() const { return s_["lastfmApiKey"].toString(); }
     QString metadataAutoEnrich() const { return s_["metadataAutoEnrich"].toString(); }
+    bool tagYoutubeMusic() const { return s_["tagYoutubeMusic"].toBool(true); }
     bool tagLastfm() const { return s_["tagLastfm"].toBool(true); }
     bool tagMusicBrainz() const { return s_["tagMusicBrainz"].toBool(true); }
     bool tagDeezer() const { return s_["tagDeezer"].toBool(true); }
@@ -84,6 +86,7 @@ public:
     void setBrowser(const QString& v) { patch({{"browser", v}}); }
     void setLastfmApiKey(const QString& v) { patch({{"lastfmApiKey", v}}); }
     void setMetadataAutoEnrich(const QString& v) { patch({{"metadataAutoEnrich", v}}); }
+    void setTagYoutubeMusic(bool v) { patch({{"tagYoutubeMusic", v}}); }
     void setTagLastfm(bool v) { patch({{"tagLastfm", v}}); }
     void setTagMusicBrainz(bool v) { patch({{"tagMusicBrainz", v}}); }
     void setTagDeezer(bool v) { patch({{"tagDeezer", v}}); }

@@ -1,0 +1,201 @@
+{
+ "contents": {
+  "twoColumnBrowseResultsRenderer": {
+   "secondaryContents": {
+    "sectionListRenderer": {
+     "contents": [
+      {
+       "musicShelfRenderer": {
+        "contents": [
+         {
+          "musicResponsiveListItemRenderer": {
+           "overlay": {
+            "musicItemThumbnailOverlayRenderer": {
+             "content": {
+              "musicPlayButtonRenderer": {
+               "playNavigationEndpoint": {
+                "watchEndpoint": {
+                 "videoId": "aTOaMuNAbyg",
+                 "playlistId": "OLAK5uy_k2wPhWK3HZkd2kPDmpyeNxaqEdgCraZFc",
+                 "index": 0,
+                 "watchEndpointMusicSupportedConfigs": {
+                  "watchEndpointMusicConfig": {
+                   "musicVideoType": "MUSIC_VIDEO_TYPE_ATV"
+                  }
+                 }
+                }
+               }
+              }
+             }
+            }
+           },
+           "flexColumns": [
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "Blah Blah Blah",
+                 "navigationEndpoint": {
+                  "watchEndpoint": {
+                   "videoId": "aTOaMuNAbyg",
+                   "playlistId": "OLAK5uy_k2wPhWK3HZkd2kPDmpyeNxaqEdgCraZFc",
+                   "watchEndpointMusicSupportedConfigs": {
+                    "watchEndpointMusicConfig": {
+                     "musicVideoType": "MUSIC_VIDEO_TYPE_ATV"
+                    }
+                   }
+                  }
+                 }
+                }
+               ]
+              }
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {}
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "27M plays"
+                }
+               ]
+              }
+             }
+            }
+           ],
+           "fixedColumns": [
+            {
+             "musicResponsiveListItemFixedColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "3:01"
+                }
+               ]
+              }
+             }
+            }
+           ],
+           "playlistItemData": {
+            "videoId": "aTOaMuNAbyg"
+           },
+           "index": {
+            "runs": [
+             {
+              "text": "1"
+             }
+            ]
+           }
+          }
+         }
+        ]
+       }
+      }
+     ]
+    }
+   },
+   "tabs": [
+    {
+     "tabRenderer": {
+      "content": {
+       "sectionListRenderer": {
+        "contents": [
+         {
+          "musicResponsiveHeaderRenderer": {
+           "thumbnail": {
+            "musicThumbnailRenderer": {
+             "thumbnail": {
+              "thumbnails": [
+               {
+                "url": "https://yt3.googleusercontent.com/JHKX4Fiy4f65uQ7fOC2vKQ-GsoMADtrC4HqxsxdhauWXCmf3D7HgKQcHVa32Z2D1foSH6h2Mi01bkleD=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+               },
+               {
+                "url": "https://yt3.googleusercontent.com/JHKX4Fiy4f65uQ7fOC2vKQ-GsoMADtrC4HqxsxdhauWXCmf3D7HgKQcHVa32Z2D1foSH6h2Mi01bkleD=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+               },
+               {
+                "url": "https://yt3.googleusercontent.com/JHKX4Fiy4f65uQ7fOC2vKQ-GsoMADtrC4HqxsxdhauWXCmf3D7HgKQcHVa32Z2D1foSH6h2Mi01bkleD=w226-h226-l90-rj",
+                "width": 226,
+                "height": 226
+               },
+               {
+                "url": "https://yt3.googleusercontent.com/JHKX4Fiy4f65uQ7fOC2vKQ-GsoMADtrC4HqxsxdhauWXCmf3D7HgKQcHVa32Z2D1foSH6h2Mi01bkleD=w544-h544-l90-rj",
+                "width": 544,
+                "height": 544
+               }
+              ]
+             },
+             "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+             "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_UNSPECIFIED"
+            }
+           },
+           "title": {
+            "runs": [
+             {
+              "text": "Blah Blah Blah"
+             }
+            ]
+           },
+           "subtitle": {
+            "runs": [
+             {
+              "text": "Single"
+             },
+             {
+              "text": " • "
+             },
+             {
+              "text": "2016"
+             }
+            ]
+           },
+           "straplineTextOne": {
+            "runs": [
+             {
+              "text": "Bilal Saeed",
+              "navigationEndpoint": {
+               "browseEndpoint": {
+                "browseId": "UCobNpbyMA_v_jYKnMOyYGLw",
+                "browseEndpointContextSupportedConfigs": {
+                 "browseEndpointContextMusicConfig": {
+                  "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                 }
+                }
+               }
+              }
+             }
+            ]
+           },
+           "secondSubtitle": {
+            "runs": [
+             {
+              "text": "1 song"
+             },
+             {
+              "text": " • "
+             },
+             {
+              "text": "3 minutes"
+             }
+            ]
+           }
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ }
+}

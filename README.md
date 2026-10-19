@@ -37,7 +37,7 @@
 - Switch between the YouTube accounts in your browsers and any number of guest profiles, each with its own recommendations
 - Crossfade, gapless playback and silence skipping
 - Library and playlists, with offline downloads and local file import
-- Automatic tagging from MusicBrainz, Deezer and Last.fm
+- Automatic tagging from YouTube Music, MusicBrainz, Deezer and Last.fm
 - Time-synced lyrics that follow the song line by line
 - 10-band equaliser and MilkDrop visualiser
 - 16 built-in themes and a theme editor that restyles every control, layers dozens of effects and reshapes the window
@@ -45,7 +45,7 @@
 - Mini player: a compact window with its own layout, and a pop-out queue and visualiser
 - Custom keyboard shortcuts
 - Media keys and MPRIS support
-- Discord Rich Presence: the track, its artwork and a progress bar (Settings → General, off by default)
+- Discord Rich Presence
 - Extensive plugin system for new music sources, player bar buttons, custom windows and more
 
 ## Download

@@ -11,10 +11,13 @@
 //     resolve remaining placeholders.
 .pragma library
 
+// kind/year: a YouTube Music album's "Album", "2013"; album/albumId/artists: a
+// YouTube Music song's, artists one per line (a ListModel role holds no array)
 function blank() {
     return { placeholder: true, vid: "", title: "", channel: "",
              duration: 0, thumbnail: "", src: "youtube",
-             isPlaylist: false, videoCount: 0, views: "", age: "" }
+             isPlaylist: false, videoCount: 0, views: "", age: "",
+             kind: "", year: 0, album: "", albumId: "", artists: "" }
 }
 
 function toRow(r) {
@@ -22,7 +25,25 @@ function toRow(r) {
              channel: r.channel || "", duration: r.duration || 0,
              views: r.views || "", age: r.age || "",
              thumbnail: r.thumbnail || "", src: r.src || "youtube",
-             isPlaylist: r.isPlaylist === true, videoCount: r.videoCount || 0 }
+             isPlaylist: r.isPlaylist === true, videoCount: r.videoCount || 0,
+             kind: r.kind || "", year: r.year || 0, album: r.album || "", albumId: r.albumId || "",
+             artists: Array.isArray(r.artists) ? r.artists.join("\n") : "" }
+}
+
+// " · Album" after a song's byline; a single named after its song has none,
+// and a single listed as its song says "Single · 2026"
+function albumPart(row) {
+    if (!row.isPlaylist && row.kind && row.kind !== "song") return " · " + playlistLabel(row, false)
+    return row.album && row.album !== row.title ? " · " + row.album : ""
+}
+
+// A playlist row's label: "Album · 2013" as YouTube Music gives it, else
+// "Playlist"; the count only when one is given
+function playlistLabel(row, withCount) {
+    const parts = [row.kind || "Playlist"]
+    if (row.year) parts.push(String(row.year))
+    if (withCount && row.videoCount > 0) parts.push(row.videoCount + " videos")
+    return parts.join(" · ")
 }
 
 function seed(model, count) {

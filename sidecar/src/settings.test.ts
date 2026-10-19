@@ -50,11 +50,12 @@ describe("defaultSettings", () => {
   });
 
   it("tags with every service on new installs", () => {
-    expect(tagServicesOf(defaultSettings())).toEqual({ lastfm: true, musicbrainz: true, deezer: true });
+    expect(tagServicesOf(defaultSettings())).toEqual({ ytmusic: true, lastfm: true, musicbrainz: true, deezer: true });
   });
 
   it("reads a service switched off as off", () => {
     expect(tagServicesOf({ ...defaultSettings(), tagMusicBrainz: false }).musicbrainz).toBe(false);
+    expect(tagServicesOf({ ...defaultSettings(), tagYoutubeMusic: false }).ytmusic).toBe(false);
   });
 });
 

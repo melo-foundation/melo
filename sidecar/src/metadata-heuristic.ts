@@ -8,7 +8,7 @@ export interface TrackMetadata {
   year?: number;
   genre?: string;
   artSource?: "album" | "custom" | "thumbnail" | "default";
-  source?: "manual" | "heuristic" | "lastfm" | "musicbrainz" | "deezer";
+  source?: "manual" | "heuristic" | "ytmusic" | "lastfm" | "musicbrainz" | "deezer";
 }
 
 // --- Heuristic parsing ---

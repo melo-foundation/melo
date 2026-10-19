@@ -61,6 +61,7 @@ export interface SettingsV2 {
   metadataAutoEnrich: "off" | "new";
   // which services tagging may contact — auto-tag, the library's auto-tag
   // button and the metadata editor's lookup alike (metadata.ts lookupOrder)
+  tagYoutubeMusic: boolean;
   tagLastfm: boolean;
   tagMusicBrainz: boolean;
   tagDeezer: boolean;
@@ -94,6 +95,7 @@ export function defaultSettings(): SettingsV2 {
     crossfadeSeconds: 0,
     silenceSkip: true,
     metadataAutoEnrich: "new",
+    tagYoutubeMusic: true,
     tagLastfm: true,
     tagMusicBrainz: true,
     tagDeezer: true,
@@ -149,8 +151,9 @@ export function loadSettings(): SettingsV2 {
 // The services tagging may contact, as metadata.ts takes them. Separate keys
 // because saveSettings merges patches shallowly, so one object would have to
 // be sent whole by every toggle.
-export function tagServicesOf(s: Pick<SettingsV2, "tagLastfm" | "tagMusicBrainz" | "tagDeezer">): TagServices {
-  return { lastfm: s.tagLastfm !== false, musicbrainz: s.tagMusicBrainz !== false, deezer: s.tagDeezer !== false };
+export function tagServicesOf(s: Pick<SettingsV2, "tagYoutubeMusic" | "tagLastfm" | "tagMusicBrainz" | "tagDeezer">): TagServices {
+  return { ytmusic: s.tagYoutubeMusic !== false, lastfm: s.tagLastfm !== false,
+           musicbrainz: s.tagMusicBrainz !== false, deezer: s.tagDeezer !== false };
 }
 
 export function autoTagEnabled(v: string | undefined): boolean {

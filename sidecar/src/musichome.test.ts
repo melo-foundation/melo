@@ -58,13 +58,27 @@ describe("parseMusicHome", () => {
   it("keeps songs, which it used to drop, with their artist", () => {
     const qp = r.sections.find((s) => s.title === "Quick picks")!;
     expect(qp.items).toEqual([{ kind: "song", videoId: "vid1", playlistId: "", title: "Song A",
-                                description: "Artist A", channel: "Artist A", thumbnail: "https://i/vid1" }]);
+                                description: "Artist A", channel: "Artist A", thumbnail: "https://i/vid1",
+                                artists: ["Artist A"] }]);
   });
 
-  it("opens an album through its album playlist", () => {
+  it("keeps a Quick picks song's album from its third column", () => {
+    const row = song("vid2", "Beat It", "Michael Jackson");
+    row.musicResponsiveListItemRenderer.flexColumns.push({ musicResponsiveListItemFlexColumnRenderer: { text: { runs: [
+      run("Thriller", { browseEndpoint: { browseId: "MPREb_t" } })] } } });
+    const page = JSON.parse(JSON.stringify(home));
+    page.contents.singleColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.sectionListRenderer.contents[0] =
+      shelf("Quick picks", [row]);
+    const it = parseMusicHome(page).sections.find((s) => s.title === "Quick picks")!.items[0];
+    expect(it.album).toBe("Thriller");
+    expect(it.albumId).toBe("MPREb_t");
+  });
+
+  it("opens an album from its album page, keeping its playlist", () => {
     const album = r.sections.find((s) => s.title === "New releases")!.items[0];
     expect(album.kind).toBe("album");
     expect(album.playlistId).toBe("OLAK5uy_1");
+    expect(album.browseId).toBe("MPREb_1");
   });
 
   it("still keeps playlists, without the VL prefix", () => {

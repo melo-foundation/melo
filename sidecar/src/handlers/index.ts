@@ -6,6 +6,7 @@ import * as it from "../innertube";
 import * as st from "../streams";
 import * as lib from "../library";
 import * as meta from "../metadata";
+import { enrichTrack, splitMusicExtras } from "../tagging";
 import * as ly from "../lyrics";
 import * as wt from "../watchtime";
 import * as gc from "../guest-cookies";
@@ -29,49 +30,14 @@ const source = (): it.DataSource => loadSettings().homeSource === "ytmusic" ? "y
 let jobSeq = 0;
 const jobId = (prefix: string) => `${prefix}-${++jobSeq}`;
 
-// Tag one track: the auto-tag button and adding a track with auto-tag on share
-// this body. "heuristic" is the local title cleanup alone; anything else is the
-// Last.fm / MusicBrainz / Deezer chain with the heuristic as fallback. Tracks
-// edited by hand are left alone. True when the track was tagged.
-async function enrichTrack(track: any, mode: string, s: ReturnType<typeof loadSettings>): Promise<boolean> {
-  if (track.metadata?.source === "manual") return false;
-  const heuristic = meta.suggestMetadata(track.title, track.channel);
-  if (mode === "heuristic") {
-    if (!heuristic.artist && !heuristic.cleanTitle) return false;
-    lib.updateTrackMetadata(track.id, heuristic);
-    return true;
-  }
-  const artist = heuristic.artist || track.channel;
-  const title = heuristic.cleanTitle || track.title;
-  const cleanChannel = track.channel.replace(/\s*-\s*Topic$/, "");
-  const rawChannel = artist !== cleanChannel ? cleanChannel : undefined;
-  const result = await meta.lookupMetadata(artist, title, s.lastfmApiKey || undefined, rawChannel, tagServicesOf(s));
-  if (result) {
-    if (result.albumArt) {
-      let artFile = await lib.cacheAlbumArt(track.id, result.albumArt);
-      if (!artFile && result.source) {
-        const altUrl = await meta.lookupAlbumArt(artist, title, s.lastfmApiKey || undefined, result.source, tagServicesOf(s));
-        if (altUrl) {
-          artFile = await lib.cacheAlbumArt(track.id, altUrl);
-          if (artFile) result.albumArt = altUrl;
-        }
-      }
-      if (artFile) result.albumArtFile = artFile;
-    }
-    lib.updateTrackMetadata(track.id, result);
-    return true;
-  }
-  if (!heuristic.artist && !heuristic.cleanTitle) return false;
-  lib.updateTrackMetadata(track.id, heuristic);   // api+heuristic fallback
-  return true;
-}
-
 export function registerHandlers(): void {
   const discord = createPresence({ log: (m) => log(m) });
   discord.setEnabled(loadSettings().discordStatus === true);
   // --- YouTube data ---
   method("yt/search", ({ query, filters }) => it.searchFrom(source(), query, ...ck(), filters));
   method("yt/searchContinuation", ({ token }) => it.searchContinuationFrom(token, ...ck()));
+  method("yt/singles", ({ browseIds }) =>
+    it.singlesInfo(browseIds ?? [], (id) => it.fetchMusicAlbum(id, ...ck())).then((singles) => ({ singles })));
   // a mood chip's params open that mood's home; none is the plain home
   method("yt/getHome", (p: any) => it.fetchMusicHome(...ck(), p?.params || undefined));
   method("yt/homeContinuation", ({ token }) => it.fetchMusicHomeContinuation(token, ...ck()));
@@ -93,6 +59,8 @@ export function registerHandlers(): void {
     ly.getLyrics({ videoId, artist, title, album, duration,
                    allowAuto: loadSettings().lyricsAutoCaptions === true }));
   method("yt/getPlaylistTracks", ({ playlistId }) => st.fetchPlaylistTracks(playlistId));
+  // a YouTube Music album page (MPRE…), whole; playlistId is the fallback
+  method("yt/getAlbum", ({ browseId, playlistId }) => st.fetchAlbumTracks(browseId, playlistId ?? ""));
   // scroll pagination: cursor comes from getPlaylistTracks, "" when exhausted
   method("yt/getPlaylistMore", ({ cursor, count }) => st.moreList(cursor, count ?? 60));
 
@@ -108,7 +76,9 @@ export function registerHandlers(): void {
 
   // --- Library ---
   method("library/get", () => lib.getLibrary());
-  method("library/addTrack", ({ track, download }) => {
+  method("library/addTrack", ({ track: sent, download }) => {
+    // a YouTube Music track's album, artists and year become its tags, not track keys
+    const { track, extras } = splitMusicExtras(sent);
     const added = lib.addTrack(track, false);
     notify("library/changed", {});
     // Auto-tag new tracks in the background, so adding stays instant; only a
@@ -116,7 +86,7 @@ export function registerHandlers(): void {
     // hand edit included).
     const s = loadSettings();
     if (autoTagEnabled(s.metadataAutoEnrich) && !added.metadata) {
-      enrichTrack(added, "api", s)
+      enrichTrack(added, "api", s, extras)
         .then((tagged) => { if (tagged) notify("library/changed", {}); })
         .catch((e) => log("[autotag]", String(e)));
     }
@@ -205,7 +175,8 @@ export function registerHandlers(): void {
   });
   method("metadata/lookup", async ({ artist, title, rawArtist }) => {
     // Full chain (Last.fm -> MusicBrainz -> Deezer,
-    // instrumental handling, raw-artist retry, title-only fallback)
+    // instrumental handling, raw-artist retry, title-only fallback). No video
+    // id: the editor looks up the words typed, which YouTube Music cannot.
     const s = loadSettings();
     const result = await meta.lookupMetadata(artist, title, s.lastfmApiKey || undefined, rawArtist, tagServicesOf(s));
     if (!result) return { ok: false, error: "No results found" };
@@ -218,7 +189,7 @@ export function registerHandlers(): void {
   method("metadata/suggest", ({ title, channel }) => meta.suggestMetadata(title, channel));
   method("metadata/cacheAlbumArt", ({ videoId, artUrl }) => lib.cacheAlbumArt(videoId, artUrl).then((path) => ({ path })));
   // Tag every non-manual track; "heuristic"
-  // = local cleanup only, "api+heuristic" = Last.fm/MusicBrainz/Deezer chain
+  // = local cleanup only, "api+heuristic" = YouTube Music/Last.fm/MusicBrainz/Deezer chain
   // with heuristic fallback. Skips manually-edited tracks.
   method("metadata/batchEnrich", async ({ mode }) => {
     const data = lib.getLibrary();

@@ -16,7 +16,7 @@ import {
   cookiesTxtPath,
 } from "./guest-cookies";
 import { getDownloadedUrl, getTrackMetadata } from "./library";
-import { fetchMusicRadio, hasAuthCookie, resolveCookies } from "./innertube";
+import { fetchMusicAlbum, fetchMusicRadio, hasAuthCookie, resolveCookies } from "./innertube";
 import { UNPACK_FAILED, unpackFailedMessage } from "./ytdlp-proc";
 import { relayUrl } from "./stream-relay";
 import { looksStale, ytdlp, ytdlpChannel } from "./ytdlp";
@@ -441,6 +441,8 @@ async function openList(playlistId: string, want: number): Promise<OpenedList | 
 
   const tracks: FlatTrack[] = [];
   collectFrom(s, tracks);
+  // a playlist that fits one page has no cursor: the view would ask for an empty page
+  if (s.kind === "playlist" && !s.page?.has_continuation) s.exhausted = true;
   let guard = 0;
   while (tracks.length < want && !s.exhausted && guard++ < RADIO_MAX_PAGES) {
     try { await advanceSession(s); } catch { s.exhausted = true; break; }
@@ -477,6 +479,7 @@ export async function moreList(cursor: string, _want?: number) {
     try { await advanceSession(s); } catch { s.exhausted = true; break; }
     if (collectFrom(s, tracks) === 0) { if (++dud >= 2) s.exhausted = true; }
   }
+  if (s.kind === "playlist" && !s.page?.has_continuation) s.exhausted = true;
   if (s.exhausted) listSessions.delete(cursor);
   console.error(`[list] ${s.playlistId} api=${s.kind} MORE tracks=${tracks.length} ` +
                 `more=${s.exhausted ? "no" : "yes"} in ${Date.now() - t0}ms`);
@@ -1369,6 +1372,26 @@ export async function fetchPlaylistTracks(playlistId: string) {
   } catch (err) {
     return { ok: false as const, error: String(err) };
   }
+}
+
+/** A YouTube Music album or single from its own page, whole, with no cursor.
+ *  A failed or empty page falls back to the playlist its play button plays. */
+export async function fetchAlbumTracks(browseId: string, playlistId: string) {
+  const t0 = Date.now();
+  const s = loadSettings();
+  try {
+    const a = await fetchMusicAlbum(browseId, s.cookieSource, s.browser, s.cookieProfile);
+    if (a && a.tracks.length) {
+      console.error(`[list] ${browseId} api=ytm-album tracks=${a.tracks.length} in ${Date.now() - t0}ms`);
+      return { ok: true as const, title: a.title, artist: a.artist, kind: a.kind, year: a.year ?? 0,
+               thumbnail: a.thumbnail, playlistId: a.playlistId || playlistId, tracks: a.tracks, cursor: "" };
+    }
+    console.error(`[ytm] album ${browseId}: no tracks; using the playlist`);
+  } catch (e) {
+    console.error(`[ytm] album ${browseId}: ${String(e).split("\n")[0]}; using the playlist`);
+  }
+  if (!playlistId) return { ok: false as const, error: "Album unavailable" };
+  return fetchPlaylistTracks(playlistId);
 }
 
 // --- Song radio (buffered, dedup by seen-set) ---

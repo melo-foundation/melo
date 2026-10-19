@@ -1,0 +1,106 @@
+{
+ "contents": {
+  "singleColumnMusicWatchNextResultsRenderer": {
+   "tabbedRenderer": {
+    "watchNextTabbedResultsRenderer": {
+     "tabs": [
+      {
+       "tabRenderer": {
+        "content": {
+         "musicQueueRenderer": {
+          "content": {
+           "playlistPanelRenderer": {
+            "contents": [
+             {
+              "playlistPanelVideoRenderer": {
+               "title": {
+                "runs": [
+                 {
+                  "text": "Daft Punk - Superheroes (DJ Revan extended mix)"
+                 }
+                ]
+               },
+               "longBylineText": {
+                "runs": [
+                 {
+                  "text": "DJRevan",
+                  "navigationEndpoint": {
+                   "browseEndpoint": {
+                    "browseId": "UCYj7coD2R3CKbZjDiJg_KHw",
+                    "browseEndpointContextSupportedConfigs": {
+                     "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_USER_CHANNEL"
+                     }
+                    }
+                   }
+                  }
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "66K views"
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "661 likes"
+                 }
+                ]
+               },
+               "shortBylineText": {
+                "runs": [
+                 {
+                  "text": "DJRevan"
+                 }
+                ]
+               },
+               "thumbnail": {
+                "thumbnails": [
+                 {
+                  "url": "https://i.ytimg.com/vi/bdzAg2CXQxA/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3n6Be0RG8dk7YX9St4OxEqMfxknRg",
+                  "width": 400,
+                  "height": 225
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/bdzAg2CXQxA/sddefault.jpg?sqp=-oaymwEWCIAFEOgCIAQqCggAEIAFGDwgpANIWg&rs=AMzJL3n7KVEnM_SLJRVI1TyJ96IY_WqXAA",
+                  "width": 640,
+                  "height": 360
+                 }
+                ]
+               },
+               "lengthText": {
+                "runs": [
+                 {
+                  "text": "4:49"
+                 }
+                ]
+               },
+               "videoId": "bdzAg2CXQxA",
+               "navigationEndpoint": {
+                "watchEndpoint": {
+                 "videoId": "bdzAg2CXQxA",
+                 "watchEndpointMusicSupportedConfigs": {
+                  "watchEndpointMusicConfig": {
+                   "hasPersistentPlaylistPanel": true,
+                   "musicVideoType": "MUSIC_VIDEO_TYPE_UGC"
+                  }
+                 }
+                }
+               }
+              }
+             }
+            ]
+           }
+          }
+         }
+        }
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

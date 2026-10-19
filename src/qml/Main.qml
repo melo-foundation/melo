@@ -283,6 +283,12 @@ Window {
     property string searchDuration: "any"
     readonly property bool hasFilters: searchSort !== "relevance" || searchType !== "any"
                                        || searchDate !== "any" || searchDuration !== "any"
+    // Source = YouTube Music has only its own types
+    readonly property bool musicSearch: Settings.homeSource === "ytmusic"
+    onMusicSearchChanged: clearFilters()
+    function clearFilters() {
+        searchSort = "relevance"; searchType = "any"; searchDate = "any"; searchDuration = "any"
+    }
     function buildFilters() {
         const f = {}
         if (searchSort !== "relevance") f.sort = searchSort
@@ -2128,7 +2134,7 @@ Window {
             // cut on top of their own inset.
             readonly property real cutL: root.shaped ? root.cutLOf(searchBarRect) : 0
             readonly property real cutR: root.shaped ? root.cutROf(searchBarRect) : 0
-            height: root.showSearch ? (root.showFilters ? rowH + 30 : rowH) : 0
+            height: root.showSearch ? (root.showFilters ? rowH + filterRow.height + 4 : rowH) : 0
             // One row or two: a theme may put the tabs beside the search — the
             // tab bar moves in here, at the left, and the field takes the rest
             readonly property bool combined: root.showSearch && Theme.headerCanCombine(width, tabBar.implicitWidth)
@@ -2197,11 +2203,13 @@ Window {
                 }
             }
             DropMenu { id: filterMenu }
-            Row {
+            // wraps onto more lines in a narrow window
+            Flow {
+                id: filterRow
                 y: searchBarRect.rowH + 2
                 anchors.left: parent.left
                 anchors.leftMargin: Theme.inset("header", "left") + searchBarRect.cutL
-                height: 26
+                width: parent.width - anchors.leftMargin - Theme.inset("header", "right") - searchBarRect.cutR
                 spacing: Theme.gap(10)
                 visible: root.showFilters
 
@@ -2209,27 +2217,34 @@ Window {
                     property alias label: fgLabel.text
                     default property alias content: fgSlot.data
                     spacing: Theme.gap(4)
-                    anchors.verticalCenter: parent.verticalCenter
+                    height: 26
                     InkText { id: fgLabel; anchors.verticalCenter: parent.verticalCenter
                            ink: "textDim"
                            font { pixelSize: Theme.fs(11); family: Theme.fontFamily } }
                     Item { id: fgSlot; width: childrenRect.width; height: 22
                            anchors.verticalCenter: parent.verticalCenter }
                 }
-                FilterGroup { label: "Sort"
+                FilterGroup { label: "Type"; visible: root.musicSearch
+                    FilterSelect { value: root.searchType; onPicked: (v) => root.searchType = v
+                        options: [ { value: "any", label: "Any" },
+                                   { value: "song", label: "Songs" },
+                                   { value: "video", label: "Videos" },
+                                   { value: "album", label: "Albums" },
+                                   { value: "playlist", label: "Playlists" } ] } }
+                FilterGroup { label: "Sort"; visible: !root.musicSearch
                     FilterSelect { value: root.searchSort; onPicked: (v) => root.searchSort = v
                         options: [ { value: "relevance", label: "Relevance" },
                                    { value: "date", label: "Upload date" },
                                    { value: "views", label: "View count" },
                                    { value: "rating", label: "Rating" } ] } }
-                FilterGroup { label: "Type"
+                FilterGroup { label: "Type"; visible: !root.musicSearch
                     FilterSelect { value: root.searchType; onPicked: (v) => root.searchType = v
                         options: [ { value: "any", label: "Any" },
                                    { value: "video", label: "Video" },
                                    { value: "playlist", label: "Playlist" },
                                    { value: "channel", label: "Channel" },
                                    { value: "movie", label: "Movie" } ] } }
-                FilterGroup { label: "Upload date"
+                FilterGroup { label: "Upload date"; visible: !root.musicSearch
                     FilterSelect { value: root.searchDate; onPicked: (v) => root.searchDate = v
                         options: [ { value: "any", label: "Any time" },
                                    { value: "hour", label: "Last hour" },
@@ -2237,7 +2252,7 @@ Window {
                                    { value: "week", label: "This week" },
                                    { value: "month", label: "This month" },
                                    { value: "year", label: "This year" } ] } }
-                FilterGroup { label: "Duration"
+                FilterGroup { label: "Duration"; visible: !root.musicSearch
                     FilterSelect { value: root.searchDuration; onPicked: (v) => root.searchDuration = v
                         options: [ { value: "any", label: "Any" },
                                    { value: "short", label: "Under 4 min" },
@@ -2245,13 +2260,13 @@ Window {
                                    { value: "long", label: "Over 20 min" } ] } }
                 InkText {
                     visible: root.hasFilters
-                    anchors.verticalCenter: parent.verticalCenter
+                    height: 26
+                    verticalAlignment: Text.AlignVCenter
                     text: "Clear"
                     ink: fcMa.containsMouse ? "text" : "textDim"
                     font { pixelSize: Theme.fs(11); family: Theme.fontFamily }
                     MouseArea { id: fcMa; anchors.fill: parent; hoverEnabled: true
-                                onClicked: { root.searchSort = "relevance"; root.searchType = "any"
-                                             root.searchDate = "any"; root.searchDuration = "any" } }
+                                onClicked: root.clearFilters() }
                 }
             }
 
@@ -2613,7 +2628,8 @@ Window {
                     searching: searchInput.searching
                     onChangeLayout: (mode) => root.changeTrackLayout(mode)
                     onNeedMore: root.fetchMoreResults()
-                    onOpenPlaylist: (pid, title) => root.openPlaylistView(pid, title)
+                    onOpenPlaylist: (pid, title, album) => root.openPlaylistOrPlay(pid, title, album)
+                    onPlaylistMenu: (pid, title, album, sx, sy) => root.openPlaylistMenu(pid, title, album, sx, sy)
                 }
 
                 LibraryView {
@@ -2637,7 +2653,8 @@ Window {
                     trackMenu: (t, sx, sy) => root.openTrackMenu(t, sx, sy)
                     layout: root.trackLayout
                     onChangeLayout: (mode) => root.changeTrackLayout(mode)
-                    onOpenPlaylist: (playlistId, title) => root.openPlaylistView(playlistId, title)
+                    onOpenPlaylist: (playlistId, title, album) => root.openPlaylistOrPlay(playlistId, title, album)
+                    onPlaylistMenu: (pid, title, album, sx, sy) => root.openPlaylistMenu(pid, title, album, sx, sy)
                 }
 
                 Loader {
@@ -3394,8 +3411,10 @@ Window {
                 const plRows = playlists.map((p) => ({
                     id: p.playlistId, title: p.title, channel: p.channel || "",
                     duration: 0, thumbnail: p.thumbnail || "",
-                    isPlaylist: true, videoCount: p.videoCount || 0 }))
+                    isPlaylist: true, videoCount: p.videoCount || 0,
+                    kind: p.kind || "", year: p.year || 0, albumId: p.browseId || "" }))
                 results = plRows.concat(results)
+                root.fillSingles(playlists.filter((p) => p.kind === "Single" && p.browseId).map((p) => p.browseId))
             }
             if (root.searchFlow) {
                 // flow consumes placeholders across batches; asks for more
@@ -3424,6 +3443,30 @@ Window {
             PlayerState.error = message
         }
     }
+    // Singles get their length from their album pages once they show; a one-track
+    // single becomes its song, and that song's repeat further down goes
+    function fillSingles(browseIds) {
+        if (!browseIds.length) return
+        sidecar.rpc("yt/singles", { browseIds: browseIds }, (r) => {
+            const singles = r.ok && r.result ? (r.result.singles || []) : []
+            for (const s of singles) {
+                let at = -1
+                for (let i = 0; i < searchResults.count && at < 0; i++) {
+                    const m = searchResults.get(i)
+                    if (m.isPlaylist && m.albumId === s.browseId) at = i
+                }
+                if (at < 0) continue   // a new search replaced the list
+                if (!s.track) { searchResults.setProperty(at, "duration", s.duration); continue }
+                const t = s.track
+                for (let i = searchResults.count - 1; i > at; i--)
+                    if (!searchResults.get(i).isPlaylist && searchResults.get(i).vid === t.id) searchResults.remove(i)
+                searchResults.set(at, { vid: t.id, title: t.title, channel: t.channel || "", duration: t.duration || 0,
+                                        thumbnail: t.thumbnail || searchResults.get(at).thumbnail, isPlaylist: false,
+                                        videoCount: 0, album: t.album || "", year: t.year || searchResults.get(at).year,
+                                        artists: Array.isArray(t.artists) ? t.artists.join("\n") : "" })
+            }
+        })
+    }
     // flow follow-ups (placeholders still unresolved) skip tail creation
     function fetchMoreRaw() {
         if (searchContinuation.length && !searchFetchingMore) {
@@ -3448,11 +3491,51 @@ Window {
 
     // playlist navigation: Back returns to the view the playlist was opened from
     property int playlistReturnView: 0
-    function openPlaylistView(playlistId, title, initialTracks) {
+    function openPlaylistView(playlistId, title, initialTracks, album) {
         // a playlist opened from a playlist keeps the original origin
         if (PlayerState.view !== 3) root.playlistReturnView = PlayerState.view
-        playlistView.open(playlistId, title, initialTracks || null)
+        playlistView.open(playlistId, title, initialTracks || null, album || null)
         PlayerState.view = 3
+    }
+
+    function isSingle(album) { return !!(album && album.browseId && album.kind === "Single") }
+    // a playlist's or album's tracks, first page; [] when it fails
+    function listTracks(playlistId, album, cb) {
+        const call = album && album.browseId ? ["yt/getAlbum", { browseId: album.browseId, playlistId: playlistId }]
+                                             : ["yt/getPlaylistTracks", { playlistId: playlistId }]
+        sidecar.rpc(call[0], call[1], (r) => {
+            const ts = r.ok && r.result && r.result.ok ? (r.result.tracks || []) : []
+            cb(ts.map((t) => Object.assign({}, t, { source: "youtube" })))
+        })
+    }
+    // a single plays: one track as a song does, several queued from the first;
+    // anything else, or a single whose page fails, opens in the playlist view
+    function openPlaylistOrPlay(playlistId, title, album) {
+        if (!root.isSingle(album)) {
+            root.openPlaylistView(playlistId, title, null, album)
+            return
+        }
+        root.listTracks(playlistId, album, (tracks) => {
+            if (!tracks.length) root.openPlaylistView(playlistId, title, null, album)
+            else if (tracks.length === 1) Player.playTrackData(tracks[0])
+            else Player.playQueue(tracks, 0)
+        })
+    }
+    // a playlist, album or single row's menu: what its click does not
+    function openPlaylistMenu(playlistId, title, album, sx, sy) {
+        const acts = []
+        if (root.isSingle(album))
+            acts.push({ label: "Open", act: () => root.openPlaylistView(playlistId, title, null, album) })
+        else
+            acts.push({ label: "Play", act: () => root.listTracks(playlistId, album, (ts) => { if (ts.length) Player.playQueue(ts, 0) }) })
+        if (PlayerState.hasTrack) {
+            acts.push({ label: "Add to next up", act: () => root.listTracks(playlistId, album, (ts) => { if (ts.length) Player.playNext(ts) }) })
+            acts.push({ label: "Add to Queue", act: () => root.listTracks(playlistId, album, (ts) => { if (ts.length) Player.addToQueue(ts) }) })
+        }
+        acts.push({ label: "Copy link", act: () => WindowCtl.copyToClipboard(album && album.browseId
+                        ? "https://music.youtube.com/browse/" + album.browseId
+                        : "https://www.youtube.com/playlist?list=" + playlistId) })
+        contextMenu.open(sx, sy, acts)
     }
 
     // ---------- shortcuts (configurable) ----------

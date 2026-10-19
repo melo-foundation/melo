@@ -2059,6 +2059,12 @@ Window {
                 // auto-tag button and the metadata editor's lookup alike
                 SRow {
                     visible: win.autoTagOn
+                    name: "Tag with YouTube Music"
+                    SToggle { checked: Settings.tagYoutubeMusic
+                              onToggled: (v) => Settings.tagYoutubeMusic = v }
+                }
+                SRow {
+                    visible: win.autoTagOn
                     name: "Tag with MusicBrainz"
                     SToggle { checked: Settings.tagMusicBrainz
                               onToggled: (v) => Settings.tagMusicBrainz = v }

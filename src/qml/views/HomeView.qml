@@ -16,7 +16,9 @@ Item {
     property var trackMenu: null
     property string layout: "list"
     signal changeLayout(string mode)
-    signal openPlaylist(string playlistId, string title)
+    // album: a YouTube Music album's page, or null
+    signal openPlaylist(string playlistId, string title, var album)
+    signal playlistMenu(string playlistId, string title, var album, real sceneX, real sceneY)
 
     readonly property bool ytMusic: Settings.homeSource !== "youtube"
 
@@ -125,7 +127,7 @@ Item {
             for (const t of arr)
                 recModel.append({ placeholder: false, vid: t.id, title: t.title,
                                   channel: t.channel || "", duration: t.duration || 0,
-                                  thumbnail: t.thumbnail || "" })
+                                  thumbnail: t.thumbnail || "", album: t.album || "" })
         }
     }
     function fetchNextPage() {
@@ -281,17 +283,32 @@ Item {
         const f = ytmFlick
         if (f.contentHeight <= f.height + 200 || f.contentY + f.height >= f.contentHeight - 600) ytmMore()
     }
+    // a song card's byline gains its album when the byline leaves it out
+    function cardSub(it) {
+        const d = it.description || view.kindLabel(it.kind)
+        const a = it.kind === "song" ? SkeletonModel.albumPart(it) : ""
+        return a && d.indexOf(it.album) < 0 ? d + a : d
+    }
     function kindLabel(kind) {
         return ({ playlist: "Playlist", album: "Album", artist: "Artist", song: "Song" })[kind] || ""
     }
-    // a playlist, an album (as its playlist) or an artist (as its radio) opens
+    // a playlist, an album (from its page) or an artist (as its radio) opens
     // in the playlist view; a song plays, as a YouTube track does
     function homeItemClick(it) {
         if (it.kind === "song") view.tileClick(view.homeSongTile(it))
-        else view.openPlaylist(it.playlistId, it.title)
+        else view.openPlaylist(it.playlistId, it.title, view.homeAlbum(it))
+    }
+    // "Single • Artist": the label leads an album card's byline
+    function homeAlbum(it) {
+        return it.browseId ? { browseId: it.browseId, kind: (it.description || "").split(" • ")[0] } : null
+    }
+    function homeItemMenu(it, sx, sy) {
+        if (it.kind === "song") view.tileMenu(view.homeSongTile(it), sx, sy)
+        else view.playlistMenu(it.playlistId, it.title, view.homeAlbum(it), sx, sy)
     }
     function homeSongTile(it) {
-        return { vid: it.videoId, title: it.title, channel: it.channel, duration: 0, thumbnail: it.thumbnail }
+        return { vid: it.videoId, title: it.title, channel: it.channel, duration: 0, thumbnail: it.thumbnail,
+                 album: it.album || "", albumId: it.albumId || "", year: it.year || 0, artists: it.artists || [] }
     }
 
     function loadChip(token) {
@@ -384,11 +401,19 @@ Item {
     onLoadingChipChanged: if (!loadingChip) Qt.callLater(maybeFillViewport)
 
     function tileTrack(m) {
-        return { id: m.vid, title: m.title, channel: m.channel,
-                 duration: m.duration, thumbnail: m.thumbnail }
+        const t = { id: m.vid, title: m.title, channel: m.channel,
+                    duration: m.duration, thumbnail: m.thumbnail }
+        // a YouTube Music song's album: adding it to the library tags it with these
+        if (m.album) {
+            t.album = m.album
+            if (m.albumId) t.albumId = m.albumId
+            if (m.year) t.year = m.year
+            if (m.artists && m.artists.length) t.artists = m.artists
+        }
+        return t
     }
     function tileClick(m) {
-        if (m.vid.startsWith("RD")) view.openPlaylist(m.vid, m.title)
+        if (m.vid.startsWith("RD")) view.openPlaylist(m.vid, m.title, null)
         else Player.playTrackData(view.tileTrack(m))
     }
     function tileMenu(m, sx, sy) {
@@ -400,7 +425,7 @@ Item {
         // queue until it is opened, so it gets its own short menu
         if (!view.contextMenu) return
         view.contextMenu.open(sx, sy, [
-            { label: "Open", act: () => view.openPlaylist(m.vid, m.title) },
+            { label: "Open", act: () => view.openPlaylist(m.vid, m.title, null) },
             { label: "Play", act: () => Player.startRadioPlaylist(m.vid) },
             { label: "Copy link", act: () => WindowCtl.copyToClipboard(
                         "https://www.youtube.com/playlist?list=" + m.vid) },
@@ -679,6 +704,7 @@ Item {
                                    font { pixelSize: Theme.fs(13); weight: Theme.weightMedium; family: Theme.fontFamily } }
                     SkeletonText { width: parent.width
                                    text: rrow.model.channel
+                                         + SkeletonModel.albumPart(rrow.model)
                                          + (rrow.model.views ? " · " + rrow.model.views : "")
                                          + (rrow.model.age ? " · " + rrow.model.age : "")
                                    ink: "textDim"
@@ -722,6 +748,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.max(0, parent.width - parent.spacing - hcTitle.width)
                     text: rrow.model.channel
+                          + SkeletonModel.albumPart(rrow.model)
                           + (rrow.model.duration > 0 ? " · " + view.fmtDur(rrow.model.duration) : "")
                     ink: "textDim"
                     hoverSource: rma
@@ -836,7 +863,7 @@ Item {
                 // 33ms became 440); a transform only changes the node's matrix.
                 transform: Translate { x: rcell.slackX }
                 title_: rcell.model.title
-                meta_: rcell.model.channel
+                meta_: rcell.model.channel + SkeletonModel.albumPart(rcell.model)
                 art: rcell.model.thumbnail || ""
                 duration: rcell.model.duration || 0
                 loading: rcell.model.placeholder === true
@@ -916,7 +943,7 @@ Item {
                                       : song ? Theme.ctl(48) : Theme.sp(GridUi.rowH(width))
                                 radius: Theme.radiusMd
                                 role: !ph && sMa.containsMouse ? "hover" : ""
-                                readonly property string sub: song ? modelData.channel
+                                readonly property string sub: song ? modelData.channel + SkeletonModel.albumPart(modelData)
                                                               : (modelData.description || view.kindLabel(modelData.kind))
                                 Skeleton {
                                     id: sArt
@@ -980,9 +1007,8 @@ Item {
                                     onClicked: (m) => {
                                         if (sRow.ph) return
                                         if (m.button !== Qt.RightButton) { view.homeItemClick(sRow.modelData); return }
-                                        if (!sRow.song) return
                                         const p = sMa.mapToItem(null, m.x, m.y)
-                                        view.tileMenu(view.homeSongTile(sRow.modelData), p.x, p.y)
+                                        view.homeItemMenu(sRow.modelData, p.x, p.y)
                                     }
                                 }
                             }
@@ -1050,7 +1076,7 @@ Item {
                                                        morph: false; placeholderWidth: 108; barHeight: 9; barOffset: -1
                                                        font { pixelSize: Theme.fs(10); weight: Theme.weightMedium; family: Theme.fontFamily } }
                                         SkeletonText { width: parent.width
-                                                       text: pCard.ph ? "" : (pCard.modelData.description || view.kindLabel(pCard.modelData.kind))
+                                                       text: pCard.ph ? "" : view.cardSub(pCard.modelData)
                                                        ink: "textDim"
                                                        loading: pCard.ph
                                                        morph: false; placeholderWidth: 72; barHeight: 8
@@ -1059,9 +1085,12 @@ Item {
                                 }
                                 MouseArea {
                                     id: pMa; anchors.fill: parent; hoverEnabled: true
-                                    onClicked: {
+                                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                    onClicked: (m) => {
                                         if (pCard.ph) return
-                                        view.homeItemClick(pCard.modelData)
+                                        if (m.button !== Qt.RightButton) { view.homeItemClick(pCard.modelData); return }
+                                        const p = pMa.mapToItem(null, m.x, m.y)
+                                        view.homeItemMenu(pCard.modelData, p.x, p.y)
                                     }
                                 }
                             }

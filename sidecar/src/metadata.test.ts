@@ -90,12 +90,17 @@ describe("title-only fallback", () => {
 
 // Which services a lookup asks, and in what order. Each can be switched off;
 // Last.fm also needs a key, and without one it is skipped.
-// The order is the chain's: Last.fm, then MusicBrainz, then Deezer.
+// The order is the chain's: YouTube Music (by video id), Last.fm, MusicBrainz, Deezer.
 describe("lookupOrder", () => {
-  const all = { lastfm: true, musicbrainz: true, deezer: true };
+  const all = { ytmusic: true, lastfm: true, musicbrainz: true, deezer: true };
 
   it("asks every service, in the chain's order, when all are on and keyed", () => {
     expect(lookupOrder(all, "key")).toEqual(["lastfm", "musicbrainz", "deezer"]);
+  });
+
+  it("asks YouTube Music first, and only with a video id", () => {
+    expect(lookupOrder(all, "key", "uSFXOBaqiR8")).toEqual(["ytmusic", "lastfm", "musicbrainz", "deezer"]);
+    expect(lookupOrder({ ...all, ytmusic: false }, undefined, "uSFXOBaqiR8")).toEqual(["musicbrainz", "deezer"]);
   });
 
   it("skips Last.fm without a key even when it is on", () => {
@@ -108,6 +113,6 @@ describe("lookupOrder", () => {
   });
 
   it("asks nothing when every service is off", () => {
-    expect(lookupOrder({ lastfm: false, musicbrainz: false, deezer: false }, "key")).toEqual([]);
+    expect(lookupOrder({ ytmusic: false, lastfm: false, musicbrainz: false, deezer: false }, "key", "uSFXOBaqiR8")).toEqual([]);
   });
 });

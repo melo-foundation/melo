@@ -535,6 +535,25 @@ MeloWindow {
                         height: obw.rowH
                         InkText {
                             anchors.verticalCenter: parent.verticalCenter
+                            text: "Tag with YouTube Music"
+                            ink: "text"
+                            font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
+                        }
+                        MToggle {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            checked: Settings.tagYoutubeMusic
+                            onToggled: (v) => Settings.tagYoutubeMusic = v
+                        }
+                    }
+
+                    Item {
+                        enabled: obw.autoTagOn
+                        opacity: enabled ? 1 : 0.4
+                        width: parent.width
+                        height: obw.rowH
+                        InkText {
+                            anchors.verticalCenter: parent.verticalCenter
                             text: "Tag with MusicBrainz"
                             ink: "text"
                             font { pixelSize: Theme.fs(12); family: Theme.fontFamily }

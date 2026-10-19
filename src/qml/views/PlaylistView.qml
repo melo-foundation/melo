@@ -17,7 +17,11 @@ Item {
 
     property string playlistId
     property string playlistTitle
+    // a YouTube Music album: "Artist · Album · 2013"
+    property string playlistSubtitle: ""
     property bool loading: false
+    // the sidecar call; a test hands in its own
+    property var rpc: (method, params, cb) => sidecar.rpc(method, params, cb)
     property bool syncing: false
     property string plError
 
@@ -117,7 +121,14 @@ Item {
     property bool fetchingMore: false
     property var moreFlow: null
 
-    function open(id, title, initialTracks) {
+    function albumSubtitle(a) {
+        if (!a) return ""
+        return [a.artist || "", a.kind || "", a.year ? String(a.year) : ""].filter((s) => s.length).join(" · ")
+    }
+
+    // album: { browseId, artist, kind, year } for a YouTube Music album, which
+    // loads whole from its own page; id stays its playlist, for Save and Sync
+    function open(id, title, initialTracks, album) {
         openedAt = Date.now()
         listCursor = ""
         fetchingMore = false
@@ -125,8 +136,9 @@ Item {
         const changed = id !== playlistId
         playlistId = id
         console.log("[playlist-ui] open id=" + id + " inLibrary=" + view.inLibrary
-                    + " layout=" + view.layout)
+                    + " layout=" + view.layout + (album && album.browseId ? " album=" + album.browseId : ""))
         playlistTitle = title || ""
+        playlistSubtitle = albumSubtitle(album)
         plError = ""
         // Clear the previous playlist's rows first. apply() fills placeholders in place
         // so skeletons morph, but reused across a navigation the old rows and thumbnails
@@ -152,12 +164,18 @@ Item {
         loading = true
         seededCount = placeholderCount()
         SkeletonModel.seed(plModel, seededCount)   // placeholders morph in place
-        sidecar.rpc("yt/getPlaylistTracks", { playlistId: id }, (r) => {
+        const byAlbum = !!(album && album.browseId)
+        const call = byAlbum ? ["yt/getAlbum", { browseId: album.browseId, playlistId: id }]
+                             : ["yt/getPlaylistTracks", { playlistId: id }]
+        view.rpc(call[0], call[1], (r) => {
             if (view.playlistId !== id) return
             loading = false
             if (r.ok && r.result && r.result.ok) {
                 const n = (r.result.tracks || []).length
                 view.listCursor = r.result.cursor || ""
+                if (byAlbum && r.result.kind !== undefined)
+                    view.playlistSubtitle = view.albumSubtitle({ artist: r.result.artist || album.artist,
+                        kind: r.result.kind || album.kind, year: r.result.year || album.year })
                 SkeletonModel.apply(plModel, view.shown(r.result.tracks))
                 // seeded > n means the surplus placeholders fade out on arrival;
                 // seeded < n means rows append below the fold with no morph
@@ -185,7 +203,7 @@ Item {
             layout, width, plModel.count, GridUi.growth))
         const forId = playlistId
         const t0 = Date.now()
-        sidecar.rpc("yt/getPlaylistMore", { cursor: listCursor, count: 40 }, (r) => {
+        view.rpc("yt/getPlaylistMore", { cursor: listCursor, count: 40 }, (r) => {
             if (view.playlistId !== forId) return   // navigated away mid-flight
             view.fetchingMore = false
             if (!r.ok || !r.result || !r.result.ok) {
@@ -196,7 +214,8 @@ Item {
                 return
             }
             const rows = r.result.tracks || []
-            view.listCursor = r.result.cursor || ""
+            // an empty page is the end, whatever its cursor says
+            view.listCursor = rows.length ? (r.result.cursor || "") : ""
             SkeletonModel.acceptBatch(plModel, view.moreFlow, rows, false)
             console.log("[list-ui] " + forId + " +" + rows.length + " rows total=" + plModel.count
                         + " more=" + (view.listCursor.length ? "yes" : "no")
@@ -280,14 +299,30 @@ Item {
                         onClicked: view.back() }
         }
         ScrollText {
+            id: titleText
+            // the room between Back and the buttons, shared with the subtitle
+            readonly property real room: Math.max(0, actions.x - Theme.gap(12) - x)
             anchors.left: backBtn.right
             anchors.leftMargin: Theme.gap(12)
-            anchors.right: actions.left
-            anchors.rightMargin: Theme.gap(12)
+            width: subText.visible ? Math.min(implicitWidth, Math.max(room / 2, room - subText.implicitWidth - Theme.gap(10)))
+                                   : room
             anchors.verticalCenter: parent.verticalCenter
             text: view.playlistTitle
             ink: "text"
             font { pixelSize: Theme.fs(14); weight: Theme.weightBold; family: Theme.fontFamily }
+        }
+        InkText {
+            id: subText
+            objectName: "playlistSubtitle"
+            visible: view.playlistSubtitle.length > 0
+            anchors.left: titleText.right
+            anchors.leftMargin: Theme.gap(10)
+            width: Math.max(0, titleText.room - titleText.width - Theme.gap(10))
+            anchors.verticalCenter: parent.verticalCenter
+            text: view.playlistSubtitle
+            elide: Text.ElideRight
+            ink: "textDim"
+            font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
         }
         Row {
             id: actions
@@ -363,7 +398,10 @@ Item {
             // transition fades opacity to 0, the item is pooled still at 0, and a
             // reused item is not an added one — so the add transition never runs
             // and the card comes back invisible, text and all.
-            ListView.onReused: opacity = 1
+            // Qt skips hiding a delegate pooled while a transition is scheduled on it
+            // (a placeholder removed within 150 ms of being added): it stays drawn.
+            ListView.onPooled: visible = false
+            ListView.onReused: { visible = true; opacity = 1 }
             id: row
             required property int index
             required property var model
@@ -576,8 +614,9 @@ Item {
             // A pooled delegate keeps what the remove transition left on it: that
             // transition fades opacity to 0, the item is pooled still at 0, and a
             // reused item is not an added one — so the add transition never runs
-            // and the card comes back invisible, text and all.
-            GridView.onReused: opacity = 1
+            // and the card comes back invisible, text and all. Pooled: see the list's.
+            GridView.onPooled: visible = false
+            GridView.onReused: { visible = true; opacity = 1 }
             id: cell
             required property int index
             readonly property real slackX: GridUi.slackX(index % grid.gcols, grid.slack)

@@ -19,6 +19,11 @@ interface SearchResult {
   // "752K views" / "2 years ago": present in every renderer
   views?: string;
   age?: string;
+  // YouTube Music only, where its byline links them
+  artists?: string[];
+  album?: string;
+  albumId?: string;
+  year?: number;
 }
 
 export interface ChipItem {
@@ -37,8 +42,11 @@ interface SearchPlaylistResult {
   playlistId: string;
   title: string;
   channel: string;
-  videoCount: number;
+  videoCount: number;      // 0: not given (a YouTube Music album says none)
   thumbnail: string;
+  kind?: string;           // YouTube Music's own label: "Album", "Single", "EP", "Playlist"
+  year?: number;
+  browseId?: string;       // a YouTube Music album's MPRE page: it opens as that page
 }
 
 // One entry per browser. The account menu asks about every installed browser;
@@ -352,6 +360,11 @@ export interface HomeItem {
   description: string;
   channel: string;
   thumbnail: string;
+  artists?: string[];   // a song's, where its byline links them
+  album?: string;
+  albumId?: string;
+  year?: number;
+  browseId?: string;    // an album's MPRE page
 }
 export interface HomeSection { title: string; items: HomeItem[] }
 export interface HomeChip { text: string; params: string; isSelected: boolean }
@@ -620,7 +633,7 @@ function parseRichItemVideo(item: any): SearchResult | null {
 
 export interface SearchFilters {
   sort?: "relevance" | "date" | "views" | "rating";
-  type?: "any" | "video" | "channel" | "playlist" | "movie";
+  type?: "any" | "video" | "channel" | "playlist" | "movie" | "song" | "album";   // song, album: YouTube Music
   uploadDate?: "any" | "hour" | "today" | "week" | "month" | "year";
   duration?: "any" | "short" | "medium" | "long";
 }
@@ -1184,8 +1197,10 @@ function parseHomeItem(it: any): HomeItem | null {
     const artist: string[] = [];
     for (const r of runs) { if (String(r.text).includes("•")) break; artist.push(r.text) }
     const channel = artist.join("").trim();
-    return { kind: "song", videoId, playlistId: "", title: textOf(first), description: channel, channel,
-             thumbnail: lastThumb(song.thumbnail) };
+    // Quick picks put the album in a third column
+    const albumRuns = cols[2]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+    return rememberMusic<HomeItem>({ kind: "song", videoId, playlistId: "", title: textOf(first), description: channel, channel,
+                           thumbnail: lastThumb(song.thumbnail), ...bylineInfo([...runs, ...albumRuns]) });
   }
   const card = it?.musicTwoRowItemRenderer;
   if (!card) return null;
@@ -1194,12 +1209,13 @@ function parseHomeItem(it: any): HomeItem | null {
   const overlay: string = findKey(card.thumbnailOverlay, "watchPlaylistEndpoint")?.playlistId || "";
   const base = { videoId: "", title: textOf(card.title), description: textOf(card.subtitle), channel: "",
                  thumbnail: lastThumb(card.thumbnailRenderer) };
-  if (nav.watchEndpoint?.videoId) return { ...base, kind: "song", videoId: nav.watchEndpoint.videoId, playlistId: "" };
+  if (nav.watchEndpoint?.videoId)
+    return rememberMusic<HomeItem>({ ...base, kind: "song", videoId: nav.watchEndpoint.videoId, playlistId: "", ...bylineInfo(card.subtitle?.runs) });
   if (bid.startsWith("VL")) return { ...base, kind: "playlist", playlistId: bid.slice(2) };
   if (nav.watchPlaylistEndpoint?.playlistId) return { ...base, kind: "playlist", playlistId: nav.watchPlaylistEndpoint.playlistId };
   if (bid.startsWith("RD")) return { ...base, kind: "playlist", playlistId: bid };
-  // an album opens as the playlist its play button plays; melo has no album page
-  if (bid.startsWith("MPRE")) return overlay ? { ...base, kind: "album", playlistId: overlay } : null;
+  // an album opens from its MPRE page; its playlist is what Play, Save and Sync use
+  if (bid.startsWith("MPRE")) return overlay ? { ...base, kind: "album", playlistId: overlay, browseId: bid } : null;
   // melo has no artist page either: an artist is kept only with a radio to play
   if (bid.startsWith("UC")) return overlay ? { ...base, kind: "artist", playlistId: overlay } : null;
   return null;
@@ -1250,6 +1266,7 @@ const MUSIC_ORIGIN = "https://music.youtube.com";
 const YTM_SONGS = "EgWKAQIIAWoMEA4QChADEAQQCRAF";
 const YTM_VIDEOS = "EgWKAQIQAWoMEA4QChADEAQQCRAF";
 const YTM_PLAYLISTS = "EgeKAQQoAEABagwQDhAKEAMQBBAJEAU=";
+const YTM_ALBUMS = "EgWKAQIYAWoMEA4QChADEAQQCRAF";
 
 function ytmFallback(what: string, why: unknown): void {
   console.error(`[ytm] ${what}: ${String(why).split("\n")[0]}; using YouTube`);
@@ -1278,7 +1295,9 @@ export function musicSearchParams(f?: SearchFilters): string | undefined {
   if (f?.duration && f.duration !== "any") return undefined;
   switch (f?.type ?? "any") {
     case "any": return YTM_SONGS;
+    case "song": return YTM_SONGS;
     case "video": return YTM_VIDEOS;
+    case "album": return YTM_ALBUMS;
     case "playlist": return YTM_PLAYLISTS;
     default: return undefined;
   }
@@ -1295,6 +1314,53 @@ function musicThumb(sources: any[] | undefined): string {
 function musicViews(segs: string[], fallback: string): string {
   const v = segs.find((s) => /views?$/i.test(s));
   return v ? compactViews(v) : fallback;
+}
+
+// A byline's linked runs: each artist links to its channel, the album to its
+// MPRE page; a bare four-digit run is the year. An uploader's own channel
+// (USER_CHANNEL) is not an artist.
+export interface BylineInfo { artists?: string[]; album?: string; albumId?: string; year?: number }
+export function bylineInfo(runs: any[] | undefined): BylineInfo {
+  const out: BylineInfo = {};
+  const artists: string[] = [];
+  for (const r of Array.isArray(runs) ? runs : []) {
+    const text = String(r?.text ?? "").trim();
+    const be = r?.navigationEndpoint?.browseEndpoint;
+    const id: string = be?.browseId || "";
+    const page: string = be?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || "";
+    if (id.startsWith("MPRE")) { if (!out.album) { out.album = text; out.albumId = id; } }
+    else if (id.startsWith("UC")) { if (page !== "MUSIC_PAGE_TYPE_USER_CHANNEL" && text) artists.push(text); }
+    else if (!be && /^\d{4}$/.test(text)) out.year = parseInt(text, 10);
+  }
+  if (artists.length) out.artists = artists;
+  return out;
+}
+
+// googleusercontent art is square album art, sized by its URL
+export function isMusicArt(url: string): boolean {
+  return /^https:\/\/(lh\d|yt\d)\.(googleusercontent|ggpht)\.com\//.test(url) && /=w\d+-h\d+/.test(url);
+}
+export function musicArtAt(url: string, px: number): string {
+  return url.replace(/=w\d+-h\d+/, `=w${px}-h${px}`);
+}
+
+// What YouTube Music said about a track, by video id: a track queued from a
+// search keeps only {id,title,channel,...}, so adding it to the library later
+// finds its album here. Tracks with an album only; 5000 entries, oldest out.
+export interface MusicTrackInfo { title: string; artist: string; artists?: string[]; album: string; albumId?: string; year?: number; cover?: string }
+const musicInfo = new Map<string, MusicTrackInfo>();
+function rememberMusic<T extends { title: string; channel: string; thumbnail: string } & BylineInfo>(t: T): T {
+  const id: string = (t as any).id || (t as any).videoId || "";
+  if (!id || !t.album) return t;
+  musicInfo.delete(id);
+  musicInfo.set(id, { title: t.title, artist: t.channel || (t.artists ?? []).join(", "), artists: t.artists,
+                      album: t.album, albumId: t.albumId, year: t.year,
+                      cover: isMusicArt(t.thumbnail) ? t.thumbnail : undefined });
+  if (musicInfo.size > 5000) musicInfo.delete(musicInfo.keys().next().value!);
+  return t;
+}
+export function knownMusicInfo(videoId: string): MusicTrackInfo | undefined {
+  return musicInfo.get(videoId);
 }
 
 type MusicListItem =
@@ -1314,10 +1380,11 @@ export function parseMusicListItem(r: any): MusicListItem {
   const thumbnail = musicThumb(r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails);
   const videoId: string = r.playlistItemData?.videoId
     || findKey(r.overlay, "watchEndpoint")?.videoId || "";
+  const runs: any[] = r.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
   if (videoId) {
     const duration = parseDuration(segs.find((s) => /^\d+(:\d\d)+$/.test(s)) || "");
-    return { kind: "track", track: { id: videoId, title, channel: segs[0] || "", duration, thumbnail,
-                                     views: musicViews(segs, columnText(r, 2)) } };
+    return { kind: "track", track: rememberMusic({ id: videoId, title, channel: segs[0] || "", duration, thumbnail,
+                                                   views: musicViews(segs, columnText(r, 2)), ...bylineInfo(runs) }) };
   }
   const bid: string = r.navigationEndpoint?.browseEndpoint?.browseId || "";
   const overlayList: string = findKey(r.overlay, "watchPlaylistEndpoint")?.playlistId || "";
@@ -1326,12 +1393,17 @@ export function parseMusicListItem(r: any): MusicListItem {
   else if (bid.startsWith("MPRE")) playlistId = overlayList;   // an album plays as its playlist
   if (!playlistId) return null;
   // the artist or author is the linked run; unlinked, it follows the type label when there is one
-  const runs: any[] = r.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
   const linked = runs.find((x) => x?.navigationEndpoint?.browseEndpoint)?.text;
   const channel = linked || (segs.length >= 3 ? segs[1] : segs[0]) || "";
   const count = segs.map((s) => s.match(/^([\d,]+)\s+(songs?|tracks?|videos?)$/i)).find(Boolean);
+  // "Album • Daft Punk • 2013": the label leads, unlinked, when the row has one
+  const kind = segs.length >= 2 && !runs[0]?.navigationEndpoint && segs[0] !== channel
+               && !/^\d{4}$/.test(segs[0]) ? segs[0] : "";
+  const { year } = bylineInfo(runs);
   return { kind: "playlist", playlist: { playlistId, title, channel, thumbnail,
-                                         videoCount: count ? parseInt(count[1].replace(/,/g, ""), 10) : 0 } };
+                                         videoCount: count ? parseInt(count[1].replace(/,/g, ""), 10) : 0,
+                                         ...(kind ? { kind } : {}), ...(year ? { year } : {}),
+                                         ...(bid.startsWith("MPRE") ? { browseId: bid } : {}) } };
 }
 
 function collectMusicItems(items: any[] | undefined, out: InnerTubeSearchResult): void {
@@ -1390,11 +1462,32 @@ export async function fetchMusicSearch(query: string, cookieSource: CookieSource
                                        filters?: SearchFilters): Promise<InnerTubeSearchResult> {
   const params = musicSearchParams(filters) ?? YTM_SONGS;
   const ask = (p?: string) => musicPost("search", { query, ...(p ? { params: p } : {}) }, cookieSource, browser, profile);
-  if (params !== YTM_SONGS) return parseMusicSearch(await ask(params));
-  const [songs, top] = await Promise.all([ask(params), ask().catch(() => null)]);
-  const r = parseMusicSearch(songs);
+  // Any is the songs with the top page's albums and playlists; a type is its own list
+  const any = (filters?.type ?? "any") === "any";
+  const [list, top] = await Promise.all([ask(params), any ? ask().catch(() => null) : null]);
+  const r = parseMusicSearch(list);
   if (top) r.playlists = parseMusicSearch(top).playlists;
   return r;
+}
+
+const SINGLE_WAIT_MS = 2500;
+export interface SingleInfo { browseId: string; duration: number; track?: SearchResult }
+
+/**
+ * Search's singles, read from their album pages after the results show: each one's
+ * summed length, and a one-track single's song, which it then lists as. A page that
+ * fails or takes over 2.5 s is left out.
+ */
+export async function singlesInfo(browseIds: string[],
+                                  fetchAlbum: (browseId: string) => Promise<MusicAlbum | null>): Promise<SingleInfo[]> {
+  const out = await Promise.all(browseIds.filter((id) => id.startsWith("MPRE")).map(async (browseId) => {
+    const a = await Promise.race([fetchAlbum(browseId).catch(() => null),
+                                  new Promise<null>((ok) => setTimeout(() => ok(null), SINGLE_WAIT_MS))]);
+    if (!a || !a.tracks.length) return null;
+    const duration = a.tracks.reduce((n, t) => n + (t.duration || 0), 0);
+    return { browseId, duration, ...(a.tracks.length === 1 ? { track: a.tracks[0] } : {}) };
+  }));
+  return out.filter((x): x is SingleInfo => x !== null);
 }
 
 export async function fetchMusicSearchContinuation(token: string, cookieSource: CookieSource, browser: string, profile: string): Promise<InnerTubeSearchResult> {
@@ -1425,6 +1518,92 @@ export async function searchContinuationFrom(token: string, cookieSource: Cookie
   }
 }
 
+export interface MusicAlbum {
+  title: string;
+  artist: string;
+  artists?: string[];
+  kind: string;            // "Album", "Single", "EP"
+  year?: number;
+  thumbnail: string;
+  playlistId: string;      // the OLAK5uy_ list its play button plays
+  tracks: SearchResult[];
+  continuation: string;    // raw; a shelf of more than 100 tracks pages
+}
+
+// An album page's rows carry no art and, unless a track's artist differs,
+// no artist: both come from the header
+function albumTracks(items: any[] | undefined, album: { title: string; artist: string; artists?: string[];
+                     year?: number; thumbnail: string; browseId: string }): SearchResult[] {
+  const out: SearchResult[] = [];
+  for (const it of items || []) {
+    const r = it?.musicResponsiveListItemRenderer;
+    const id: string = r?.playlistItemData?.videoId || findKey(r?.overlay, "watchEndpoint")?.videoId || "";
+    if (!id) continue;   // greyed out: not playable here
+    const runs: any[] = r.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+    const artists = bylineInfo(runs).artists ?? album.artists;
+    const fixed = textOf(r.fixedColumns?.[0]?.musicResponsiveListItemFixedColumnRenderer?.text);
+    out.push(rememberMusic({ id, title: columnText(r, 0), channel: columnText(r, 1) || album.artist,
+                             duration: parseDuration(fixed), thumbnail: album.thumbnail,
+                             views: columnText(r, 2),
+                             ...(artists ? { artists } : {}),
+                             album: album.title, albumId: album.browseId,
+                             ...(album.year ? { year: album.year } : {}) }));
+  }
+  return out;
+}
+
+/** A YouTube Music album page (browse MPRE…): its header and its track shelf. Null when the page has neither. */
+export function parseMusicAlbum(data: any, browseId: string): MusicAlbum | null {
+  const two = data?.contents?.twoColumnBrowseResultsRenderer;
+  const header = findKey(two?.tabs, "musicResponsiveHeaderRenderer");
+  const shelf = findKey(two?.secondaryContents, "musicShelfRenderer");
+  if (!header || !shelf) return null;
+  const strap: any[] = header.straplineTextOne?.runs || [];
+  const sub = textOf(header.subtitle).split(/\s+•\s+/).map((s) => s.trim()).filter(Boolean);
+  const year = sub.find((s) => /^\d{4}$/.test(s));
+  const info = { title: textOf(header.title), artist: textOf(header.straplineTextOne), artists: bylineInfo(strap).artists,
+                 year: year ? parseInt(year, 10) : undefined, browseId,
+                 thumbnail: musicThumb(header.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails) };
+  const tracks = albumTracks(shelf.contents, info);
+  const playlistId: string = findKey(shelf.contents, "watchEndpoint")?.playlistId || "";
+  return { title: info.title, artist: info.artist, ...(info.artists ? { artists: info.artists } : {}), kind: sub.find((s) => !/^\d{4}$/.test(s)) || "",
+           ...(info.year ? { year: info.year } : {}), thumbnail: info.thumbnail, playlistId, tracks,
+           continuation: shelf.continuations?.[0]?.nextContinuationData?.continuation || "" };
+}
+
+const ALBUM_MAX_PAGES = 4;
+
+/** The album page and, for a shelf over 100 tracks, its further pages: one complete list. */
+// album pages for 5 minutes: a search reads its singles, and opening one reads it again
+const ALBUM_CACHE_MS = 5 * 60_000;
+const albumCache = new Map<string, { at: number; album: MusicAlbum }>();
+export function clearAlbumCacheForTest(): void { albumCache.clear(); }
+
+export async function fetchMusicAlbum(browseId: string, cookieSource: CookieSource, browser: string, profile: string): Promise<MusicAlbum | null> {
+  const key = [browseId, cookieSource, browser, profile].join("|");
+  const hit = albumCache.get(key);
+  if (hit && Date.now() - hit.at < ALBUM_CACHE_MS) return hit.album;
+  const album = await fetchMusicAlbumPage(browseId, cookieSource, browser, profile);
+  if (album) albumCache.set(key, { at: Date.now(), album });
+  return album;
+}
+
+async function fetchMusicAlbumPage(browseId: string, cookieSource: CookieSource, browser: string, profile: string): Promise<MusicAlbum | null> {
+  const album = parseMusicAlbum(await musicPost("browse", { browseId }, cookieSource, browser, profile), browseId);
+  if (!album) return null;
+  const info = { title: album.title, artist: album.artist, year: album.year, thumbnail: album.thumbnail, browseId,
+                 artists: album.artists };
+  for (let page = 0; album.continuation && page < ALBUM_MAX_PAGES; page++) {
+    const more = await musicPost("browse", { continuation: album.continuation }, cookieSource, browser, profile).catch(() => null);
+    const shelf = more?.continuationContents?.musicShelfContinuation;
+    const rows = albumTracks(shelf?.contents, info);
+    album.continuation = rows.length ? shelf?.continuations?.[0]?.nextContinuationData?.continuation || "" : "";
+    album.tracks.push(...rows);
+  }
+  album.continuation = "";
+  return album;
+}
+
 function panelItems(data: any): { items: any[]; continuation: string } {
   const found: { list: any } = { list: null };
   const walk = (o: any, depth: number): void => {
@@ -1448,13 +1627,62 @@ export function parsePanelVideo(item: any): SearchResult | null {
   if (typeof id !== "string" || !id) return null;
   const segs = textOf(v.longBylineText).split(/\s+•\s+/).map((s: string) => s.trim());
   const views = musicViews(segs, "");
-  return {
+  return rememberMusic({
     id, title: textOf(v.title),
     channel: textOf(v.shortBylineText) || segs[0] || "",
     duration: parseDuration(textOf(v.lengthText)),
     thumbnail: musicThumb(v.thumbnail?.thumbnails) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
     ...(views ? { views } : {}),
+    ...bylineInfo(v.longBylineText?.runs),
+  });
+}
+
+// ---- YouTube Music track info, for tagging ----
+
+// type: ATV is an art track (the album's audio), OMV an official music video, UGC an upload
+export interface MusicWatchInfo {
+  videoId: string;
+  type: string;
+  title: string;
+  artist: string;            // the byline's artist segment, "A & B" as written
+  artists?: string[];
+  album?: string;
+  albumId?: string;
+  year?: number;
+  cover: string;             // the largest thumbnail; square art only for an ATV
+  counterpart?: MusicWatchInfo;   // an OMV's audio track, when YouTube Music pairs one
+}
+
+function watchInfoOf(v: any): MusicWatchInfo | null {
+  if (typeof v?.videoId !== "string" || !v.videoId) return null;
+  const type: string = v.navigationEndpoint?.watchEndpoint?.watchEndpointMusicSupportedConfigs
+    ?.watchEndpointMusicConfig?.musicVideoType || "";
+  const thumbs: any[] = (v.thumbnail?.thumbnails || []).filter((t: any) => typeof t?.url === "string");
+  const segs = textOf(v.longBylineText).split(/\s+•\s+/).map((s: string) => s.trim());
+  return {
+    videoId: v.videoId, type: type.replace(/^MUSIC_VIDEO_TYPE_/, ""), title: textOf(v.title),
+    artist: segs[0] || textOf(v.shortBylineText), cover: thumbs.length ? thumbs[thumbs.length - 1].url : "",
+    ...bylineInfo(v.longBylineText?.runs),
   };
+}
+
+/** The asked-for track in a /next queue, with its audio counterpart when the queue pairs one. */
+export function parseMusicWatchInfo(data: any, videoId: string): MusicWatchInfo | null {
+  for (const item of panelItems(data).items) {
+    const w = item?.playlistPanelVideoWrapperRenderer;
+    const primary = watchInfoOf(w ? w.primaryRenderer?.playlistPanelVideoRenderer : item?.playlistPanelVideoRenderer);
+    if (!primary || primary.videoId !== videoId) continue;
+    const other = watchInfoOf(w?.counterpart?.[0]?.counterpartRenderer?.playlistPanelVideoRenderer);
+    return other ? { ...primary, counterpart: other } : primary;
+  }
+  return null;
+}
+
+/** One track's YouTube Music info: /next for the video alone, one request. */
+export async function fetchMusicWatchInfo(videoId: string, cookieSource: CookieSource, browser: string, profile: string): Promise<MusicWatchInfo | null> {
+  const data = await musicPost("next", { videoId, isAudioOnly: true, enablePersistentPlaylistPanel: true },
+                               cookieSource, browser, profile);
+  return parseMusicWatchInfo(data, videoId);
 }
 
 const isTrack = (t: SearchResult | null): t is SearchResult => t !== null;

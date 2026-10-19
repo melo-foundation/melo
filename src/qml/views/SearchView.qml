@@ -39,13 +39,28 @@ Item {
     }
     onLoadingMoreChanged: if (!loadingMore) Qt.callLater(maybeFillViewport)
 
-    signal openPlaylist(string playlistId, string title)
+    // album: a YouTube Music album row's page and header, or null
+    signal openPlaylist(string playlistId, string title, var album)
+    signal playlistMenu(string playlistId, string title, var album, real sceneX, real sceneY)
 
     function trackOf(m) {
-        return { id: m.vid, title: m.title, channel: m.channel,
-                 duration: m.duration, thumbnail: m.thumbnail,
-                 source: m.src || "youtube",    // routes stream resolve by source
-                 isPlaylist: m.isPlaylist === true }
+        const t = { id: m.vid, title: m.title, channel: m.channel,
+                    duration: m.duration, thumbnail: m.thumbnail,
+                    source: m.src || "youtube",    // routes stream resolve by source
+                    isPlaylist: m.isPlaylist === true }
+        // a playlist row's albumId is its YouTube Music album page
+        if (t.isPlaylist) {
+            if (m.albumId) t.album = { browseId: m.albumId, artist: m.channel, kind: m.kind, year: m.year }
+            return t
+        }
+        // a YouTube Music song's album: adding it to the library tags it with these
+        if (m.album) {
+            t.album = m.album
+            if (m.albumId) t.albumId = m.albumId
+            if (m.year) t.year = m.year
+            if (m.artists) t.artists = m.artists.split("\n")
+        }
+        return t
     }
     function rowVisible(m) {
         return view.sourceFilter === "all" || (m.src || "youtube") === view.sourceFilter
@@ -56,8 +71,9 @@ Item {
         return m + ":" + (Math.floor(s % 60) < 10 ? "0" : "") + Math.floor(s % 60)
     }
     function activate(t, mouseButton, sceneX, sceneY) {
-        if (t.isPlaylist) {   // playlist result: open it (no track menu)
-            if (mouseButton !== Qt.RightButton) view.openPlaylist(t.id, t.title)
+        if (t.isPlaylist) {   // playlist result: open it, or its own menu
+            if (mouseButton === Qt.RightButton) view.playlistMenu(t.id, t.title, t.album || null, sceneX, sceneY)
+            else view.openPlaylist(t.id, t.title, t.album || null)
             return
         }
         if (mouseButton === Qt.RightButton) {
@@ -212,6 +228,7 @@ Item {
                     SkeletonText { width: parent.width
                                    // views and age come down with every result
                                    text: row.model.channel
+                                         + SkeletonModel.albumPart(row.model)
                                          + (row.model.views ? " · " + row.model.views : "")
                                          + (row.model.age ? " · " + row.model.age : "")
                                    ink: "textDim"
@@ -230,8 +247,9 @@ Item {
                         width: Math.max(Theme.sp(44), textW)
                         alignRight: true
                         text: row.model.placeholder === true ? ""
-                              : (row.model.isPlaylist ? row.model.videoCount + " videos"
-                                                      : view.fmtDur(row.model.duration))
+                              : (!row.model.isPlaylist || row.model.duration > 0 ? view.fmtDur(row.model.duration)
+                                 : row.model.videoCount > 0 ? row.model.videoCount + " videos"
+                                 : SkeletonModel.playlistLabel(row.model, false))
                         loading: row.model.placeholder === true
                         placeholderWidth: 30; barHeight: 11
                         color: Theme.textSoft
@@ -274,8 +292,10 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.max(0, parent.width - parent.spacing - cTitle.width)
                     text: row.model.isPlaylist
-                          ? row.model.channel + " · Playlist"
+                          ? row.model.channel + " · " + SkeletonModel.playlistLabel(row.model, false)
+                            + (row.model.duration > 0 ? " · " + view.fmtDur(row.model.duration) : "")
                           : row.model.channel
+                            + SkeletonModel.albumPart(row.model)
                             + (row.model.duration > 0 ? " · " + view.fmtDur(row.model.duration) : "")
                     ink: "textDim"
                     hoverSource: ma
@@ -374,10 +394,10 @@ Item {
                 // a playlist has no runtime to badge, so its count stays in
                 // the meta line where the duration would be
                 meta_: cell.model.isPlaylist
-                       ? cell.model.channel + " · Playlist · " + cell.model.videoCount + " videos"
-                       : cell.model.channel
+                       ? cell.model.channel + " · " + SkeletonModel.playlistLabel(cell.model, true)
+                       : cell.model.channel + SkeletonModel.albumPart(cell.model)
                 art: cell.model.thumbnail || ""
-                duration: cell.model.isPlaylist ? 0 : (cell.model.duration || 0)
+                duration: cell.model.duration || 0
                 loading: cell.model.placeholder === true
                 tipTitle: true
                 // activate() takes the button, so both routes go through it

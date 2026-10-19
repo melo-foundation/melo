@@ -21,7 +21,7 @@ import {
 } from "./innertube";
 
 const fixture = (name: string) =>
-  JSON.parse(readFileSync(join(__dirname, "fixtures", "ytm", name + ".json"), "utf-8"));
+  JSON.parse(readFileSync(join(__dirname, "..", "test-fixtures", "ytm", name + ".json"), "utf-8"));
 
 describe("YouTube Music search parsing", () => {
   it("reads the Songs shelf into tracks, with a continuation", () => {
@@ -81,6 +81,14 @@ describe("musicSearchParams", () => {
     expect(musicSearchParams({ uploadDate: "week" })).toBeUndefined();
     expect(musicSearchParams({ duration: "long" })).toBeUndefined();
   });
+
+  it("has its own Songs and Albums", () => {
+    expect(musicSearchParams({ type: "song" })).toBe(musicSearchParams({}));
+    const albums = musicSearchParams({ type: "album" });
+    expect(albums).toBeTruthy();
+    expect([musicSearchParams({}), musicSearchParams({ type: "video" }), musicSearchParams({ type: "playlist" })])
+      .not.toContain(albums);
+  });
 });
 
 // Answers by host and endpoint; records what was asked.
@@ -135,6 +143,14 @@ describe("the source switch", () => {
     expect(calls.every((c) => c.url.startsWith("https://music.youtube.com/"))).toBe(true);
     expect(calls[0].body.context.client.clientName).toBe("WEB_REMIX");
     expect(err).not.toHaveBeenCalled();
+  });
+
+  it("YouTube Music Songs is the songs list alone, in one request", async () => {
+    const calls = stubFetch({ [MUSIC_SEARCH]: (b: any) => fixture(b.params ? "search-songs" : "search-top") });
+    const r = await searchFrom("ytmusic", "daft punk", "none", "", "", { type: "song" });
+    expect(r.results[0].id).toBe("w3XzgjlKFjc");
+    expect(r.playlists).toEqual([]);
+    expect(calls).toHaveLength(1);
   });
 
   it("a YouTube Music continuation goes back to YouTube Music, without its prefix", async () => {
