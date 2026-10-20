@@ -100,7 +100,17 @@ Item {
     // Side padding: the document's `padLeft`/`padRight`, else `pad`, else 12, plus
     // the theme's inset for this bar (the mini player has its own); a floating
     // card adds its inset on top.
-    readonly property string insetName: bar && bar.mini ? "miniPlayer" : "player"
+    // asOther: this renderer draws the other bar's slot (a mini toggle's handover), so it
+    // lays out by that bar's insets and cuts and sits where it did there
+    property bool asOther: false
+    readonly property string insetName: (bar && bar.mini === true) !== asOther ? "miniPlayer" : "player"
+    function cut(side) {
+        if (!bar) return 0
+        return side === "left" ? (asOther ? bar.otherCutLeft : bar.cutLeft)
+             : side === "right" ? (asOther ? bar.otherCutRight : bar.cutRight)
+             : side === "top" ? (asOther ? bar.otherCutTop : bar.cutTop)
+             : (asOther ? bar.otherCutBottom : bar.cutBottom)
+    }
     function docPad(side) {
         const own = side === "left" ? doc.padLeft : doc.padRight
         const layoutPad = own !== undefined ? Number(own) : doc.pad !== undefined ? Number(doc.pad) : 12
@@ -110,7 +120,7 @@ Item {
         return docPad(side)
                + (bar && bar.backing === "floating" ? bar.inset : 0)
                // ...and what the window's shape cuts away at that end
-               + (bar ? (side === "left" ? bar.cutLeft : bar.cutRight) : 0)
+               + cut(side)
     }
     readonly property real edge: frozenEdge >= 0 ? frozenEdge : sideEdge("left")
     readonly property real edgeRight: frozenEdgeR >= 0 ? frozenEdgeR : sideEdge("right")
@@ -121,8 +131,8 @@ Item {
     readonly property real mainTop: (doc.top !== undefined ? Number(doc.top) : 0) + Theme.inset(insetName, "top")
     readonly property real altTop: altDoc && altDoc.top !== undefined ? Number(altDoc.top) + Theme.inset(insetName, "top") : mainTop
     readonly property bool onCard: bar && bar.backing === "floating"
-    function coverTop() { return (onCard ? bar.cardTop : 0) + (bar ? bar.cutTop : 0) }
-    function coverBottom() { return (onCard ? bar.cardBottom : 0) + (bar ? bar.cutBottom : 0) }
+    function coverTop() { return (onCard ? bar.cardTop : 0) + cut("top") }
+    function coverBottom() { return (onCard ? bar.cardBottom : 0) + cut("bottom") }
     function minAbove(top) { return coverTop() + top }
     function minBelow() { return coverBottom() + Theme.inset(insetName, "bottom") }
     readonly property real rowGap: Theme.bar(doc.rowGap !== undefined ? doc.rowGap : 4)

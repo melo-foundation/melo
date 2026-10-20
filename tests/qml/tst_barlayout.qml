@@ -266,6 +266,21 @@ Item {
             compare(lay.rowAt(1).y, (77 - 56) / 2 + 2 + 28 + 4)
             lay.destroy()
         }
+        // A renderer of the other bar's slot (a mini toggle's handover) centres by that
+        // bar's cuts, so its rows sit where they did there: the main bar's foot band
+        // alone puts the row 0.5 higher than the mini bar's two bands
+        function test_the_other_bars_slot_lays_out_by_its_cuts() {
+            const doc = { height: 56, pad: 0, vcenter: true,
+                          rows: [ { height: 24, cells: [ { type: "spacer", w: 10 } ] } ] }
+            const own = flexC.createObject(null, { width: 300, height: 56, bar: fakeBar, doc: doc })
+            const other = flexC.createObject(null, { width: 300, height: 56, bar: fakeBar, asOther: true, doc: doc })
+            settle()
+            compare(own.rowAt(0).y, (56 - 0 - 1 - 24) / 2)
+            compare(other.rowAt(0).y, 1 + (56 - 1 - 1 - 24) / 2)
+            compare(other.insetName, "miniPlayer")
+            compare(own.insetName, "player")
+            own.destroy(); other.destroy()
+        }
         // The theme's player inset adds to the document's pad, each side its
         // own; a document that names no pad has 12.
         function test_the_theme_inset_adds_to_the_side_pad() {
@@ -358,4 +373,14 @@ Item {
         }
     }
     Component { id: flexC; BarLayout { height: 40 } }
+    // the main bar under a framed window: a band over its foot; the mini bar's over both ends
+    QtObject {
+        id: fakeBar
+        property bool mini: false
+        property string backing: "surface"
+        property real cutLeft: 0; property real cutRight: 0
+        property real cutTop: 0; property real cutBottom: 1
+        property real otherCutLeft: 0; property real otherCutRight: 0
+        property real otherCutTop: 1; property real otherCutBottom: 1
+    }
 }

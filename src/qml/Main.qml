@@ -1914,6 +1914,10 @@ Window {
             cutRight: shaped ? Math.max(root.frR, root.miniCutR) : 0
             cutTop: framedWindow && shaped ? root.frTop : 0
             cutBottom: framedWindow && shaped ? root.frB : 0
+            otherCutLeft: playerBar.cutLeft
+            otherCutRight: playerBar.cutRight
+            otherCutTop: playerBar.cutTop
+            otherCutBottom: playerBar.cutBottom
             layout: root.handoverLayout.length && !root.miniPlayer ? root.handoverLayout : "barMini:" + Theme.barMini
             backing: root.handoverBacking.length && !root.miniPlayer ? root.handoverBacking : Theme.backMini
             // What the main window may hand over, both of them: this bar
@@ -1970,6 +1974,10 @@ Window {
         cutLeft: root.shaped ? root.cutBarL : 0
         cutRight: root.shaped ? root.cutBarR : 0
         cutBottom: root.shaped ? root.barInB : 0
+        otherCutLeft: miniBar.cutLeft
+        otherCutRight: miniBar.cutRight
+        otherCutTop: miniBar.cutTop
+        otherCutBottom: miniBar.cutBottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom

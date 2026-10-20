@@ -26,7 +26,7 @@ Rectangle {
         console.warn("[bar] " + (mini ? "mini" : "main") + " settled=" + Math.round(settledHeight)
                      + " h=" + Math.round(height) + " layout=" + layout
                      + " shown=" + (shownItem ? shownItem.key : "none"))
-    height: Swap.barHeight(swapping, fromH, morphIn, settledHeight)
+    height: Swap.barHeight(swapping, holdH, morphIn, settledHeight)
     // on the swap's clock, so the height lands with the layouts, not before
     // or after them. Ease, a spring with an overshoot, or a snap, as the
     // theme says.
@@ -87,6 +87,11 @@ Rectangle {
     // over the bar rather than moving the bar in, so the rows stay clear of it
     property real cutTop: 0
     property real cutBottom: 0
+    // ...and the other bar's, for a renderer of its slot drawn here (BarLayout.asOther)
+    property real otherCutLeft: cutLeft
+    property real otherCutRight: cutRight
+    property real otherCutTop: cutTop
+    property real otherCutBottom: cutBottom
     // the floating card's inset from the bar's edges, the same on every side; the
     // theme's offset moves it off centre. The layouts read it.
     readonly property real inset: Theme.gap(Theme.floatInset)
@@ -293,6 +298,9 @@ Rectangle {
     // are read when the swap begins, not from the layouts' order.
     property real fromH: 0
     property real toH: 0
+    // where the height holds until the incoming rows arrive: the bar's own height, which
+    // a mini toggle's settle layout keeps apart from the outgoing renderer's
+    property real holdH: 0
     readonly property string swapKind: {
         if (swap !== "height") return swap
         return Math.abs(toH - fromH) < 0.5 ? "fade" : (toH > fromH ? "rise" : "drop")
@@ -330,6 +338,7 @@ Rectangle {
         BarLayout {
             property string key
             property string role: "off"
+            asOther: key.indexOf(":") > 0 && bar && key.startsWith("barMini:") !== (bar.mini === true)
             // The shown renderer fills the bar, anchored to the bottom (the window's edge):
             // an "at: bottom" row lays its cell at the layout's foot, so the edge scrubber
             // sits flush only while renderer and bar are the same height. The outgoing one
@@ -339,7 +348,11 @@ Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: role === "out" && frozenH > 0 ? frozenH : parent.height
+            // A swap that does not travel up or down holds the arriving rows at their own
+            // height: filling the bar, they would ride its height as it eases.
+            height: role === "out" && frozenH > 0 ? frozenH
+                  : role === "in" && bar.swapKind !== "rise" && bar.swapKind !== "drop" ? barHeight
+                  : parent.height
             // `bar` is handed in at creation: inside this component the name is the
             // renderer's own property, not the bar's id.
             // As text first, so a re-read that yields the same document neither re-parses
@@ -432,6 +445,7 @@ Rectangle {
         prevLayout = shownLayout; shownLayout = key
         fromH = shownItem ? shownItem.barHeight : 0
         toH = next.barHeight
+        holdH = shownItem ? height : 0
         shownItem = next; next.frozenH = 0; next.frozenEdge = -1; next.frozenEdgeR = -1; next.role = "in"
         if (!leavingItem || swap === "none" || quiet) { layoutT = 1; pending = null; return }
         layoutT = 0
