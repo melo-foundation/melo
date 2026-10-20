@@ -42,6 +42,10 @@ SidecarService::SidecarService(QObject* parent)
             emit pluginsChanged(params.value("plugins").toArray());
         else if (method == "ytdlp/stale")
             emit ytdlpStale(params.value("message").toString());
+        else if (method == "stream/dropped")
+            emit streamDropped(params.value("url").toString(), params.value("at").toInteger());
+        else if (method == "stream/resumed")
+            emit streamResumed(params.value("url").toString());
         else if (method == "ytdlp/status")
             setYtdlpStatus(params.value("state").toString(),
                            params.value("received").toInteger(), params.value("total").toInteger());

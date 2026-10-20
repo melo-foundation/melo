@@ -640,7 +640,8 @@ MeloWindow {
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.left: parent.left
                                 anchors.leftMargin: Theme.gap(8)
-                                visible: keyInput.text.length === 0 && !keyInput.activeFocus
+                                visible: obw.autoTagOn && Settings.tagLastfm
+                                         && keyInput.text.length === 0 && !keyInput.activeFocus
                                 text: "Required"
                                 ink: "danger"
                                 font { pixelSize: Theme.fs(12); family: Theme.fontFamily }

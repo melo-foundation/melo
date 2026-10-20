@@ -39,6 +39,14 @@ AudioEngine::AudioEngine(PcmQueue& vizQueue, QObject* parent)
 
     fadeTimer_.setInterval(50);
     connect(&fadeTimer_, &QTimer::timeout, this, &AudioEngine::onFadeTick);
+    unmuteAgain_.setSingleShot(true);
+    connect(&unmuteAgain_, &QTimer::timeout, this, [this] {
+        if (sinkMuted_ || !sinkVol_) return;
+        g_object_set(sinkVol_, "mute", FALSE, nullptr);
+        const int left = unmuteAgain_.property("tries").toInt() - 1;
+        unmuteAgain_.setProperty("tries", left);
+        if (left > 0) unmuteAgain_.start(1200);
+    });
 }
 
 AudioEngine::~AudioEngine() {
@@ -372,7 +380,13 @@ bool AudioEngine::pipelinePlaying() const {
 }
 
 void AudioEngine::setSinkMuted(bool muted) {
+    sinkMuted_ = muted;
     if (sinkVol_) g_object_set(sinkVol_, "mute", muted ? TRUE : FALSE, nullptr);
+    // pulsesink drops an unmute that lands while its stream is still being created
+    // (EndeavourOS: silent until pause and play); sent again 300 ms and 1.5 s later
+    if (muted) { unmuteAgain_.stop(); return; }
+    unmuteAgain_.setProperty("tries", 2);
+    unmuteAgain_.start(300);
 }
 
 void AudioEngine::crossfadeTo(const QString& pathOrUri, double seconds, const QString& trackId) {

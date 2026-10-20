@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { touchesCookieIdentity, defaultSettings, autoTagEnabled, tagServicesOf } from "./settings";
+import { touchesCookieIdentity, defaultSettings, autoTagEnabled, tagServicesOf, fromSaved } from "./settings";
 import { setEnv } from "./env";
 
 // Switching identity has to drop the sidecar's cookie caches, or the new
@@ -49,8 +49,14 @@ describe("defaultSettings", () => {
     expect(defaultSettings().silenceSkip).toBe(true);
   });
 
-  it("tags with every service on new installs", () => {
-    expect(tagServicesOf(defaultSettings())).toEqual({ ytmusic: true, lastfm: true, musicbrainz: true, deezer: true });
+  it("tags with every keyless service on new installs", () => {
+    expect(tagServicesOf(defaultSettings())).toEqual({ ytmusic: true, lastfm: false, musicbrainz: true, deezer: true });
+  });
+
+  it("keeps Last.fm as a saved file has it", () => {
+    expect(fromSaved({ tagLastfm: true }).tagLastfm).toBe(true);
+    expect(fromSaved({ tagLastfm: false }).tagLastfm).toBe(false);
+    expect(fromSaved({ homeSource: "youtube" }).tagLastfm).toBe(true);
   });
 
   it("reads a service switched off as off", () => {

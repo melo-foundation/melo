@@ -96,7 +96,7 @@ export function defaultSettings(): SettingsV2 {
     silenceSkip: true,
     metadataAutoEnrich: "new",
     tagYoutubeMusic: true,
-    tagLastfm: true,
+    tagLastfm: false,
     tagMusicBrainz: true,
     tagDeezer: true,
     ytdlpChannel: "stable",
@@ -108,6 +108,11 @@ export function defaultSettings(): SettingsV2 {
     ui: {},
     plugins: { enabled: {}, grants: {}, settings: {} },
   };
+}
+
+// A saved file without tagLastfm predates the off default and keeps it on.
+export function fromSaved(raw: Partial<SettingsV2>): SettingsV2 {
+  return { ...defaultSettings(), tagLastfm: true, ...raw, version: 2 };
 }
 
 let cached: SettingsV2 | null = null;
@@ -122,7 +127,7 @@ export function loadSettings(): SettingsV2 {
   } else {
     try {
       const raw = JSON.parse(readFileSync(p, "utf-8"));
-      loaded = { ...defaultSettings(), ...raw, version: 2 };
+      loaded = fromSaved(raw);
     } catch (e) {
       // Same rule as the library: a file that exists and will not parse is an
       // error. Falling back to defaults and then saving over it would turn
@@ -131,7 +136,7 @@ export function loadSettings(): SettingsV2 {
       let recovered: SettingsV2 | null = null;
       if (bak) {
         try {
-          recovered = { ...defaultSettings(), ...JSON.parse(readFileSync(bak, "utf-8")), version: 2 };
+          recovered = fromSaved(JSON.parse(readFileSync(bak, "utf-8")));
           process.stderr.write(`[settings] ${p} is unreadable; recovered from the backup\n`);
         } catch { /* the backup is gone too */ }
       }

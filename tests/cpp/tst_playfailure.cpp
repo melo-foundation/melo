@@ -1,5 +1,8 @@
 #include <QtTest>
+#include <QSignalSpy>
+#include <QDataStream>
 #include <QFile>
+#include <QUrl>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -53,6 +56,15 @@ class TestPlayFailure : public QObject {
     static QJsonObject track(const QString& id) {
         return {{"id", id}, {"title", "Track " + id}, {"duration", 100.0}};
     }
+    // A fresh engine for each test that plays audio: after a 2 s file ends right after a seek
+    // or a stop, the next deck in the same engine can stall before its first buffer.
+    void freshPlayer() {
+        coord_.reset();
+        engine_.reset();
+        engine_ = std::make_unique<AudioEngine>(pcm_);
+        coord_ = std::make_unique<PlaybackCoordinator>(engine_.get(), sidecar_.get(), &state_,
+                                                       &queue_, &suggestions_, settings_.get());
+    }
     void playFails(const QStringList& ids, int start = 0) {
         QJsonArray arr;
         for (const auto& id : ids) arr.append(track(id));
@@ -70,6 +82,21 @@ private slots:
         qputenv("MELO_FAKE_LOG", log_.toLocal8Bit());
         qputenv("MELO_CONFIG_DIR", dir_.filePath("cfg").toLocal8Bit());
         qputenv("MELO_FAKE_SINK", "1");
+        // silence, 8 kHz mono 16-bit: 2 s for the short and whole tracks, 6 s for a fresh
+        // resolve of the short ones, so Retry's seek lands inside the audio
+        for (const auto& [name, secs] : {std::pair{"SHORT", 2u}, std::pair{"LONG", 6u}}) {
+            const QString wav = dir_.filePath(QString::fromLatin1(name) + ".wav");
+            QFile f(wav);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            const quint32 rate = 8000, bytes = rate * 2 * secs;
+            QDataStream d(&f);
+            d.setByteOrder(QDataStream::LittleEndian);
+            f.write("RIFF"); d << quint32(36 + bytes); f.write("WAVEfmt ");
+            d << quint32(16) << quint16(1) << quint16(1) << rate << quint32(rate * 2) << quint16(2) << quint16(16);
+            f.write("data"); d << bytes;
+            f.write(QByteArray(int(bytes), '\0'));
+            qputenv(QByteArray("MELO_FAKE_") + name + "_URL", QUrl::fromLocalFile(wav).toString().toLocal8Bit());
+        }
         gst_init(nullptr, nullptr);
         engine_ = std::make_unique<AudioEngine>(pcm_);
         sidecar_ = std::make_unique<SidecarService>();
@@ -128,6 +155,90 @@ private slots:
         QTRY_COMPARE(streamRequests("guestwall2").size(), 2);
         QCOMPARE(streamRequests("guestwall2").last()["fresh"].toBool(), true);
         QTRY_COMPARE(state_.failCause(), QString("guestWall"));   // still walled: shown again
+    }
+
+    // the relay gave up on the stream: the network failure on the same track, not the
+    // next one, at where it stopped; Retry resumes there
+    void aStreamTheRelayDroppedIsANetworkFailure() {
+        freshPlayer();
+        QJsonArray arr{track("dropped1"), track("unavailable9")};
+        coord_->playQueue(arr, 0);
+        QTRY_VERIFY_WITH_TIMEOUT(!state_.failCause().isEmpty(), 10000);
+        QCOMPARE(state_.failCause(), QString("network"));
+        QVERIFY2(state_.failReason().startsWith("The connection dropped at 0:0"), qPrintable(state_.failReason()));
+        QCOMPARE(queue_.currentIndex(), 0);
+        QCOMPARE(state_.currentTrack().id, QString("dropped1"));
+        QVERIFY(!state_.isPlaying());
+        coord_->answerFailure("retry");
+        QVERIFY2(state_.position() >= 1.0, qPrintable(QString::number(state_.position())));
+        QTRY_COMPARE(streamRequests("dropped1").size(), 2);
+        QCOMPARE(streamRequests("dropped1").last()["fresh"].toBool(), true);
+        QTRY_VERIFY_WITH_TIMEOUT(!state_.failCause().isEmpty(), 10000);   // dropped again
+        QCOMPARE(state_.failCause(), QString("network"));
+        coord_->answerFailure("dismiss");
+    }
+
+    // an end well short of the listed length with no word from the relay is the real end
+    // under a wrong length: it moves on
+    void anEarlyEndWithoutTheRelaysWordAdvances() {
+        freshPlayer();
+        QJsonArray arr{track("short1"), track("unavailable9")};
+        coord_->playQueue(arr, 0);
+        QTRY_COMPARE_WITH_TIMEOUT(queue_.currentIndex(), 1, 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!state_.failCause().isEmpty(), 5000);
+        QCOMPARE(state_.failCause(), QString("other"));   // unavailable9's own failure
+        coord_->answerFailure("dismiss");
+    }
+
+    // the relay's word can arrive just after the end: it still counts
+    void theRelaysWordJustAfterTheEndCounts() {
+        freshPlayer();
+        QSignalSpy ended(engine_.get(), &AudioEngine::trackEnded);
+        QJsonArray arr{track("short2"), track("unavailable9")};
+        coord_->playQueue(arr, 0);
+        QTRY_COMPARE_WITH_TIMEOUT(ended.count(), 1, 10000);
+        QCOMPARE(queue_.currentIndex(), 0);
+        emit sidecar_->streamDropped(QStringLiteral("file:///another"), 1);   // not this stream
+        QVERIFY(state_.failCause().isEmpty());
+        emit sidecar_->streamDropped(qEnvironmentVariable("MELO_FAKE_SHORT_URL"), 4321);
+        QCOMPARE(state_.failCause(), QString("network"));
+        QVERIFY2(state_.failReason().startsWith("The connection dropped at 0:0"), qPrintable(state_.failReason()));
+        QCOMPARE(state_.currentTrack().id, QString("short2"));
+        // Retry plays again from where it stopped
+        coord_->answerFailure("retry");
+        QTRY_VERIFY_WITH_TIMEOUT(state_.isPlaying() && engine_->position() > 1.2, 5000);
+        QTRY_COMPARE_WITH_TIMEOUT(queue_.currentIndex(), 1, 10000);   // no word this time: it moves on
+        QTRY_COMPARE_WITH_TIMEOUT(state_.failCause(), QString("other"), 5000);
+        coord_->answerFailure("dismiss");
+    }
+
+    // the player reconnected after the relay gave up and the stream flowed again: its end is real
+    void aStreamThatFlowsAgainEndsNormally() {
+        freshPlayer();
+        const QString url = qEnvironmentVariable("MELO_FAKE_SHORT_URL");
+        QJsonArray arr{track("short3"), track("unavailable9")};
+        coord_->playQueue(arr, 0);
+        QTRY_VERIFY_WITH_TIMEOUT(state_.isPlaying(), 10000);
+        emit sidecar_->streamDropped(url, 4321);
+        emit sidecar_->streamResumed(url);
+        QTRY_COMPARE_WITH_TIMEOUT(queue_.currentIndex(), 1, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(state_.failCause(), QString("other"), 5000);
+        coord_->answerFailure("dismiss");
+    }
+
+    // the queue ran out: play starts the last track again
+    void playAfterTheQueueRanOutStartsItAgain() {
+        freshPlayer();
+        QJsonArray arr{track("whole1")};
+        coord_->playQueue(arr, 0);
+        QTRY_VERIFY_WITH_TIMEOUT(state_.isPlaying(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!state_.isPlaying(), 10000);   // played to its end
+        QVERIFY(state_.failCause().isEmpty());
+        QCOMPARE(streamRequests("whole1").size(), 1);
+        coord_->togglePlay();
+        QTRY_COMPARE(streamRequests("whole1").size(), 2);
+        QTRY_VERIFY_WITH_TIMEOUT(state_.isPlaying(), 10000);
+        coord_->stop();
     }
 
     void skipPlaysTheNextTrack() {

@@ -31,7 +31,24 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
       queue_(queue), suggestions_(suggestions), settings_(settings) {
 
     connect(engine_, &AudioEngine::positionTick, this, &PlaybackCoordinator::onPositionTick);
-    connect(engine_, &AudioEngine::trackEnded, this, &PlaybackCoordinator::onTrackEnded);
+    connect(engine_, &AudioEngine::trackEnded, this, &PlaybackCoordinator::onEngineEnded);
+    // the relay speaks before it closes the socket; 500 ms covers its word landing after the end
+    endHold_.setSingleShot(true);
+    endHold_.setInterval(500);
+    connect(&endHold_, &QTimer::timeout, this, &PlaybackCoordinator::onTrackEnded);
+    connect(sidecar_, &SidecarService::streamDropped, this, [this](const QString& url, qint64 at) {
+        if (url.isEmpty() || url != streamUrl_) return;
+        std::fprintf(stderr, "[%9.1f] [melo] the relay dropped the stream at byte %lld\n",
+                     meloLogMs(), static_cast<long long>(at));
+        streamDropped_ = true;
+        if (endHold_.isActive()) { endHold_.stop(); streamLost(endHoldAt_); }
+    });
+    // the player reconnected and the stream flows again
+    connect(sidecar_, &SidecarService::streamResumed, this, [this](const QString& url) {
+        if (url.isEmpty() || url != streamUrl_ || !streamDropped_) return;
+        std::fprintf(stderr, "[%9.1f] [melo] the relay's stream flows again\n", meloLogMs());
+        streamDropped_ = false;
+    });
     connect(state_, &PlayerState::videoWantedChanged, this, &PlaybackCoordinator::onVideoWantedChanged);
     if (settings_) {
         const auto applySync = [this] { engine_->setVideoSyncMs(settings_->uiGet("videoSyncMs", 0).toInt()); };
@@ -56,24 +73,33 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
     connect(engine_, &AudioEngine::pipelineError, this, [this](const QString& m) {
         state_->setError(m);
         // A dead stream (expired/truncated googlevideo URL) must not stop the
-        // music: the first failure retries with a fresh resolve, the second
-        // advances like EOS, and 3 in a row stop auto-advance so a dead network
-        // does not loop the queue.
+        // music: the first failure retries with a fresh resolve from where it
+        // stopped; the second is the network failure on this track, resumable,
+        // since the next track would fail the same way on a dead network.
         if (!state_->hasTrack()) return;
         if (++streamErrorStreak_ > 3) {
+            // the dialog, not a bar that says playing over nothing
             std::fprintf(stderr, "[melo] 3 consecutive stream errors — stopping auto-advance\n");
+            failPlay(state_->currentTrack(), -32020, QStringLiteral("Three stream errors in a row."));
             return;
         }
         const Track t = state_->currentTrack();
+        // a retry that failed before its first tick still owes the place it was sent to
+        const double at = std::max({engine_->position(), state_->position(), pendingLoadSeek_});
         if (errorRetryId_ != t.id) {
             errorRetryId_ = t.id;
             std::fprintf(stderr, "[melo] stream error — retrying %s with a fresh resolve\n",
                          t.id.toUtf8().constData());
             playTrack(t, 0);
+            if (at > 1) { pendingLoadSeek_ = at; state_->setPosition(at); }
         } else {
-            std::fprintf(stderr, "[melo] stream error again on %s — skipping to next\n",
+            std::fprintf(stderr, "[melo] stream error again on %s — stopping there\n",
                          t.id.toUtf8().constData());
-            onTrackEnded();
+            resumeAt_ = at;
+            resumeId_ = t.id;
+            const int s = int(at);
+            failPlay(t, -32020, QStringLiteral("The stream failed twice at %1:%2.")
+                                    .arg(s / 60).arg(s % 60, 2, 10, QLatin1Char('0')));
         }
     });
 
@@ -156,6 +182,10 @@ void PlaybackCoordinator::playTrack(const Track& t, int forceCrossfade, PlayInte
     if (!t.isValid()) return;
     state_->clearFailure();
     prefetchFailedId_.clear();
+    queueEnded_ = false;
+    resumeAt_ = -1;
+    resumeId_.clear();
+    endHold_.stop();
     std::fprintf(stderr, "[%9.1f] [timing] PRESS track=%s\n",
                  meloLogMs(), t.id.toUtf8().constData());
 
@@ -202,6 +232,7 @@ void PlaybackCoordinator::playTrack(const Track& t, int forceCrossfade, PlayInte
         skipEnd_ = pf["skipEnd"].toDouble();
 
         const QString url = pf["url"].toString();
+        setStreamUrl(url);
         if (wantCrossfade) engine_->crossfadeTo(url, cfDur, t.id);
         else engine_->loadTrack(url, t.id);
         if (state_->videoWanted() && !engine_->hasVideoDeck()) requestVideo(t, false);
@@ -267,6 +298,7 @@ void PlaybackCoordinator::onStreamResolved(const Track& t, quint64 gen,
     state_->setLoading(false);
 
     const QString url = res["url"].toString();
+    setStreamUrl(url);
     const double cfDur = settings_->crossfadeSeconds();
     if (wantCrossfade) engine_->crossfadeTo(url, cfDur, t.id);   // the deck buffers fast; no preload step
     else engine_->loadTrack(url, t.id);
@@ -291,6 +323,7 @@ void PlaybackCoordinator::onStreamResolved(const Track& t, quint64 gen,
 }
 
 void PlaybackCoordinator::failPlay(const Track& t, int code, const QString& reason) {
+    endHold_.stop();
     state_->setLoading(false);
     // onTrackEnded() returns immediately while crossfadeHandling_ is set,
     // so a failed resolve during a crossfade must clear it too, or
@@ -315,7 +348,13 @@ void PlaybackCoordinator::answerFailure(const QString& action) {
     const Track t = state_->currentTrack();
     if (action == QLatin1String("skip")) { nextBuiltin(); return; }
     if (!t.isValid()) return;
-    if (action == QLatin1String("retry")) { playTrack(t, 0, PlayIntent::UserSelect, true); return; }
+    if (action == QLatin1String("retry")) {
+        const double at = resumeId_ == t.id ? resumeAt_ : -1;
+        playTrack(t, 0, PlayIntent::UserSelect, true);
+        // a dropped stream picks up where it stopped, on the first tick of the new deck
+        if (at > 0) { pendingLoadSeek_ = at; state_->setPosition(at); }
+        return;
+    }
     if (action == QLatin1String("browser")) {
         // the settings write reaches the sidecar ahead of the resolve
         settings_->setStreamCookieSource(QStringLiteral("browser"));
@@ -462,6 +501,30 @@ void PlaybackCoordinator::onPositionTick(double pos, double dur) {
         onTrackEnded();
 }
 
+void PlaybackCoordinator::onEngineEnded() {
+    if (crossfadeHandling_ || state_->loading() || !state_->hasTrack()) { onTrackEnded(); return; }
+    const double at = std::max(engine_->position(), state_->position());
+    if (streamDropped_) { streamLost(at); return; }
+    // the track's own length too: a stream cut short can report its short length
+    const double dur = std::max(state_->duration(), state_->currentTrack().duration);
+    // 5 s or 3% short of the length: the relay's word may still be on its way
+    if (dur > 30 && at < dur - std::max(5.0, dur * 0.03)) {
+        endHoldAt_ = at;
+        endHold_.start();
+        return;
+    }
+    onTrackEnded();
+}
+
+void PlaybackCoordinator::streamLost(double at) {
+    const Track t = state_->currentTrack();
+    resumeAt_ = at;
+    resumeId_ = t.id;
+    const int s = int(at);
+    failPlay(t, -32020, QStringLiteral("The connection dropped at %1:%2.")
+                            .arg(s / 60).arg(s % 60, 2, 10, QLatin1Char('0')));
+}
+
 void PlaybackCoordinator::onTrackEnded() {
     if (crossfadeHandling_) return;   // crossfade already transitioning
     if (state_->loading()) return;    // outgoing deck EOSed mid-load: the pending play owns the transition
@@ -552,6 +615,7 @@ void PlaybackCoordinator::advance(bool viaCrossfade) {
             playTrack(suggestions_->autoplayTrack(), cfOnSkip ? 1 : -1);
         } else {
             crossfadeHandling_ = false;   // nothing to play
+            queueEnded_ = true;
         }
     };
     // Except under repeat-one, radio tops the queue up on every advance so
@@ -660,18 +724,20 @@ void PlaybackCoordinator::previousBuiltin() {
 
 void PlaybackCoordinator::togglePlay() {
     if (state_->loading()) return;
-    const QString action = engine_->paused() ? QStringLiteral("play")
-                                             : QStringLiteral("pause");
+    const QString action = engine_->paused() || queueEnded_ ? QStringLiteral("play")
+                                                            : QStringLiteral("pause");
     if (offer(action)) return;
     playOrPauseBuiltin();
 }
 void PlaybackCoordinator::playOrPauseBuiltin() {
     if (state_->loading()) return;
+    if (queueEnded_ && state_->hasTrack()) { playTrack(state_->currentTrack(), 0, PlayIntent::UserSelect); return; }
     engine_->setPaused(!engine_->paused());
     state_->setIsPlaying(!engine_->paused());
 }
 void PlaybackCoordinator::playBuiltin() {
     if (state_->loading()) return;
+    if (queueEnded_ && state_->hasTrack()) { playTrack(state_->currentTrack(), 0, PlayIntent::UserSelect); return; }
     if (!engine_->paused()) return;
     engine_->setPaused(false);
     state_->setIsPlaying(true);

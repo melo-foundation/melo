@@ -56,12 +56,14 @@ class TestAdvancePolicy : public QObject {
         plays_.clear();   // the seeding play is not an advance
     }
 
-    // Stands in for "the track finished playing". The headless slow path
+    // Stands in for "the track finished playing", at its last second. The headless slow path
     // leaves loading set (no sidecar answers the resolve) and onTrackEnded
     // bails while loading, so clear it first, then fire the engine's real
     // trackEnded — the signal the coordinator is actually connected to.
     void endOfTrack() {
         state_.setLoading(false);
+        // at its end: a track that stops short of its length is a dropped stream (tst_playfailure)
+        state_.setPosition(state_.currentTrack().duration);
         QVERIFY(QMetaObject::invokeMethod(engine_.get(), "trackEnded"));
     }
 

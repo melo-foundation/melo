@@ -65,6 +65,10 @@ signals:
     // extraction failed in a way that a newer yt-dlp usually fixes; the UI
     // offers the nightly channel rather than switching silently
     void ytdlpStale(const QString& message);
+    // the relay stopped serving url mid-stream, at byte `at`; the player sees it as an end
+    void streamDropped(const QString& url, qint64 at);
+    // the player reconnected to url and the stream flows again
+    void streamResumed(const QString& url);
     void pluginSearchResults(const QString& sourceId, const QJsonArray& tracks,
                              const QString& continuation, bool append);
     void pluginSearchFailed(const QString& sourceId);

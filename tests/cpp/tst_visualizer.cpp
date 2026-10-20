@@ -42,7 +42,7 @@ class TstVisualizer : public QObject {
         fmt.setVersion(3, 3);
         fmt.setProfile(QSurfaceFormat::CompatibilityProfile);
         fmt.setAlphaBufferSize(8);
-        QSurfaceFormat::setDefaultFormat(fmt);
+        if (QSurfaceFormat::defaultFormat() != fmt) QSurfaceFormat::setDefaultFormat(fmt);
 
         QOpenGLContext ctx;
         ctx.setFormat(fmt);
@@ -62,6 +62,13 @@ class TstVisualizer : public QObject {
             return true;
         *why = QStringLiteral("OpenGL %1.%2 is below 3.3").arg(got.majorVersion()).arg(got.minorVersion());
         return false;
+    }
+
+public:
+    // before the application exists, as melo's main() does
+    static void initMain() {
+        QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+        if (!qEnvironmentVariableIsSet("QSG_RENDER_LOOP")) qputenv("QSG_RENDER_LOOP", "basic");
     }
 
 private slots:
@@ -181,6 +188,52 @@ private slots:
                                                "— projectM ran and produced nothing."),
                           gl.isEmpty() ? QStringLiteral("(unknown)") : gl,
                           qEnvironmentVariable("MELO_PRESETDIR", QStringLiteral("(default)")))));
+    }
+
+    // The visualizer moves between melo's windows (the main view, the mini popup, its
+    // own window). The picture it had goes with it: the same projectM draws the next
+    // frame in the next window, which is never a fresh one starting from black.
+    void keepsItsPictureInAnotherWindow() {
+        QString why;
+        if (!haveGl(&why))
+            QSKIP(qPrintable(QStringLiteral("no usable OpenGL 3.3: ") + why));
+
+        PcmQueue pcm;
+        VisualizerItem::setPcmQueue(&pcm);
+        const std::vector<float> t = tone();
+
+        QQuickWindow a, b;
+        for (QQuickWindow* w : {&a, &b}) {
+            w->resize(320, 240);
+            w->setColor(QColor(32, 0, 48));
+            w->show();
+            if (!QTest::qWaitForWindowExposed(w))
+                QSKIP("the window system would not expose a window (locked session?)");
+        }
+        auto* viz = new VisualizerItem;
+        viz->setParentItem(a.contentItem());
+        viz->setSize(QSizeF(320, 240));
+
+        // a picture built up over frames in the first window
+        QImage last;
+        for (int i = 0; i < 60; ++i) {
+            pcm.push(t.data(), t.size());
+            viz->update();
+            last = a.grabWindow();
+            QTest::qWait(16);
+        }
+        if (isUniform(last))
+            QSKIP("projectM drew one flat colour in the first window (software GL?): nothing to carry over");
+        const int built = VisualizerItem::enginesBuilt();
+
+        viz->setParentItem(b.contentItem());
+        pcm.push(t.data(), t.size());
+        const QImage first = b.grabWindow();
+
+        // a second projectM would start from black
+        QCOMPARE(VisualizerItem::enginesBuilt(), built);
+        QVERIFY2(!isUniform(first), "the first frame in the second window is one flat colour");
+        delete viz;
     }
 
 private:

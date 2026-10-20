@@ -155,6 +155,21 @@ private:
     int streamErrorStreak_ = 0;     // consecutive pipeline errors (cap 3)
     QString errorRetryId_;          // track already given its one fresh-resolve retry
     void onTrackEnded();
+    // the engine's end of a track: a dropped connection if the relay said the stream failed
+    void onEngineEnded();
+    void streamLost(double at);
+    // the playing deck's stream and whether the relay gave up on it
+    QString streamUrl_;
+    bool streamDropped_ = false;
+    void setStreamUrl(const QString& url) { streamUrl_ = url; streamDropped_ = false; }
+    // an end short of the listed length waits this long for the relay's word
+    QTimer endHold_;
+    double endHoldAt_ = 0;
+    // a stream that stopped mid-track: the network failure, resumable where it stopped
+    double resumeAt_ = -1;
+    QString resumeId_;
+    // the queue ran out: play starts the last track again rather than toggling a finished deck
+    bool queueEnded_ = false;
     void advance(bool viaCrossfade);                            // shared next-target logic
 
     int drawShuffleIndex();

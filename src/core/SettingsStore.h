@@ -64,7 +64,7 @@ public:
     QString lastfmApiKey() const { return s_["lastfmApiKey"].toString(); }
     QString metadataAutoEnrich() const { return s_["metadataAutoEnrich"].toString(); }
     bool tagYoutubeMusic() const { return s_["tagYoutubeMusic"].toBool(true); }
-    bool tagLastfm() const { return s_["tagLastfm"].toBool(true); }
+    bool tagLastfm() const { return s_["tagLastfm"].toBool(false); }
     bool tagMusicBrainz() const { return s_["tagMusicBrainz"].toBool(true); }
     bool tagDeezer() const { return s_["tagDeezer"].toBool(true); }
     QString language() const { return s_["language"].toString(); }   // hl; "" = system

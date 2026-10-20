@@ -3,12 +3,15 @@
 #include <QQuickFramebufferObject>
 #include <QStringList>
 #include <atomic>
+#include <memory>
 
 class PcmQueue;
+struct VisEngine;
 
-// QML item hosting projectM. The Renderer runs on the scenegraph render thread
-// with the item's FBO bound — our patched projectM outputs to the caller-bound
-// FBO, which is exactly this. Requires scenegraph on the OpenGL RHI backend.
+// QML item hosting projectM. projectM draws in a GL context of its own (shared
+// with the windows', Qt::AA_ShareOpenGLContexts) and the Renderer copies its
+// picture into the item's FBO, so it goes on as the item changes windows.
+// Requires scenegraph on the OpenGL RHI backend.
 class VisualizerItem : public QQuickFramebufferObject {
     Q_OBJECT
 public:
@@ -24,7 +27,10 @@ public:
     Q_PROPERTY(QString currentPreset READ currentPreset NOTIFY currentPresetChanged)
 public:
     VisualizerItem();
+    ~VisualizerItem() override;
     Renderer* createRenderer() const override;
+    // projectM instances built so far
+    static int enginesBuilt() { return s_engines; }
 
     static void setPcmQueue(PcmQueue* q) { s_pcm = q; }
 
@@ -79,6 +85,10 @@ public:
     // alone would keep the window committing at 60fps on a still picture. QML
     // writes this from PlayerState; the pump needs both.
     std::atomic<bool> playing_{true};
+    // the playlist index on screen; a projectM built for another window starts on it
+    std::atomic<int> currentIndex_{-1};
+    std::shared_ptr<VisEngine> engine_;
+    static int s_engines;
 
 signals:
     void presetNamesChanged();
@@ -90,5 +100,4 @@ protected:
 private:
     QStringList presetNames_;
     QString currentPreset_;
-    int currentIndex_ = -1;
 };

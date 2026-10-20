@@ -286,6 +286,8 @@ int main(int argc, char** argv) {
     fmt.setProfile(QSurfaceFormat::CompatibilityProfile);
     fmt.setAlphaBufferSize(8);   // transparent root for mini mode (fixed-size window)
     QSurfaceFormat::setDefaultFormat(fmt);
+    // every window's GL context shares with the visualizer's (VisualizerItem.cpp)
+    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
 
     QGuiApplication app(argc, argv);
     app.setApplicationName("melo");

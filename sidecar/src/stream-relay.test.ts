@@ -2,6 +2,11 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { relayUrl, setRelayTuningForTest } from "./stream-relay";
+import { notify } from "./rpc";
+
+vi.mock("./rpc", () => ({ notify: vi.fn() }));
+const notified = () => vi.mocked(notify).mock.calls.filter((c) => c[0] === "stream/dropped").map((c) => c[1]);
+const resumed = () => vi.mocked(notify).mock.calls.filter((c) => c[0] === "stream/resumed").map((c) => c[1]);
 
 const CHUNK = 16 * 1024;
 const MS = 150;
@@ -39,7 +44,8 @@ function serve(req: http.IncomingMessage, res: http.ServerResponse, cap = Infini
 
 interface Got { status: number; body: Buffer; cut: boolean }
 
-function get(url: string, rangeHdr?: string, onData?: (req: http.ClientRequest) => void): Promise<Got> {
+function get(url: string, rangeHdr?: string, onData?: (req: http.ClientRequest) => void,
+             extra: Record<string, string> = {}): Promise<Got> {
   return new Promise((resolve) => {
     const parts: Buffer[] = [];
     let status = 0;
@@ -49,7 +55,7 @@ function get(url: string, rangeHdr?: string, onData?: (req: http.ClientRequest) 
       done = true;
       resolve({ status, body: Buffer.concat(parts), cut });
     };
-    const req = http.get(url, { headers: rangeHdr ? { Range: rangeHdr } : {} }, (res) => {
+    const req = http.get(url, { headers: { ...(rangeHdr ? { Range: rangeHdr } : {}), ...extra } }, (res) => {
       status = res.statusCode || 0;
       res.on("data", (d: Buffer) => { parts.push(d); onData?.(req); });
       res.on("end", () => finish(false));
@@ -92,6 +98,7 @@ beforeEach(() => {
   lines = [];
   hits = 0;
   upstreamClosed.length = 0;
+  vi.mocked(notify).mockClear();
   spy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => { lines.push(a.join(" ")); });
 });
 afterEach(() => {
@@ -112,6 +119,7 @@ describe("stream relay", () => {
     expect(relayLines(" open ")[0]).toMatch(/vid12345678 open range=bytes=0- status=206 size=\d+/);
     expect(relayLines(" end ")).toHaveLength(1);
     expect(relayLines(" end ")[0]).toMatch(new RegExp(`end sent=${DATA.length} in \\d+ms complete$`));
+    expect(notified()).toHaveLength(0);
     expect(lines.join("\n")).not.toContain("secret");
     expect(lines.join("\n")).not.toContain(base);
   });
@@ -127,6 +135,7 @@ describe("stream relay", () => {
     expect(relayLines(" retry ")[0]).toContain("no headers");
     expect(relayLines(" end ")).toHaveLength(1);
     expect(relayLines(" end ")[0]).toMatch(/end sent=0 in \d+ms timeout status=504$/);
+    expect(notified()).toHaveLength(0);   // no headers sent: the player sees the 504 itself
     await until(() => upstreamClosed.length === hits);
   });
 
@@ -158,6 +167,32 @@ describe("stream relay", () => {
     expect(got.cut).toBe(true);
     expect(relayLines(" end ")).toHaveLength(1);
     expect(relayLines(" end ")[0]).toMatch(/timeout$/);
+    // the player takes the cut for an end of stream: melo is told where it stopped
+    expect(notified()).toEqual([{ url, videoId: "vid12345678", at: 300 }]);
+  });
+
+  it("tells melo of an upstream error after the headers, not of the silence scan's", async () => {
+    behave = (req, res) => {   // the first chunk, then 500s
+      if (range(req)[0] === 0) return serve(req, res);
+      res.writeHead(500); res.end();
+    };
+    const url = await fresh();
+    const got = await get(url, "bytes=0-");
+    expect(got.cut).toBe(true);
+    expect(notified()).toEqual([{ url, videoId: "vid12345678", at: CHUNK }]);
+    vi.mocked(notify).mockClear();
+    const scan = await get(url, "bytes=0-", undefined, { "User-Agent": "Lavf/61.7.100" });
+    expect(scan.cut).toBe(true);
+    expect(notified()).toHaveLength(0);
+    // the player reconnects and the stream flows again: melo is told once
+    behave = (req, res) => serve(req, res);
+    await get(url, `bytes=${CHUNK}-`, undefined, { "User-Agent": "Lavf/61.7.100" });
+    expect(resumed()).toHaveLength(0);
+    const again = await get(url, `bytes=${CHUNK}-`);
+    expect(again.body.equals(DATA.subarray(CHUNK))).toBe(true);
+    expect(resumed()).toEqual([{ url, videoId: "vid12345678" }]);
+    await get(url, `bytes=${CHUNK}-`);
+    expect(resumed()).toHaveLength(1);
   });
 
   it("(c) a short 206 advances by the bytes received", async () => {

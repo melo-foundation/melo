@@ -1,5 +1,6 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
+import { notify } from "./rpc";
 
 // Localhost relay for googlevideo stream URLs. Some clients' URLs (IOS) 403
 // plain GETs and only accept ranged requests — GStreamer's souphttpsrc opens
@@ -13,6 +14,8 @@ interface Entry {
    *  cached copy of this URL — otherwise the player's "retry with a fresh
    *  resolve" just gets the same dead URL back from cache and gives up. */
   onUpstreamError?: (status: number) => void;
+  /** melo was told the player's last response failed after its headers */
+  dropped?: boolean;
 }
 
 const entries = new Map<string, Entry>();
@@ -121,6 +124,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     res.writeHead(404); res.end(); return;
   }
   const t = tag(id, entry);
+  const relayed = `http://127.0.0.1:${port}/s/${id}`;
+  // ffmpeg is the silence scan, not the player
+  const isScan = /^Lavf/.test(req.headers["user-agent"] || "");
 
   // parse client range: "bytes=S-" or "bytes=S-E" (default whole file)
   const m = /bytes=(\d+)-(\d+)?/.exec(req.headers.range || "");
@@ -144,8 +150,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   let ending: Ending = "complete";
   let sent = 0;
   let retries = 0;
+  let pos = startPos;
   try {
-    let pos = startPos;
     let total = -1;
     while ((total < 0 || pos < total) && pos <= clientEnd) {
       if (closed) { ending = "client closed"; break; }
@@ -201,6 +207,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
           }
           const size = total === Number.MAX_SAFE_INTEGER ? "unknown" : String(total);
           console.error(`[relay] ${t} open range=${req.headers.range ?? "none"} status=${res.statusCode} size=${size}`);
+          if (entry.dropped && !isScan) {
+            entry.dropped = false;
+            notify("stream/resumed", { url: relayed, videoId: entry.videoId ?? "" });
+          }
         }
         // pipeline: fetch the NEXT chunk while this one pipes — serial fetches
         // add a full upstream round-trip of dead air per MB after seeks
@@ -247,6 +257,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   } finally {
     cur?.ctrl.abort();
     next?.ctrl.abort();
+  }
+  // A failure after the headers can reach the player as an end of stream, so melo is told
+  // and shows the dropped connection; a later request that gets its headers takes it back.
+  const failed = ending === "upstream error" || ending === "timeout";
+  if (failed && res.headersSent && res.statusCode < 400 && !isScan) {
+    entry.dropped = true;
+    notify("stream/dropped", { url: relayed, videoId: entry.videoId ?? "", at: pos });
   }
   // a short body under a sent content-length leaves the client waiting; cut it
   if (ending === "complete" || res.statusCode >= 400) res.end();

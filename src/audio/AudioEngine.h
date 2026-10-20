@@ -123,6 +123,10 @@ private:
     GstElement* pan_      = nullptr;   // audiopanorama (balance); null if unavailable
     GstElement* vizVol_   = nullptr;   // viz-branch volume (visualizer parity)
     GstElement* sinkVol_  = nullptr;   // GstStreamVolume sink (audible, instant)
+    // An unmute sent while pulsesink is still creating its server stream is lost and
+    // the stream stays muted; the unmute is sent again once the stream exists.
+    bool sinkMuted_ = false;
+    QTimer unmuteAgain_;
     GstElement* appsink_  = nullptr;
 
     bool messageIsFromCurrentDeck(GstObject* src) const;
