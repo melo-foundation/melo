@@ -103,6 +103,9 @@ public:
     bool uiHas(const QString& key) const;
 
     Q_INVOKABLE void refresh();   // settings/get -> replace local mirror
+    // An error's details, with versions and OS, to <config>/reports/<kind>-<time>.txt;
+    // {path, folder} or empty
+    Q_INVOKABLE QVariantMap writeReport(const QString& kind, const QVariantMap& details) const;
     // The file as saved, read before the sidecar is up, so the first frame
     // has the saved theme, size and layout. The sidecar's reply replaces it.
     // False when there is no file or it will not parse.

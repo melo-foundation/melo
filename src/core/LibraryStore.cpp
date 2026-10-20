@@ -30,9 +30,11 @@ LibraryStore::LibraryStore(SidecarService* sidecar, SettingsStore* settings, QOb
     connect(sidecar_, &SidecarService::readyChanged, this, [this] { refresh(); });
     connect(sidecar_, &SidecarService::libraryChanged, this, [this] { refresh(); });
     connect(sidecar_, &SidecarService::jobDone, this,
-            [this](const QString&, bool, const QJsonObject& result) {
+            [this](const QString& job, bool ok, const QJsonObject& result) {
         const QString id = result["videoId"].toString();
         if (!id.isEmpty() && downloading_.remove(id)) rebuild();
+        if (!ok && job.startsWith(QLatin1String("dl")) && !id.isEmpty())
+            emit downloadFailed(id, result["error"].toString());
     });
     // Art URLs depend on downloadPath/artPriority — but rebuild() RESETS the
     // models (ListView scroll jumps to top), and SettingsStore::changed fires

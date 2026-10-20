@@ -1,14 +1,21 @@
 #include <QJsonArray>
 #include "SettingsStore.h"
 #include "paths.h"
+#include "LogTail.h"
 #include "jsvalue.h"
 #include "SidecarService.h"
 #include "RpcClient.h"
 
+#include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QSysInfo>
+#include <QUrl>
+#include <cstdio>
 #include <QJsonDocument>
 #include <QJSValue>
+#include <QRegularExpression>
 #include <QJsonValue>
 
 // unwrapJs lives in jsvalue.h — see the trap it exists for.
@@ -22,6 +29,33 @@ SettingsStore::SettingsStore(SidecarService* sidecar, QObject* parent)
 
 QString SettingsStore::dataDir() const {
     return meloConfigDir();   // shared source of truth (src/core/paths.h)
+}
+
+QVariantMap SettingsStore::writeReport(const QString& kind, const QVariantMap& details) const {
+    const QDir dir(dataDir() + QStringLiteral("/reports"));
+    if (!dir.mkpath(QStringLiteral("."))) return {};
+    QString safe = kind;
+    safe.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_-]")), QStringLiteral("_"));
+    const QString path = dir.filePath(QStringLiteral("%1-%2.txt").arg(safe.isEmpty() ? QStringLiteral("error") : safe,
+        QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"))));
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) return {};
+    QString out = QStringLiteral("melo %1, Qt %2, %3\nkind: %4\nwritten: %5\n")
+        .arg(QCoreApplication::applicationVersion(), QString::fromLatin1(qVersion()),
+             QSysInfo::prettyProductName(), kind,
+             QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    for (auto it = details.cbegin(); it != details.cend(); ++it) {
+        const QVariant v = it.value();
+        const QString text = (v.typeId() == QMetaType::QVariantMap || v.typeId() == QMetaType::QVariantList)
+            ? QString::fromUtf8(QJsonDocument::fromVariant(v).toJson(QJsonDocument::Compact)) : v.toString();
+        out += QStringLiteral("%1: %2\n").arg(it.key(), text);
+    }
+    const QStringList tail = meloLogTail(dataDir() + QStringLiteral("/logs"), 500);
+    if (!tail.isEmpty()) out += QStringLiteral("\n--- last %1 lines of melo.log ---\n%2\n").arg(tail.size()).arg(tail.join(QLatin1Char('\n')));
+    f.write(out.toUtf8());
+    f.close();
+    std::fprintf(stderr, "[melo] %s report written to %s\n", kind.toUtf8().constData(), path.toUtf8().constData());
+    return {{"path", path}, {"folder", QUrl::fromLocalFile(dir.absolutePath()).toString()}};
 }
 
 bool SettingsStore::loadLocal() {

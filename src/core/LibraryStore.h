@@ -73,6 +73,8 @@ public:
 signals:
     void countsChanged();
     void viewChanged();
+    // a download that ended without its file; error is yt-dlp's last words
+    void downloadFailed(const QString& videoId, const QString& error);
 
 private:
     void rebuild();

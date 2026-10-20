@@ -8,6 +8,7 @@ import "components/skeletonmodel.js" as SkeletonModel
 import "components/shortcuts.js" as SC
 import "components/videowanted.js" as VideoWanted
 import "components/layoutstate.js" as LayoutState
+import "components/report.js" as Report
 import "views"
 import "."
 
@@ -2954,10 +2955,7 @@ Window {
         available: WindowCtl.blurAvailable
         suppressed: Settings.loaded && Settings.uiGet("blurNoticeOff", false) === true
         busy: promptDialog.visible
-        onShowRequested: promptDialog.noticeDialog(
-            "Window blur support was not detected. This theme may be less legible.",
-            "OK", "Don't show again",
-            (answer) => blurNotice.dismiss(answer === "alt"))
+        onShowRequested: root.blurShown = true
         onDontShowAgain: Settings.uiSet("blurNoticeOff", true)
     }
     OnboardingWindow { id: onboarding; transientParent: root }
@@ -2996,15 +2994,7 @@ Window {
     // change it for them; asked at most once per session.
     Connections {
         target: sidecar
-        function onYtdlpStale(message) {
-            promptDialog.confirmDialog(
-                "Playback failed in a way a newer yt-dlp usually fixes.\n\n"
-                + "Switch the yt-dlp channel from Stable to Nightly?",
-                (ok) => {
-                    if (!ok) return
-                    sidecar.rpc("ytdlp/setChannel", { channel: "nightly" }, () => Settings.refresh())
-                })
-        }
+        function onYtdlpStale(message) { root.ytdlpStale = message || "stale" }
     }
     PlaylistFlyout {
         id: playlistFlyout
@@ -3223,19 +3213,120 @@ Window {
 
     // A popup rather than a band across the top, so a stream failure also
     // shows in the compact window.
-    ErrorSurface {
-        id: errorSurface
-        // The sidecar being down is a STATE and must not auto-dismiss into a
-        // window that then looks like it is working.
-        state_: sidecar.ready ? "" : "melo's backend is not running"
-        onActionTriggered: (kind) => {
-            // Each action fixes the error it appears on; a cookie switch or a retry
-            // plays the same track again.
-            PlayerState.error = ""
-            if (kind === "signin") root.settingsWindow().open("personalization")
-            if (kind === "playbackCookies") { root.playbackCookiesFromBrowser(); return }
-            // trackInfo is YouTube's numbers, not a track: replaying it cleared the queue
-            if (kind === "retry" && PlayerState.hasTrack) Player.answerFailure("retry")
+    // ---------- the error bars ----------
+    // Every non-blocking error: the player's last error (8 s, or a click), the
+    // backend being down (a state: it stays), missing GStreamer elements, the
+    // blur notice and the yt-dlp channel question. Above the player bar, never
+    // on it; in the mini player, in a popup above the bar.
+    property bool backendDown: false
+    Timer {   // a sidecar that is merely starting does not flash the state
+        interval: 500
+        running: !sidecar.ready
+        onTriggered: root.backendDown = true
+    }
+    Connections { target: sidecar; function onReadyChanged() { if (sidecar.ready) root.backendDown = false } }
+    Timer {
+        id: errorDismiss
+        interval: 8000
+        running: PlayerState.error.length > 0
+        onTriggered: PlayerState.error = ""
+    }
+    Connections { target: PlayerState; function onErrorChanged() { if (PlayerState.error.length) errorDismiss.restart() } }
+    property bool gstDismissed: false
+    property bool blurShown: false
+    property string ytdlpStale: ""
+    function errorActionLabel(a) {
+        if (a === "signin") return "Sign in"
+        if (a === "playbackCookies" && Settings.streamCookieSource !== "browser" && Settings.cookieSource !== "browser")
+            return "Use browser cookies"
+        return "Retry"
+    }
+    readonly property var notices: {
+        const out = []
+        const report = { id: "report", label: "Report…" }
+        if (root.backendDown && !sidecar.ready)
+            out.push({ key: "backend", message: "melo's backend is not running.", actions: [report], sticky: true })
+        if (MELO_MISSING_GST.length > 0 && !root.gstDismissed)
+            out.push({ key: "gstreamer", message: "GStreamer elements missing: " + MELO_MISSING_GST + " — " + MELO_GST_HINT,
+                       actions: [{ id: "ok", label: "OK" }, report], sticky: true })
+        if (root.blurShown)
+            out.push({ key: "blur", message: "Window blur is not available, so this theme may be hard to read.",
+                       actions: [{ id: "ok", label: "OK" }, { id: "never", label: "Don't show again" }, report], sticky: true })
+        if (root.ytdlpStale.length)
+            out.push({ key: "ytdlp", message: "Playback needs a newer yt-dlp.",
+                       actions: [{ id: "nightly", label: "Switch to Nightly" }, { id: "no", label: "Not now" }, report], sticky: true })
+        if (PlayerState.error.length) {
+            const a = PlayerState.errorAction
+            out.push({ key: "error", message: PlayerState.error,
+                       actions: (a.length ? [{ id: a, label: root.errorActionLabel(a) }] : []).concat([report]) })
+        }
+        return out
+    }
+    function noticeAnswered(key, id) {
+        if (key === "backend") { Report.send(Settings, "backend", "", { message: "melo's backend is not running." }); return }
+        if (key === "gstreamer") {
+            if (id === "report") Report.send(Settings, "gstreamer", "", { missing: MELO_MISSING_GST, hint: MELO_GST_HINT })
+            else root.gstDismissed = true
+            return
+        }
+        if (key === "blur") {
+            if (id === "report") { Report.send(Settings, "blur", "", { platform: Qt.platform.pluginName, glassBlur: Theme.glassBlur }); return }
+            root.blurShown = false
+            blurNotice.dismiss(id === "never")
+            return
+        }
+        if (key === "ytdlp") {
+            if (id === "report") { Report.send(Settings, "ytdlp", "outdated", { ytdlp: root.ytdlpStale, channel: Settings.ytdlpChannel }); return }
+            root.ytdlpStale = ""
+            if (id === "nightly") sidecar.rpc("ytdlp/setChannel", { channel: "nightly" }, () => Settings.refresh())
+            return
+        }
+        // the player's error: each action fixes the error it appears on; a cookie
+        // switch or a retry plays the same track again
+        if (id === "report") { root.reportError(); return }
+        PlayerState.error = ""
+        if (id === "signin") root.settingsWindow().open("personalization")
+        if (id === "playbackCookies") { root.playbackCookiesFromBrowser(); return }
+        // trackInfo is YouTube's numbers, not a track: replaying it cleared the queue
+        if (id === "retry" && PlayerState.hasTrack) Player.answerFailure("retry")
+    }
+    function noticeDismissed(key) { if (key === "error") PlayerState.error = "" }
+    ErrorBarStack {
+        id: noticeStack
+        objectName: "noticeStack"
+        z: 900
+        visible: !root.miniPlayer && root.notices.length > 0
+        notices: root.miniPlayer ? [] : root.notices
+        maxWidth: Math.min(Theme.ctl(520), root.width - Theme.gap(24))
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        // above the player bar and the yt-dlp download toast, never on them
+        anchors.bottomMargin: playerBar.settledHeight + root.barFoot + root.barRingTop + root.upperFoot
+                              + Theme.gap(10) + (ytdlpToast.visible ? ytdlpToast.height + Theme.gap(8) : 0)
+        onTriggered: (key, id) => root.noticeAnswered(key, id)
+        onDismissed: (key) => root.noticeDismissed(key)
+    }
+    // the mini player's: a popup of its own above the bar, so it covers none of it
+    Window {
+        id: miniNotices
+        objectName: "miniNotices"
+        // X11 captions it, and the KWin scripts tell melo's windows apart by caption
+        title: "melo-notices"
+        flags: Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus
+        color: "transparent"
+        transientParent: miniWin
+        visible: root.miniPlayer && miniWin.visible && root.notices.length > 0
+        width: Math.min(Theme.ctl(520), Math.max(Theme.ctl(320), miniWin.width))
+        height: Math.max(1, miniStack.implicitHeight)
+        // window coords plus the bar's position (0,0 on Wayland, real on X11)
+        x: miniWin.x + (miniWin.width - width) / 2
+        y: miniWin.y - height - Theme.gap(6)
+        ErrorBarStack {
+            id: miniStack
+            notices: root.miniPlayer ? root.notices : []
+            maxWidth: miniNotices.width
+            onTriggered: (key, id) => root.noticeAnswered(key, id)
+            onDismissed: (key) => root.noticeDismissed(key)
         }
     }
 
@@ -3287,9 +3378,41 @@ Window {
             return
         }
         if (action.indexOf("browser:") === 0) { root.playWithBrowser(action.slice(8)); return }
+        // the dialog stays: its other answers still stand
+        if (action === "report") {
+            Report.send(Settings, "playback", PlayerState.failCause,
+                        Object.assign({ message: PlayerState.failReason }, Player.lastFailure()))
+            return
+        }
         root.browserPickGen++   // an answer made while the check runs wins over it
         if (action === "signin") root.settingsWindow().open("personalization")
         Player.answerFailure(action)
+    }
+    // An error melo raises itself carries its kind and details for Report…; one
+    // the player raised (PlayerState.error from C++) reports its message and code.
+    property var errorContext: null
+    function showError(kind, sub, message, details) {
+        root.errorContext = { kind: kind, sub: sub, message: message, details: details || {} }
+        PlayerState.error = message
+    }
+    function reportError() {
+        const c = root.errorContext && root.errorContext.message === PlayerState.error ? root.errorContext : null
+        const base = { message: PlayerState.error, code: PlayerState.errorCode }
+        if (c) Report.send(Settings, c.kind, c.sub, Object.assign(base, c.details))
+        else Report.send(Settings, "error", PlayerState.errorCode ? String(PlayerState.errorCode) : "", base)
+    }
+    Connections {
+        target: Library
+        function onDownloadFailed(videoId, error) {
+            root.showError("download", "", "The download failed.", { videoId: videoId, error: error })
+        }
+    }
+    Connections {
+        target: sidecar
+        function onYtdlpStateChanged() {
+            if (sidecar.ytdlpState === "failed")
+                root.showError("ytdlp", "download", "yt-dlp could not be downloaded.", {})
+        }
     }
     // the error bar's "Use browser cookies": several signed in is a choice, made in settings
     function playbackCookiesFromBrowser() {
@@ -3310,36 +3433,31 @@ Window {
         onAnswered: (a) => root.answerFailure(a)
     }
 
-    Rectangle {   // lite build on system GStreamer with pieces missing
-        id: gstBanner
-        property bool dismissed: false
-        visible: MELO_MISSING_GST.length > 0 && !dismissed && !root.miniPlayer
-        anchors.top: parent.top
-        anchors.topMargin: Theme.gap(70)
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: Math.min(gstText.implicitWidth + 32, parent.width - 40)
-        height: gstText.height + 16
-        radius: Theme.radiusMd
-        color: "#5c1f1f"
-        border.color: Theme.accent
-        z: 900
-        InkText { id: gstText; anchors.centerIn: parent
-               width: gstBanner.width - 24
-               wrapMode: Text.Wrap
-               horizontalAlignment: Text.AlignHCenter
-               text: "GStreamer elements missing: " + MELO_MISSING_GST
-                     + " — " + MELO_GST_HINT
-               ink: "text"; font { pixelSize: Theme.fs(12); family: Theme.fontFamily } }
-        MouseArea { anchors.fill: parent; onClicked: gstBanner.dismissed = true }
-    }
-
     Rectangle {   // lite build: one-time Node.js runtime download
         visible: NodeSetup.active || NodeSetup.error.length > 0
         anchors.fill: parent
         color: Qt.rgba(0, 0, 0, 0.5)
         z: 991
         MouseArea { anchors.fill: parent }   // modal
+        // failed: the error dialog; nothing runs without Node.js
+        ErrorPanel {
+            objectName: "nodeError"
+            visible: NodeSetup.error.length > 0
+            blocking: true
+            anchors.centerIn: parent
+            width: Math.min(Theme.ctl(400), parent.width - Theme.gap(32))
+            height: implicitHeight
+            maxWidth: width
+            message: "The Node.js download failed. Check the connection and retry."
+            namePrefix: "node_"
+            actions: [{ id: "retry", label: "Retry" }, { id: "report", label: "Report…" }]
+            onTriggered: (id) => {
+                if (id === "report") Report.send(Settings, "node", "", { error: NodeSetup.error })
+                else NodeSetup.download()
+            }
+        }
         Surface {
+            visible: NodeSetup.active && NodeSetup.error.length === 0
             anchors.centerIn: parent
             width: Math.min(380, parent.width - 40)
             height: nodeCol.implicitHeight + 32
@@ -3356,8 +3474,7 @@ Window {
                 spacing: Theme.gap(12)
 
                 InkText {
-                    text: NodeSetup.error.length > 0 ? "Node.js download failed"
-                                                     : "Downloading Node.js"
+                    text: "Downloading Node.js"
                     ink: "text"
                     font { pixelSize: Theme.fs(13); family: Theme.fontFamily }
                 }
@@ -3376,20 +3493,6 @@ Window {
                     text: NodeSetup.receivedMB + " / " + NodeSetup.totalMB + " MB"
                     ink: "textDim"
                     font { pixelSize: Theme.fs(11); family: Theme.fontFamily }
-                }
-                InkText {
-                    visible: NodeSetup.error.length > 0
-                    width: parent.width
-                    text: NodeSetup.error
-                    wrapMode: Text.Wrap
-                    ink: "textDim"
-                    font { pixelSize: Theme.fs(11); family: Theme.fontFamily }
-                }
-                PushButton {
-                    visible: NodeSetup.error.length > 0
-                    pad: 24; fontSize: 12
-                    label: "Retry"; accent: true
-                    onClicked: NodeSetup.download()
                 }
             }
         }
@@ -3493,7 +3596,7 @@ Window {
                 root.searchFlow = null
                 root.flushPendingPluginRows()   // plugin rows that already arrived survive a YT failure
             }
-            PlayerState.error = message
+            root.showError("error", "search", message, { what: what })
         }
     }
     // Singles get their length from their album pages once they show; a one-track

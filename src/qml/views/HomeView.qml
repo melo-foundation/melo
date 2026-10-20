@@ -6,6 +6,7 @@ import ".."
 import "../components"
 import "../components/skeletonmodel.js" as SkeletonModel
 import "../components/homeempty.js" as HomeEmpty
+import "../components/report.js" as Report
 
 // Home: YouTube source = topic chips + recommended feed
 // with continuations; YouTube Music source = mood chips + shelves of
@@ -601,15 +602,26 @@ Item {
     // An error draws in `danger`, the role that means wrong; `highlight`
     // follows `accent` and means a thing is active or current. The size
     // matches the empty-state line beside it.
-    InkText {
+    Column {
         anchors.centerIn: parent
         visible: view.homeError.length > 0
         width: parent.width - 60
-        horizontalAlignment: Text.AlignHCenter
-        wrapMode: Text.Wrap
-        text: view.homeError
-        ink: "danger"
-        font { pixelSize: Theme.fs(15); family: Theme.fontFamily }
+        spacing: Theme.gap(10)
+        InkText {
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            text: view.homeError
+            ink: "danger"
+            font { pixelSize: Theme.fs(15); family: Theme.fontFamily }
+        }
+        PushButton {
+            objectName: "homeReport"
+            anchors.horizontalCenter: parent.horizontalCenter
+            pad: 16; fontSize: 12
+            label: "Report…"
+            onClicked: Report.send(Settings, "home", view.ytMusic ? "music" : "youtube", { message: view.homeError })
+        }
     }
 
     // ---------- YouTube: recommended list / compact ----------

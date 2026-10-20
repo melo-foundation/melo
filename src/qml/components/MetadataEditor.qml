@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import ".."
+import "report.js" as Report
 
 // Edit Metadata window: artist/title/album/year/
 // genre fields, heuristic suggestion, API lookup chain, art source picker
@@ -404,11 +405,17 @@ Window {
             MField { label: "Genre";  value: editor.fGenre;  onEdited: (v) => editor.fGenre = v }
             MField { label: "YouTube"; value: editor.fLink; readOnly: !editor.isLocal
                      onEdited: (v) => { editor.fLink = v; editor.linkError = "" } }
-            InkText {
+            Row {
                 visible: editor.linkError.length > 0
-                text: editor.linkError
-                ink: "highlight"
-                font { pixelSize: Theme.fs(11); family: Theme.fontFamily }
+                spacing: Theme.gap(8)
+                InkText {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: editor.linkError
+                    ink: "highlight"
+                    font { pixelSize: Theme.fs(11); family: Theme.fontFamily }
+                }
+                EBtn { objectName: "linkReport"; label: "Report…"
+                       onClicked: Report.send(Settings, "metadata", "link", { error: editor.linkError }) }
             }
             // the audio this entry plays; replacing it keeps the entry, so a
             // YouTube track still counts as its video
@@ -435,11 +442,17 @@ Window {
                 EBtn { id: replaceBtn; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                        label: "Replace…"; onClicked: audioDialog.open() }
             }
-            InkText {
+            Row {
                 visible: editor.fileError.length > 0
-                text: editor.fileError
-                ink: "highlight"
-                font { pixelSize: Theme.fs(11); family: Theme.fontFamily }
+                spacing: Theme.gap(8)
+                InkText {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: editor.fileError
+                    ink: "highlight"
+                    font { pixelSize: Theme.fs(11); family: Theme.fontFamily }
+                }
+                EBtn { objectName: "fileReport"; label: "Report…"
+                       onClicked: Report.send(Settings, "metadata", "file", { error: editor.fileError }) }
             }
 
             // art source

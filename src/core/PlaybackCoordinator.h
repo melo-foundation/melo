@@ -41,6 +41,8 @@ public:
     // "update" pulls the nightly yt-dlp and retries; "signin" and "dismiss"
     // only close it. Retry also works with no failure showing.
     Q_INVOKABLE void answerFailure(const QString& action);
+    // the last failure's details, for a report
+    Q_INVOKABLE QVariantMap lastFailure() const { return lastFailure_; }
     void setInterceptOffer(std::function<bool(const QString& action)> fn);
     // extra fields for plugins' trackChanged, by track id (the library's album)
     void setTrackExtras(std::function<QVariantMap(const QString& id)> fn) { trackExtras_ = std::move(fn); }
@@ -158,10 +160,15 @@ private:
     // the engine's end of a track: a dropped connection if the relay said the stream failed
     void onEngineEnded();
     void streamLost(double at);
+    // every mid-track failure says this; the position goes to the log and to Retry
+    static QString playbackProblem() { return QStringLiteral("There was a problem with playback."); }
     // the playing deck's stream and whether the relay gave up on it
     QString streamUrl_;
     bool streamDropped_ = false;
-    void setStreamUrl(const QString& url) { streamUrl_ = url; streamDropped_ = false; }
+    qint64 droppedAt_ = -1;         // the byte the relay gave up at
+    void setStreamUrl(const QString& url) { streamUrl_ = url; streamDropped_ = false; droppedAt_ = -1; }
+    QString lastPipelineError_;
+    QVariantMap lastFailure_;
     // an end short of the listed length waits this long for the relay's word
     QTimer endHold_;
     double endHoldAt_ = 0;

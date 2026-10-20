@@ -3,6 +3,7 @@ import QtQuick.Controls as QQC
 import ".."
 import "../components"
 import "../components/skeletonmodel.js" as SkeletonModel
+import "../components/report.js" as Report
 
 // Playlist page: back + title + Save [& Download] /
 // Sync header, indexed track rows in the shared layouts. Row click: RD mixes
@@ -349,12 +350,23 @@ Item {
         }
     }
 
-    InkText {
+    Column {
         anchors.centerIn: parent
         visible: view.plError.length > 0
-        text: view.plError
-        ink: "highlight"
-        font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
+        spacing: Theme.gap(8)
+        InkText {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: view.plError
+            ink: "highlight"
+            font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
+        }
+        PushButton {
+            objectName: "playlistReport"
+            anchors.horizontalCenter: parent.horizontalCenter
+            pad: 16; fontSize: 11
+            label: "Report…"
+            onClicked: Report.send(Settings, "playlist", "", { message: view.plError })
+        }
     }
 
     // ---------- list / compact ----------

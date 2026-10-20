@@ -94,7 +94,7 @@ export function registerHandlers(): void {
       const id = jobId("dl");
       // NB: library tracks key on `id` (SearchResult shape), not videoId
       lib.downloadTrack(track.id, st.streamCookieArgs).then((ok) => {
-        notify("job/done", { jobId: id, ok, result: { videoId: track.id } });
+        notify("job/done", { jobId: id, ok, result: { videoId: track.id, error: ok ? "" : lib.downloadError(track.id) } });
         notify("library/changed", {});
       });
       return { track: added, jobId: id };
@@ -109,7 +109,7 @@ export function registerHandlers(): void {
   method("library/downloadTrack", ({ videoId }) => {
     const id = jobId("dl");
     lib.downloadTrack(videoId, st.streamCookieArgs).then((ok) => {
-      notify("job/done", { jobId: id, ok, result: { videoId } });
+      notify("job/done", { jobId: id, ok, result: { videoId, error: ok ? "" : lib.downloadError(videoId) } });
       notify("library/changed", {});
     });
     return { jobId: id };
@@ -121,7 +121,7 @@ export function registerHandlers(): void {
     const id = jobId("dlall");
     for (const vid of ids) {
       lib.downloadTrack(vid, st.streamCookieArgs).then((ok) => {
-        notify("job/done", { jobId: id + ":" + vid, ok, result: { videoId: vid } });
+        notify("job/done", { jobId: id + ":" + vid, ok, result: { videoId: vid, error: ok ? "" : lib.downloadError(vid) } });
         notify("library/changed", {});
       });
     }

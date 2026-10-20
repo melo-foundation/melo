@@ -31,6 +31,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
           process.stdout.write(JSON.stringify({ jsonrpc: "2.0", method: "stream/dropped", params: { url, videoId: p.videoId, at: 4321 } }) + "\n");
         return;
       }
+      // broken<n>: a file that is not there, so the pipeline errors on every resolve
+      if (kind === "broken")
+        return reply(msg.id, { result: { ok: true, url: "file:///nonexistent/melo-broken.wav", duration: 100 } });
       const w = walls[kind];
       if (w) return reply(msg.id, { error: { code: w[0], message: w[1] } });
       return reply(msg.id, { result: { ok: false, error: "This video is unavailable" } });

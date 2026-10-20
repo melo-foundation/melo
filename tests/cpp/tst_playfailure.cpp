@@ -1,6 +1,7 @@
 #include <QtTest>
 #include <QSignalSpy>
 #include <QDataStream>
+#include <QDir>
 #include <QFile>
 #include <QUrl>
 #include <QJsonArray>
@@ -165,7 +166,7 @@ private slots:
         coord_->playQueue(arr, 0);
         QTRY_VERIFY_WITH_TIMEOUT(!state_.failCause().isEmpty(), 10000);
         QCOMPARE(state_.failCause(), QString("network"));
-        QVERIFY2(state_.failReason().startsWith("The connection dropped at 0:0"), qPrintable(state_.failReason()));
+        QCOMPARE(state_.failReason(), QString("There was a problem with playback."));
         QCOMPARE(queue_.currentIndex(), 0);
         QCOMPARE(state_.currentTrack().id, QString("dropped1"));
         QVERIFY(!state_.isPlaying());
@@ -175,6 +176,35 @@ private slots:
         QCOMPARE(streamRequests("dropped1").last()["fresh"].toBool(), true);
         QTRY_VERIFY_WITH_TIMEOUT(!state_.failCause().isEmpty(), 10000);   // dropped again
         QCOMPARE(state_.failCause(), QString("network"));
+        coord_->answerFailure("dismiss");
+    }
+
+    // a stream that errors on its fresh resolve too: the plain network failure, and a
+    // report that carries what the log line does
+    void aStreamThatFailsTwiceSaysSoPlainly() {
+        freshPlayer();
+        coord_->playQueue(QJsonArray{track("broken1")}, 0);
+        QTRY_VERIFY_WITH_TIMEOUT(!state_.failCause().isEmpty(), 10000);
+        QCOMPARE(state_.failCause(), QString("network"));
+        QCOMPARE(state_.failReason(), QString("There was a problem with playback."));
+        QDir().mkpath(dir_.filePath("cfg/logs"));
+        QFile lf(dir_.filePath("cfg/logs/melo.log"));
+        QVERIFY(lf.open(QIODevice::WriteOnly));
+        lf.write("[melo] an earlier line\n[melo] the line before the failure\n");
+        lf.close();
+        const QVariantMap r = settings_->writeReport("playback", coord_->lastFailure());
+        QFile f(r.value("path").toString());
+        QVERIFY2(f.open(QIODevice::ReadOnly), qPrintable(r.value("path").toString()));
+        const QString text = QString::fromUtf8(f.readAll());
+        QVERIFY(f.fileName().startsWith(dir_.filePath("cfg/reports/playback-")));
+        QVERIFY2(text.contains("track: broken1\n"), qPrintable(text));
+        QVERIFY(text.contains("cause: network\n"));
+        QVERIFY(text.contains("kind: playback\n"));
+        QVERIFY(text.contains("--- last 2 lines of melo.log ---\n[melo] an earlier line\n[melo] the line before the failure"));
+        QVERIFY(text.contains("code: -32020\n"));
+        QVERIFY(text.contains("relay: ok\n"));
+        QVERIFY(!text.contains("pipelineError: -\n"));
+        QVERIFY(r.value("folder").toString().startsWith("file://"));
         coord_->answerFailure("dismiss");
     }
 
@@ -202,7 +232,7 @@ private slots:
         QVERIFY(state_.failCause().isEmpty());
         emit sidecar_->streamDropped(qEnvironmentVariable("MELO_FAKE_SHORT_URL"), 4321);
         QCOMPARE(state_.failCause(), QString("network"));
-        QVERIFY2(state_.failReason().startsWith("The connection dropped at 0:0"), qPrintable(state_.failReason()));
+        QCOMPARE(state_.failReason(), QString("There was a problem with playback."));
         QCOMPARE(state_.currentTrack().id, QString("short2"));
         // Retry plays again from where it stopped
         coord_->answerFailure("retry");

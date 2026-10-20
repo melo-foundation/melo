@@ -10,6 +10,7 @@
 #include "LogClock.h"
 #include <cstdio>
 
+#include <QDateTime>
 #include <QJsonArray>
 #include <QRandomGenerator>
 #include <algorithm>
@@ -41,6 +42,7 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
         std::fprintf(stderr, "[%9.1f] [melo] the relay dropped the stream at byte %lld\n",
                      meloLogMs(), static_cast<long long>(at));
         streamDropped_ = true;
+        droppedAt_ = at;
         if (endHold_.isActive()) { endHold_.stop(); streamLost(endHoldAt_); }
     });
     // the player reconnected and the stream flows again
@@ -72,6 +74,7 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
     });
     connect(engine_, &AudioEngine::pipelineError, this, [this](const QString& m) {
         state_->setError(m);
+        lastPipelineError_ = m;
         // A dead stream (expired/truncated googlevideo URL) must not stop the
         // music: the first failure retries with a fresh resolve from where it
         // stopped; the second is the network failure on this track, resumable,
@@ -80,7 +83,9 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
         if (++streamErrorStreak_ > 3) {
             // the dialog, not a bar that says playing over nothing
             std::fprintf(stderr, "[melo] 3 consecutive stream errors — stopping auto-advance\n");
-            failPlay(state_->currentTrack(), -32020, QStringLiteral("Three stream errors in a row."));
+            resumeAt_ = std::max(engine_->position(), state_->position());
+            resumeId_ = state_->currentTrack().id;
+            failPlay(state_->currentTrack(), -32020, playbackProblem());
             return;
         }
         const Track t = state_->currentTrack();
@@ -97,9 +102,7 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
                          t.id.toUtf8().constData());
             resumeAt_ = at;
             resumeId_ = t.id;
-            const int s = int(at);
-            failPlay(t, -32020, QStringLiteral("The stream failed twice at %1:%2.")
-                                    .arg(s / 60).arg(s % 60, 2, 10, QLatin1Char('0')));
+            failPlay(t, -32020, playbackProblem());
         }
     });
 
@@ -337,9 +340,23 @@ void PlaybackCoordinator::failPlay(const Track& t, int code, const QString& reas
     engine_->stop();
     state_->setIsPlaying(false);
     state_->setPosition(0);
-    std::fprintf(stderr, "[%9.1f] [melo] can't play %s: %s (%d)\n", meloLogMs(),
-                 t.id.toUtf8().constData(), reason.toUtf8().constData(), code);
-    state_->setFailure(PlayerState::failCauseFor(code),
+    const QString cause = PlayerState::failCauseFor(code);
+    const double at = resumeId_ == t.id ? resumeAt_ : -1;
+    const QString relay = streamDropped_ ? QStringLiteral("dropped at byte %1").arg(droppedAt_)
+                                         : QStringLiteral("ok");
+    lastFailure_ = {
+        {"time", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
+        {"track", t.id}, {"cause", cause}, {"code", code}, {"reason", reason},
+        {"position", at >= 0 ? QString::number(at, 'f', 1) : QStringLiteral("-")},
+        {"relay", relay}, {"streamErrors", streamErrorStreak_},
+        {"pipelineError", lastPipelineError_.isEmpty() ? QStringLiteral("-") : lastPipelineError_},
+    };
+    std::fprintf(stderr, "[%9.1f] [melo] can't play %s: %s (%d) cause=%s at=%s relay=%s streamErrors=%d pipeline=\"%s\"\n",
+                 meloLogMs(), t.id.toUtf8().constData(), reason.toUtf8().constData(), code,
+                 cause.toUtf8().constData(), lastFailure_.value("position").toString().toUtf8().constData(),
+                 relay.toUtf8().constData(), streamErrorStreak_,
+                 lastFailure_.value("pipelineError").toString().toUtf8().constData());
+    state_->setFailure(cause,
                        reason.isEmpty() ? QStringLiteral("The track could not be loaded.") : reason);
 }
 
@@ -520,9 +537,7 @@ void PlaybackCoordinator::streamLost(double at) {
     const Track t = state_->currentTrack();
     resumeAt_ = at;
     resumeId_ = t.id;
-    const int s = int(at);
-    failPlay(t, -32020, QStringLiteral("The connection dropped at %1:%2.")
-                            .arg(s / 60).arg(s % 60, 2, 10, QLatin1Char('0')));
+    failPlay(t, -32020, playbackProblem());
 }
 
 void PlaybackCoordinator::onTrackEnded() {

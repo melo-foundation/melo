@@ -83,6 +83,7 @@ static void onQuitSignal(int sig) {
 #include "BarButtons.h"
 #include "PluginFills.h"
 #include "PortalDialog.h"
+#include "LogFile.h"
 #include "UiActivity.h"
 #include <memory>
 #include <utility>
@@ -369,6 +370,8 @@ int main(int argc, char** argv) {
 #endif
         return 0;
     }
+
+    LogFile::startTee(meloConfigDir() + QStringLiteral("/logs"), smoke);
 
     // up until the window shows (Splash.h); MELO_NO_SPLASH=1 turns it off
     SplashLauncher splash;
@@ -1138,8 +1141,10 @@ int main(int argc, char** argv) {
     if (smoke) {
         const int n = g_smokeQmlErrors.load();
         std::fprintf(stderr, "[melo] smoke: %d QML diagnostic(s)\n", n);
+        LogFile::stopTee();
         return n == 0 ? rc : 3;
     }
+    LogFile::stopTee();
     return rc;
 
 }

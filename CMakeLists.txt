@@ -187,6 +187,7 @@ qt_add_executable(melo
     src/media/ThumbImageProvider.h
     src/core/PlaybackCoordinator.cpp
     src/core/SettingsStore.cpp
+    src/core/LogFile.cpp
     src/core/ThemeStore.cpp
     src/core/ThemeFormat.cpp
     src/core/LibraryStore.cpp
@@ -960,6 +961,12 @@ if(Qt6Test_FOUND)
     add_test(NAME videowanted COMMAND tst_videowanted)
 
     # The app-wide idle clock: silence is idle, any input wakes it.
+    # the log file: rotation, redaction, the stderr tee and handler chaining
+    add_executable(tst_logfile tests/cpp/tst_logfile.cpp src/core/LogFile.cpp)
+    target_include_directories(tst_logfile PRIVATE src/core)
+    target_link_libraries(tst_logfile PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME logfile COMMAND tst_logfile)
+
     # which browser stores are read: none until an account menu opens
     add_executable(tst_accountreads tests/cpp/tst_accountreads.cpp)
     target_compile_definitions(tst_accountreads PRIVATE

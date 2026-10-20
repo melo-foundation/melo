@@ -7,6 +7,8 @@ import "plugingrants.js" as PG
 import "slots.js" as Slots
 import "locales.js" as Locales
 import "accounts.js" as Accounts
+import "report.js" as Report
+import "errorui.js" as ErrorUi
 
 // Settings in a frameless window of its own, 480x520 by default:
 // title bar, tab strip, full-width hoverable rows, glass background.
@@ -544,8 +546,12 @@ Window {
     }
     property string importBrowser: "firefox"
     property string importResult: ""
+    property string importError: ""
+    readonly property bool importFailed: importResult === "Import failed"
     property bool importing: false
     property string enrichResult: ""
+    property string enrichError: ""
+    readonly property bool enrichFailed: enrichResult === "Failed"
     property bool enriching: false
     readonly property var browserOptions: [
         { value: "firefox", label: "Firefox" },
@@ -1104,10 +1110,19 @@ Window {
                            elide: Text.ElideRight
                            text: parent.parent.name; ink: "text"
                            font { pixelSize: Theme.fs(13); family: Theme.fontFamily } }
-                    InkText { width: parent.width; text: sRow.error; ink: "danger"
-                           visible: text.length > 0
-                           wrapMode: Text.Wrap
-                           font { pixelSize: Theme.fs(11); family: Theme.fontFamily } }
+                    // the error look, as ErrorPanel draws it: the alert glyph, then the line
+                    Row {
+                        visible: sRow.error.length > 0
+                        width: parent.width
+                        spacing: Theme.gap(6)
+                        Icon { id: errGlyph; name: "alert"; size: Theme.glyph(12); color: ErrorUi.glyphOn(Theme.danger, Theme.roleColour("page"))
+                               anchors.verticalCenter: errLine.lineCount > 1 ? undefined : parent.verticalCenter }
+                        InkText { id: errLine; objectName: "rowError"
+                               width: parent.width - errGlyph.width - parent.spacing
+                               text: sRow.error; ink: "text"
+                               wrapMode: Text.Wrap
+                               font { pixelSize: Theme.fs(11); family: Theme.fontFamily } }
+                    }
                     InkText { width: parent.width; text: parent.parent.desc; ink: "textFaint"
                            visible: text.length > 0
                            wrapMode: Text.Wrap
@@ -1864,13 +1879,6 @@ Window {
                               onPicked: (v) => { value = v; Settings.uiSet("playlistDefault", v) } }
                 }
                 SRow {
-                    name: "Paste URL action"
-                    SSelect { value: String(Settings.uiGet("pasteAction", "play"))
-                              options: [ { value: "play", label: "Play" },
-                                         { value: "search", label: "Search" } ]
-                              onPicked: (v) => { value = v; Settings.uiSet("pasteAction", v) } }
-                }
-                SRow {
                     name: "Thumbnail quality"
                     SSelect { value: String(Settings.uiGet("thumbQuality", "medium"))
                               options: [ { value: "low", label: "Low" },
@@ -1997,7 +2005,8 @@ Window {
                 SRow {
                     visible: Settings.cookieSource === "guest"
                     name: "Import browser cookies"
-                    desc: win.importResult
+                    desc: win.importFailed ? "" : win.importResult
+                    error: win.importFailed ? "The import failed. Try again, or report it." : ""
                     Row {
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.gap(6)
@@ -2006,7 +2015,11 @@ Window {
                                   // clear the self-anchor: it conflicts inside a Row
                                   anchors.right: undefined; anchors.verticalCenter: undefined
                                   onPicked: (v) => win.importBrowser = v }
-                        SBtn { label: win.importing ? "..." : "Import"
+                        SBtn { objectName: "importReport"; visible: win.importFailed
+                               label: "Report…"
+                               onClicked: Report.send(Settings, "cookies", win.importBrowser,
+                                                      { browser: win.importBrowser, error: win.importError }) }
+                        SBtn { objectName: "importButton"; label: win.importing ? "..." : "Import"
                                // an import already running: nothing to press
                                enabled: !win.importing
                                onClicked: {
@@ -2016,6 +2029,7 @@ Window {
                                        { browser: win.importBrowser,
                                          profile: Settings.cookieProfile }, (r) => {
                                        win.importing = false
+                                       win.importError = r.ok ? "" : String(r.error || "")
                                        win.importResult = (r.ok && r.result && r.result.count !== undefined)
                                            ? "Imported " + r.result.count + " cookies" : "Import failed"
                                    })
@@ -2113,10 +2127,14 @@ Window {
                 }
                 SRow {
                     name: "Auto-tag library"
-                    desc: win.enrichResult
+                    desc: win.enrichFailed ? "" : win.enrichResult
+                    error: win.enrichFailed ? "Tagging failed. Try again, or report it." : ""
                     Row {
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.gap(6)
+                        SBtn { objectName: "taggingReport"; visible: win.enrichFailed
+                               label: "Report…"
+                               onClicked: Report.send(Settings, "tagging", "", { error: win.enrichError }) }
                         SBtn { label: win.enriching ? "..." : "Heuristic"
                                // one pass at a time
                                enabled: !win.enriching
@@ -2124,6 +2142,7 @@ Window {
                                    win.enriching = true; win.enrichResult = ""
                                    sidecar.rpc("metadata/batchEnrich", { mode: "heuristic" }, (r) => {
                                        win.enriching = false
+                                       win.enrichError = r.ok ? "" : String(r.error || "")
                                        win.enrichResult = (r.ok && r.result && r.result.count !== undefined)
                                            ? "Tagged " + r.result.count + " tracks (heuristic)" : "Failed"
                                    }, 600000)
@@ -2135,6 +2154,7 @@ Window {
                                    win.enriching = true; win.enrichResult = ""
                                    sidecar.rpc("metadata/batchEnrich", { mode: "api+heuristic" }, (r) => {
                                        win.enriching = false
+                                       win.enrichError = r.ok ? "" : String(r.error || "")
                                        win.enrichResult = (r.ok && r.result && r.result.count !== undefined)
                                            ? "Tagged " + r.result.count + " tracks (API + heuristic)" : "Failed"
                                    }, 600000)
@@ -4233,6 +4253,7 @@ Window {
                             // Enable anyway grants ui for a ui plugin (sidecar).
                             property bool confirming: false
                             reserve: 100 + (pluginRow.confirming ? 150 : 0)
+                                         + (win.pluginStatus(pluginBlock.modelData).length > 0 ? 90 : 0)
                                          + ((pluginBlock.modelData.settings || []).length > 0 ? 42 : 0)
                             name: pluginBlock.modelData.name + "  " + pluginBlock.modelData.version
                             error: win.pluginStatus(pluginBlock.modelData)
@@ -4253,6 +4274,15 @@ Window {
                                         pluginRow.confirming = false
                                         sidecar.setPluginEnabled(pluginBlock.modelData.id, true)
                                     }
+                                }
+                                SBtn {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    objectName: "pluginReport_" + pluginBlock.modelData.id
+                                    visible: win.pluginStatus(pluginBlock.modelData).length > 0
+                                    label: "Report…"
+                                    onClicked: Report.send(Settings, "plugin", pluginBlock.modelData.id, {
+                                        plugin: pluginBlock.modelData.id, version: pluginBlock.modelData.version,
+                                        state: pluginBlock.modelData.state, error: pluginBlock.modelData.error || "" })
                                 }
                                 SBtn {
                                     anchors.verticalCenter: parent.verticalCenter

@@ -14,6 +14,8 @@ Surface {
     // Delete, reset: the label in the danger colour. `danger` is a colour
     // role, not an ink, so it binds the label's color.
     property bool danger: false
+    // a site that must pick the words' colour itself (ErrorPanel's main button)
+    property color labelColor: "transparent"
     property real fontSize: 11
     property real pad: 16              // the word's air, both sides together
     signal clicked()
@@ -42,6 +44,7 @@ Surface {
         ink: root.ink
         font { pixelSize: Theme.fs(root.fontSize); family: Theme.fontFamily }
         Binding { target: lbl; property: "color"; value: Theme.danger; when: root.danger }
+        Binding { target: lbl; property: "color"; value: root.labelColor; when: root.labelColor.a > 0 && !root.danger }
     }
     MouseArea {
         id: ma

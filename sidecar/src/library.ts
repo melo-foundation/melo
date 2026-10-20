@@ -186,6 +186,12 @@ function processQueue(): void {
   }
 }
 
+// why the last download of each track failed, for the report
+const downloadErrors = new Map<string, string>();
+export function downloadError(videoId: string): string {
+  return downloadErrors.get(videoId) ?? "";
+}
+
 export function downloadTrack(videoId: string, cookieArgsFn: () => Promise<string[]>): Promise<boolean> {
   return new Promise((resolve) => {
     downloadQueue.push({ videoId, cookieArgsFn, resolve });
@@ -195,7 +201,8 @@ export function downloadTrack(videoId: string, cookieArgsFn: () => Promise<strin
 
 async function doDownload(videoId: string, cookieArgsFn: () => Promise<string[]>): Promise<boolean> {
   const track = library.tracks.find((t) => t.id === videoId);
-  if (!track) return false;
+  downloadErrors.delete(videoId);
+  if (!track) { downloadErrors.set(videoId, "not in the library"); return false; }
   if (track.downloaded && track.fileName && existsSync(join(downloadPath, track.fileName))) return true;
 
   try {
@@ -221,9 +228,11 @@ async function doDownload(videoId: string, cookieArgsFn: () => Promise<string[]>
       saveLibrary();
       return true;
     }
+    downloadErrors.set(videoId, "yt-dlp finished without a file");
     return false;
   } catch (err) {
     console.error(`Download failed for ${videoId}:`, err);
+    downloadErrors.set(videoId, String((err as Error)?.message ?? err).split("\n").slice(-3).join(" ").slice(0, 500));
     return false;
   }
 }

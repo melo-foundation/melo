@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Discord
+    url: https://discord.gg/T2jHMX6AcG
+    about: Report a problem without a GitHub account
   - name: Security problem
     url: https://github.com/melo-foundation/melo/security/advisories/new
     about: Report it privately

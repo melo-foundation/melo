@@ -8,11 +8,11 @@ function actionsFor(cause, choices) {
     case "guestWall":
         if (choices && choices.length > 1)
             return choices.map((b) => "browser:" + b).concat(["skip"])
-        return ["browser", "retry", "skip"]
-    case "browserWall": return ["update", "retry", "skip"]
-    case "signin": return ["signin", "skip"]
+        return ["browser", "retry", "skip", "report"]
+    case "browserWall": return ["update", "retry", "skip", "report"]
+    case "signin": return ["signin", "skip", "report"]
     case "": return []
-    default: return ["retry", "skip"]   // network, other
+    default: return ["retry", "skip", "report"]   // network, other
     }
 }
 
@@ -24,6 +24,7 @@ function labelFor(action, busy) {
     case "signin": return "Sign in again"
     case "retry": return "Retry"
     case "skip": return "Skip"
+    case "report": return "Report…"
     }
     return action
 }

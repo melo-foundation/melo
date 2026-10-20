@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import "../../src/qml/components"
+import "../../src/qml/components/report.js" as Report
 
 // The dialog a track that cannot be loaded shows: its buttons per cause, what
 // each answers, and the one-row form in a host as short as the mini player.
@@ -38,11 +39,11 @@ Item {
 
         function test_buttons_per_cause_data() {
             return [
-                { tag: "guest wall", cause: "guestWall", labels: ["Use browser account", "Retry", "Skip"] },
-                { tag: "browser wall", cause: "browserWall", labels: ["Update yt-dlp", "Retry", "Skip"] },
-                { tag: "sign-in", cause: "signin", labels: ["Sign in again", "Skip"] },
-                { tag: "network", cause: "network", labels: ["Retry", "Skip"] },
-                { tag: "other", cause: "other", labels: ["Retry", "Skip"] },
+                { tag: "guest wall", cause: "guestWall", labels: ["Use browser account", "Retry", "Skip", "Report…"] },
+                { tag: "browser wall", cause: "browserWall", labels: ["Update yt-dlp", "Retry", "Skip", "Report…"] },
+                { tag: "sign-in", cause: "signin", labels: ["Sign in again", "Skip", "Report…"] },
+                { tag: "network", cause: "network", labels: ["Retry", "Skip", "Report…"] },
+                { tag: "other", cause: "other", labels: ["Retry", "Skip", "Report…"] },
             ]
         }
         function test_buttons_per_cause(data) {
@@ -61,8 +62,21 @@ Item {
             waitForRendering(dlg)
             const bs = buttons(dlg)
             for (const b of bs) mouseClick(b.item)
-            compare(answers.count, 3)
-            compare([0, 1, 2].map(i => answers.signalArguments[i][0]), ["browser", "retry", "skip"])
+            compare(answers.count, 4)
+            compare([0, 1, 2, 3].map(i => answers.signalArguments[i][0]), ["browser", "retry", "skip", "report"])
+        }
+
+        function test_report_answers_report() {
+            dlg.cause = "network"; dlg.reason = "There was a problem with playback."; dlg.shown = true
+            waitForRendering(dlg)
+            mouseClick(buttons(dlg)[2].item)
+            compare(answers.signalArguments[0][0], "report")
+        }
+
+        function test_report_url_names_only_the_cause() {
+            compare(Report.issueUrl("playback", "network"),
+                    "https://github.com/melo-foundation/melo/issues/new?template=bug_report.yml"
+                    + "&title=Playback%20problem%20(network)")
         }
 
         function test_several_signed_in_browsers_are_a_choice() {
@@ -77,18 +91,18 @@ Item {
         function test_one_browser_is_no_choice() {
             dlg.cause = "guestWall"; dlg.choices = ["chrome"]; dlg.shown = true
             waitForRendering(dlg)
-            compare(buttons(dlg).map(b => b.label), ["Use browser account", "Retry", "Skip"])
+            compare(buttons(dlg).map(b => b.label), ["Use browser account", "Retry", "Skip", "Report…"])
         }
 
-        function test_checking_takes_only_skip() {
+        function test_checking_takes_only_skip_and_report() {
             dlg.cause = "guestWall"; dlg.busy = true; dlg.shown = true
             waitForRendering(dlg)
             const bs = buttons(dlg)
             compare(bs[0].label, "Checking…")
             for (const b of bs) mouseClick(b.item)
             keyClick(Qt.Key_Return)
-            compare(answers.count, 1)
-            compare(answers.signalArguments[0][0], "skip")
+            compare(answers.count, 2)
+            compare([0, 1].map(i => answers.signalArguments[i][0]), ["skip", "report"])
         }
 
         function test_escape_dismisses_and_enter_takes_the_first() {
@@ -113,7 +127,7 @@ Item {
             waitForRendering(mini)
             verify(mini.compact)
             const bs = buttons(mini)
-            compare(bs.map(b => b.label), ["Update yt-dlp", "Retry", "Skip"])
+            compare(bs.map(b => b.label), ["Update yt-dlp", "Retry", "Skip", "Report…"])
             for (const b of bs) {
                 const p = b.item.mapToItem(short, 0, 0)
                 verify(p.y >= 0 && p.y + b.item.height <= short.height, b.label + " inside the bar")
