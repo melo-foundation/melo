@@ -21,16 +21,19 @@ Item {
         name: "PlayFailDialog"
         when: windowShown
 
-        function init() { answers.clear(); miniAnswers.clear(); dlg.shown = false; mini.shown = false }
+        function init() {
+            answers.clear(); miniAnswers.clear(); dlg.shown = false; mini.shown = false
+            dlg.choices = []; dlg.busy = false
+        }
 
         // the buttons that are showing, in the dialog's action order
         function buttons(d) {
             const out = []
-            for (const a of ["browser", "update", "signin", "retry", "skip"]) {
+            for (const a of d.actions) {
                 const b = findChild(d, "playFail_" + a)
                 if (b && b.visible) out.push({ action: a, label: b.label, accent: b.accent, item: b })
             }
-            return out.sort((p, q) => d.actions.indexOf(p.action) - d.actions.indexOf(q.action))
+            return out
         }
 
         function test_buttons_per_cause_data() {
@@ -60,6 +63,32 @@ Item {
             for (const b of bs) mouseClick(b.item)
             compare(answers.count, 3)
             compare([0, 1, 2].map(i => answers.signalArguments[i][0]), ["browser", "retry", "skip"])
+        }
+
+        function test_several_signed_in_browsers_are_a_choice() {
+            dlg.cause = "guestWall"; dlg.choices = ["firefox", "chrome"]; dlg.shown = true
+            waitForRendering(dlg)
+            const bs = buttons(dlg)
+            compare(bs.map(b => b.label), ["Firefox", "Chrome", "Skip"])
+            mouseClick(bs[1].item)
+            compare(answers.signalArguments[0][0], "browser:chrome")
+        }
+
+        function test_one_browser_is_no_choice() {
+            dlg.cause = "guestWall"; dlg.choices = ["chrome"]; dlg.shown = true
+            waitForRendering(dlg)
+            compare(buttons(dlg).map(b => b.label), ["Use browser account", "Retry", "Skip"])
+        }
+
+        function test_checking_takes_only_skip() {
+            dlg.cause = "guestWall"; dlg.busy = true; dlg.shown = true
+            waitForRendering(dlg)
+            const bs = buttons(dlg)
+            compare(bs[0].label, "Checking…")
+            for (const b of bs) mouseClick(b.item)
+            keyClick(Qt.Key_Return)
+            compare(answers.count, 1)
+            compare(answers.signalArguments[0][0], "skip")
         }
 
         function test_escape_dismisses_and_enter_takes_the_first() {

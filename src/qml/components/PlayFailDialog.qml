@@ -14,14 +14,17 @@ Item {
     property bool shown: false
     property string cause: ""
     property string reason: ""
+    // the signed-in browsers to pick from, and a browser check in flight
+    property var choices: []
+    property bool busy: false
     signal answered(string action)
 
-    readonly property var actions: PlayFail.actionsFor(cause)
+    readonly property var actions: PlayFail.actionsFor(cause, choices)
     readonly property bool compact: height < Theme.ctl(200)
     visible: shown && cause.length > 0
     onVisibleChanged: if (visible) panel.forceActiveFocus()
 
-    function answer(action) { answered(action) }
+    function answer(action) { if (!busy || action === "skip" || action === "dismiss") answered(action) }
 
     Rectangle {
         anchors.fill: parent
@@ -82,7 +85,8 @@ Item {
                         required property string modelData
                         required property int index
                         objectName: "playFail_" + modelData
-                        label: PlayFail.labelFor(modelData)
+                        label: PlayFail.labelFor(modelData, dlg.busy)
+                        enabled: !dlg.busy || modelData === "skip"
                         accent: index === 0
                         pad: 24; fontSize: 12
                         onClicked: dlg.answer(modelData)
@@ -129,7 +133,8 @@ Item {
                         required property string modelData
                         required property int index
                         objectName: "playFail_" + modelData
-                        label: PlayFail.labelFor(modelData)
+                        label: PlayFail.labelFor(modelData, dlg.busy)
+                        enabled: !dlg.busy || modelData === "skip"
                         accent: index === 0
                         pad: 18; fontSize: 11
                         onClicked: dlg.answer(modelData)

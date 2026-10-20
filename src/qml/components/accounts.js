@@ -86,6 +86,15 @@ function askStatus(host, kind, id, done, fresh, fail) {
     })
 }
 
+// The browsers whose stores a list refresh reads: all of them once an account
+// menu has opened or on a fresh read, else only the one in use. Reading a
+// Chromium store can raise a keyring prompt.
+function browsersToAsk(browsers, fresh, menuOpened, cookieSource, browser) {
+    const list = browsers || []
+    if (fresh || menuOpened) return list.slice()
+    return cookieSource === "browser" ? list.filter((b) => b === browser) : []
+}
+
 // the browser re-read when melo comes to the front: only the one in use
 function frontRead(cookieSource, browser) {
     return cookieSource === "browser" && browser ? browser : ""

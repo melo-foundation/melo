@@ -85,7 +85,7 @@ MeloWindow {
     function rpcReady() { return typeof sidecar !== "undefined" && sidecar && sidecar.ready }
     function refresh() {
         if (!rpcReady()) return
-        AccountStore.refresh(true)
+        // browsers are read when the account menu opens, not before
         sidecar.rpc("settings/locales", {}, (r) => {
             if (!r.ok || !r.result) return
             obw.localeList = r.result.locales || []

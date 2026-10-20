@@ -204,4 +204,11 @@ TestCase {
         compare(Accounts.frontRead("none", "firefox"), "")
         compare(Accounts.frontRead("browser", ""), "")
     }
+
+    function test_no_browser_store_is_read_before_a_menu_opens() {
+        compare(Accounts.browsersToAsk(browsers, false, false, "guest", "firefox"), [])
+        compare(Accounts.browsersToAsk(browsers, false, false, "browser", "chromium"), ["chromium"])
+        compare(Accounts.browsersToAsk(browsers, true, false, "guest", "firefox"), browsers)
+        compare(Accounts.browsersToAsk(browsers, false, true, "guest", "firefox"), browsers)
+    }
 }

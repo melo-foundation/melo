@@ -206,6 +206,8 @@ MeloWindow {
     }
     // the playing track's failure, when this is the window in use
     property bool failShown: false
+    property var failChoices: []
+    property bool failBusy: false
     signal failAnswered(string action)
     PlayFailDialog {
         parent: dw.contentItem
@@ -213,6 +215,8 @@ MeloWindow {
         shown: dw.failShown && dw.open
         cause: PlayerState.failCause
         reason: PlayerState.failReason
+        choices: dw.failChoices
+        busy: dw.failBusy
         onAnswered: (a) => dw.failAnswered(a)
     }
 }

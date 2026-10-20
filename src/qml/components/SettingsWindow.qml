@@ -557,7 +557,8 @@ Window {
     // every browser's store
     function refreshProfiles() { AccountStore.refresh(false) }
 
-    function open() {
+    function open(tab) {
+        if (tab) win.tab = tab
         cfOnSkip = Settings.uiGet("crossfadeOnSkip", false) === true
         simpleAppearance = String(Settings.uiGet("appearanceMode", "full")) === "simple"
         scrollSpeed = Number(Settings.uiGet("scrollSpeed", 3))
@@ -572,7 +573,6 @@ Window {
         gestures = g
         importResult = ""
         enrichResult = ""
-        AccountStore.refresh(true)   // opening settings re-reads every browser's login
         applyGlass()
         visible = true
         requestActivate()
@@ -1219,19 +1219,23 @@ Window {
                 property string value
                 property string note: ""   // after the value: a slot's unsaved arrangement
                 signal picked(string v)
+                signal opening()
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 function labelFor(v) {
                     for (const o of options) if (o.value === v) return o.label
                     return v
                 }
+                function rows() { return ss.options.map(o => ({ label: o.label, act: () => ss.picked(o.value) })) }
                 label: labelFor(value) + note
                 menu: winMenu
                 onClicked: {
+                    ss.opening()
                     const p = ss.mapToItem(null, 0, ss.height + 2)
-                    winMenu.openAt(win, p.x, p.y, ss.options.map(o =>
-                        ({ label: o.label, act: () => ss.picked(o.value) })), ss)
+                    winMenu.openAt(win, p.x, p.y, ss.rows(), ss)
                 }
+                // an open menu follows its options: an account's status lands after it opens
+                onOptionsChanged: if (winMenu.visible && winMenu.owner === ss) winMenu.actions = ss.rows()
             }
 
             // A section header, not a container: a `default property alias` also redirects
@@ -1916,7 +1920,10 @@ Window {
                     // One choice: a browser is an account as a profile is, and
                     // a signed-in one says whose it is.
                     name: "Account/Profile"
-                    SSelect { value: { const a = Accounts.activeOf(win.accountEntries); return a ? a.key : "" }
+                    SSelect { objectName: "accountSelect"
+                              // every browser's login is read when this opens, not before
+                              onOpening: AccountStore.refresh(true)
+                              value: { const a = Accounts.activeOf(win.accountEntries); return a ? a.key : "" }
                               options: win.accountEntries.map((e) => ({ value: e.key, label: e.label }))
                               onPicked: (v) => {
                                   const e = win.accountEntries.find((x) => x.key === v)
@@ -1926,9 +1933,22 @@ Window {
                 SRow {
                     name: "Playback cookies"
                     visible: Settings.cookieSource !== "browser"
-                    SSelect { value: Settings.streamCookieSource
-                              options: [{ value: "same", label: "Same" }, { value: "browser", label: "Browser" }]
-                              onPicked: (v) => Settings.streamCookieSource = v }
+                    Row {
+                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        spacing: Theme.gap(6)
+                        SSelect { visible: Settings.streamCookieSource === "browser"
+                                  objectName: "playbackBrowserSelect"
+                                  onOpening: AccountStore.refresh(true)
+                                  value: Settings.browser
+                                  options: win.accountEntries.filter((e) => e.kind === "browser")
+                                                             .map((e) => ({ value: e.id, label: e.label }))
+                                  anchors.right: undefined; anchors.verticalCenter: undefined
+                                  onPicked: (v) => Settings.browser = v }
+                        SSelect { value: Settings.streamCookieSource
+                                  options: [{ value: "same", label: "Same" }, { value: "browser", label: "Browser" }]
+                                  anchors.right: undefined; anchors.verticalCenter: undefined
+                                  onPicked: (v) => Settings.streamCookieSource = v }
+                    }
                 }
                 Item {   // profile management strip
                     visible: Settings.cookieSource === "guest"

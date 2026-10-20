@@ -960,6 +960,15 @@ if(Qt6Test_FOUND)
     add_test(NAME videowanted COMMAND tst_videowanted)
 
     # The app-wide idle clock: silence is idle, any input wakes it.
+    # which browser stores are read: none until an account menu opens
+    add_executable(tst_accountreads tests/cpp/tst_accountreads.cpp)
+    target_compile_definitions(tst_accountreads PRIVATE
+        MELO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(tst_accountreads PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)
+    add_test(NAME accountreads COMMAND tst_accountreads)
+    set_tests_properties(accountreads PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     add_executable(tst_uiactivity tests/cpp/tst_uiactivity.cpp src/core/UiActivity.cpp)
     target_include_directories(tst_uiactivity PRIVATE src/core)
     target_link_libraries(tst_uiactivity PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)

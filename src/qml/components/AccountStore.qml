@@ -4,9 +4,9 @@ import "accounts.js" as Accounts
 
 // The accounts, held once, so the title-bar menu, the wizard's dropdown and
 // the settings window's Account choice change together.
-// Every browser is re-read on a switch (the sidecar dropped its cookies) and
-// when an account menu opens, since the menus list them all. Melo returning to
-// the front re-reads only the browser in use.
+// No browser store is read until an account menu opens (or one is in use);
+// after that every browser is re-read on a switch and on each menu open.
+// Melo returning to the front re-reads only the browser in use.
 QtObject {
     id: store
 
@@ -16,6 +16,7 @@ QtObject {
     property var status: ({})
     // Browser re-reads in flight, shown as checking until they land.
     property var checking: ({})
+    property bool menuOpened: false
     function settle(key) {
         if (!(key in store.checking)) return
         const c = Object.assign({}, store.checking); delete c[key]; store.checking = c
@@ -58,6 +59,7 @@ QtObject {
     // the lists, then every identity on them; `fresh` re-reads each browser
     function refresh(fresh) {
         if (!ready()) return
+        if (fresh) store.menuOpened = true
         // checking from the first frame: the browser list is a round trip away
         if (fresh) {
             const c = Object.assign({}, store.checking)
@@ -74,7 +76,9 @@ QtObject {
             for (const k in store.checking)
                 if (k !== Accounts.statusKey("browser", Settings.browser)
                         && !store.browsers.some((b) => Accounts.statusKey("browser", b) === k)) store.settle(k)
-            for (const b of store.browsers) store.ask("browser", b, fresh)
+            for (const b of Accounts.browsersToAsk(store.browsers, fresh, store.menuOpened,
+                                                   Settings.cookieSource, Settings.browser))
+                store.ask("browser", b, fresh)
         })
     }
 

@@ -56,3 +56,17 @@ export function detectBrowsers(o: BrowserProbe): string[] {
 export function installedBrowsers(): string[] {
   return detectBrowsers({ platform: process.platform, home: homedir(), env: process.env, exists: existsSync });
 }
+
+export interface BrowserLogin { browser: string; signedIn: boolean | null }
+export interface BrowserPick { pick?: string; choose?: string[] }
+
+// The browser "Use browser account" plays with: the one signed in to YouTube,
+// a choice when several are, else the saved one if installed, else the first
+// installed. Nothing installed keeps the saved one.
+export function pickBrowser(logins: BrowserLogin[], saved: string): BrowserPick {
+  const signed = logins.filter((l) => l.signedIn === true).map((l) => l.browser);
+  if (signed.length === 1) return { pick: signed[0] };
+  if (signed.length > 1) return { choose: signed };
+  if (logins.some((l) => l.browser === saved) || !logins.length) return { pick: saved };
+  return { pick: logins[0].browser };
+}

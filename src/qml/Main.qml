@@ -1637,6 +1637,8 @@ Window {
         id: queueWin
         kind: "queue"
         failShown: root.failHost === kind
+        failChoices: root.failBrowsers
+        failBusy: root.failChecking
         onFailAnswered: (a) => root.answerFailure(a)
         listEmpty: popupQueuePanel.empty
         defaultControls: root.detachedControls
@@ -1650,6 +1652,8 @@ Window {
         id: visWin
         kind: "vis"
         failShown: root.failHost === kind
+        failChoices: root.failBrowsers
+        failBusy: root.failChecking
         onFailAnswered: (a) => root.answerFailure(a)
         defaultControls: root.detachedControls
         onFrameShown: root.windowFramed(visWin)
@@ -1689,6 +1693,8 @@ Window {
         id: videoWin
         kind: "video"
         failShown: root.failHost === kind
+        failChoices: root.failBrowsers
+        failBusy: root.failChecking
         onFailAnswered: (a) => root.answerFailure(a)
         defaultControls: root.detachedControls
         onFrameShown: root.windowFramed(videoWin)
@@ -1771,6 +1777,8 @@ Window {
             shown: root.failHost === "mini" && root.miniPlayer
             cause: PlayerState.failCause
             reason: PlayerState.failReason
+            choices: root.failBrowsers
+            busy: root.failChecking
             onAnswered: (a) => root.answerFailure(a)
         }
         ClickThroughBadge {
@@ -3224,11 +3232,10 @@ Window {
             // Each action fixes the error it appears on; a cookie switch or a retry
             // plays the same track again.
             PlayerState.error = ""
-            if (kind === "signin") root.settingsWindow().open()
-            if (kind === "playbackCookies") Settings.streamCookieSource = "browser"
+            if (kind === "signin") root.settingsWindow().open("personalization")
+            if (kind === "playbackCookies") { root.playbackCookiesFromBrowser(); return }
             // trackInfo is YouTube's numbers, not a track: replaying it cleared the queue
-            if ((kind === "retry" || kind === "playbackCookies") && PlayerState.hasTrack)
-                Player.answerFailure("retry")
+            if (kind === "retry" && PlayerState.hasTrack) Player.answerFailure("retry")
         }
     }
 
@@ -3244,17 +3251,62 @@ Window {
     }
     Connections {
         target: PlayerState
-        function onFailureChanged() { root.failHost = PlayerState.failCause ? root.pickFailHost() : "" }
+        function onFailureChanged() {
+            root.failHost = PlayerState.failCause ? root.pickFailHost() : ""
+            root.failBrowsers = []
+            root.failChecking = false
+        }
+    }
+    // "Use browser account": the browser signed in to YouTube, a choice when
+    // several are (cookies/pickBrowser reads each installed one)
+    property var failBrowsers: []
+    property bool failChecking: false
+    property int browserPickGen: 0
+    function pickBrowser(done) {
+        const gen = ++root.browserPickGen
+        sidecar.rpc("cookies/pickBrowser", {}, (r) => {
+            if (gen !== root.browserPickGen) return
+            done(r && r.ok && r.result ? r.result : {})
+        })
+    }
+    function playWithBrowser(b) {
+        root.failBrowsers = []
+        if (b && Settings.browser !== b) Settings.browser = b
+        Player.answerFailure("browser")
     }
     function answerFailure(action) {
-        if (action === "signin") root.settingsWindow().open()
+        if (action === "browser") {
+            if (root.failChecking) return
+            root.failChecking = true
+            root.pickBrowser((res) => {
+                root.failChecking = false
+                if (PlayerState.failCause !== "guestWall") return
+                if (res.choose && res.choose.length > 1) root.failBrowsers = res.choose
+                else root.playWithBrowser(res.pick || Settings.browser)
+            })
+            return
+        }
+        if (action.indexOf("browser:") === 0) { root.playWithBrowser(action.slice(8)); return }
+        root.browserPickGen++   // an answer made while the check runs wins over it
+        if (action === "signin") root.settingsWindow().open("personalization")
         Player.answerFailure(action)
+    }
+    // the error bar's "Use browser cookies": several signed in is a choice, made in settings
+    function playbackCookiesFromBrowser() {
+        root.pickBrowser((res) => {
+            if (res.pick && Settings.browser !== res.pick) Settings.browser = res.pick
+            Settings.streamCookieSource = "browser"
+            if (res.choose && res.choose.length > 1) root.settingsWindow().open("personalization")
+            else if (PlayerState.hasTrack) Player.answerFailure("retry")
+        })
     }
     PlayFailDialog {
         id: playFailMain
         shown: root.failHost === "main"
         cause: PlayerState.failCause
         reason: PlayerState.failReason
+        choices: root.failBrowsers
+        busy: root.failChecking
         onAnswered: (a) => root.answerFailure(a)
     }
 

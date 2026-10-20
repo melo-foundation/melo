@@ -1,7 +1,7 @@
 // RPC method registry: thin adapters over the sidecar modules.
 import { method, notify, RpcError, log } from "../rpc";
 import { loadSettings, saveSettings, touchesCookieIdentity, autoTagEnabled, tagServicesOf } from "../settings";
-import { installedBrowsers } from "../browsers";
+import { installedBrowsers, pickBrowser } from "../browsers";
 import * as it from "../innertube";
 import * as st from "../streams";
 import * as lib from "../library";
@@ -230,6 +230,18 @@ export function registerHandlers(): void {
     };
   });
   method("cookies/browsers", () => ({ browsers: installedBrowsers() }));
+  // which installed browser is signed in to YouTube, read fresh: asked when
+  // "Use browser account" is pressed
+  method("cookies/pickBrowser", async () => {
+    const logins = await Promise.all(installedBrowsers().map(async (browser) => {
+      it.forgetBrowser(browser);
+      try { return { browser, signedIn: it.hasAuthCookie(await it.resolveCookies("browser", browser, "")) }; }
+      catch { return { browser, signedIn: null }; }
+    }));
+    const picked = pickBrowser(logins, loadSettings().browser);
+    log(`[cookies] pickBrowser ${logins.map((l) => `${l.browser}=${l.signedIn}`).join(" ") || "none installed"} -> ${picked.pick ?? picked.choose?.join("|")}`);
+    return { browsers: logins, ...picked };
+  });
   method("cookies/profiles", () => ({ profiles: gc.listProfiles() }));
   method("cookies/import", ({ browser, profile }) => gc.importBrowserCookies(browser, profile).then((count) => ({ count })));
   // the feed and stream sessions carry the old visitor id; drop them with the cookies
