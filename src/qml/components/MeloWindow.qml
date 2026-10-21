@@ -88,25 +88,39 @@ Window {
         function onThemeChanged() { if (win.visible) win.applyGlass() }
     }
 
-    Surface {
+    // This window's ground, as Main's: what its adaptive readers sample, a layer
+    // only while one is on screen. Its own surfaces read nothing: a source that
+    // contains its reader is a loop.
+    readonly property Item meloGround: groundItem
+    Item {
+        id: groundItem
         anchors.fill: parent
-        role: "window"
-        radius: Theme.windowRadius
-        topLeftRadius: win.topCornerRadius; topRightRadius: win.topCornerRadius
-        bottomLeftRadius: Theme.windowRadiusBottom; bottomRightRadius: Theme.windowRadiusBottom
+        property int groundReaders: 0
+        layer.enabled: Theme.anyAdaptive && groundReaders > 0
+        readonly property Item readItem: groundRead.texture
+        Surface {
+            anchors.fill: parent
+            role: "window"
+            backdrop: null
+            radius: Theme.windowRadius
+            topLeftRadius: win.topCornerRadius; topRightRadius: win.topCornerRadius
+            bottomLeftRadius: Theme.windowRadiusBottom; bottomRightRadius: Theme.windowRadiusBottom
+        }
+        Surface {   // the page below the title bar, as the main window's below its header
+            anchors.fill: parent
+            anchors.topMargin: titleBar.y + titleBar.height + win.titleGap
+            anchors.leftMargin: win.shaped ? 0 : win.frL
+            anchors.rightMargin: win.shaped ? 0 : win.frR
+            anchors.bottomMargin: win.shaped ? 0 : win.frB
+            role: "page"
+            backdrop: null
+            topLeftRadius: 0; topRightRadius: 0
+            bottomLeftRadius: Math.max(0, Theme.windowRadiusBottom - Math.max(win.frL, win.frB))
+            bottomRightRadius: Math.max(0, Theme.windowRadiusBottom - Math.max(win.frR, win.frB))
+            visible: Theme.hasPage
+        }
     }
-    Surface {   // the page below the title bar, as the main window's below its header
-        anchors.fill: parent
-        anchors.topMargin: titleBar.y + titleBar.height + win.titleGap
-        anchors.leftMargin: win.shaped ? 0 : win.frL
-        anchors.rightMargin: win.shaped ? 0 : win.frR
-        anchors.bottomMargin: win.shaped ? 0 : win.frB
-        role: "page"
-        topLeftRadius: 0; topRightRadius: 0
-        bottomLeftRadius: Math.max(0, Theme.windowRadiusBottom - Math.max(win.frL, win.frB))
-        bottomRightRadius: Math.max(0, Theme.windowRadiusBottom - Math.max(win.frR, win.frB))
-        visible: Theme.hasPage
-    }
+    GroundPictures { id: groundRead; base: groundItem }
     Loader {   // the window's shape (WindowMask)
         id: shapeLoader
         parent: win.contentItem

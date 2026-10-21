@@ -1,5 +1,6 @@
 pragma Singleton
 import QtQuick
+import QtQuick.Window
 
 // Theme singleton over ThemeBackend (C++ ThemeStore: resolved palette and
 // merged settings). Components use only this, never ThemeBackend directly.
@@ -22,6 +23,43 @@ QtObject {
     // layer. A ShaderEffectSource reads only its own window, so Surface checks the
     // window and the settings, EQ and metadata windows fall back to hardware inversion.
     property Item backdrop: null
+    // A reader of `backdrop` holds its window's ground: this one in Main's window,
+    // MeloWindow's meloGround in another, none in a window without one. It samples
+    // the ground's readItem (GroundPictures).
+    function groundOf(win) {
+        if (!win) return null
+        if (backdrop && backdrop.Window.window === win) return backdrop
+        return win.meloGround !== undefined ? win.meloGround : null
+    }
+    function groundFor(b, win) { return b !== null && b === backdrop ? groundOf(win) : null }
+    function sampled(b, win) {
+        const g = groundFor(b, win)
+        if (!g) return b
+        return g.readItem ? g.readItem : g
+    }
+    // Main's ground counts its readers in adaptiveUsers, a window's on itself
+    function holdGround(g, d) {
+        if (!g) return
+        if (g === backdrop) adaptiveUsers += d
+        else if (g.groundReaders !== undefined) g.groundReaders += d
+    }
+    function readable(b, win) {
+        const s = sampled(b, win)
+        return s !== null && !!win && s.Window.window === win
+    }
+    // Pictures drawn over a ground (video), which readers over them sample
+    // through GroundPictures.
+    property var groundPictures: []
+    function addGroundPicture(it) {
+        if (groundPictures.indexOf(it) < 0) groundPictures = groundPictures.concat([it])
+    }
+    function dropGroundPicture(it) {
+        const i = groundPictures.indexOf(it)
+        if (i < 0) return
+        const a = groundPictures.slice()
+        a.splice(i, 1)
+        groundPictures = a
+    }
 
     // One fill cache per window, registered here. Shared masks and edge fields are
     // layers, whose textures belong to the window they render in, so the cache is an
@@ -53,6 +91,9 @@ QtObject {
             if (hasAdaptive(p[surfaceRoles[i]])) return true
         for (let i = 0; i < inkRoles.length; ++i)
             if (hasAdaptive(p[inkRoles[i]])) return true
+        // an ink's halo, the over-artwork outline's default included
+        for (let i = 0; i < inkRoles.length; ++i)
+            if (hasAdaptive(inkRole(inkRoles[i]).effect.colour)) return true
         return false
     }
 

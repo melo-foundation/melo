@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import Melo 1.0
+import ".."
 
 // The texture twin of a ScrollText whose ink blends or adapts, loaded by source
 // so ScrollText (in every list row) pays for HueLumText, BlendText and the Melo
@@ -15,8 +16,7 @@ Item {
     property Item host: null
     readonly property var r: host ? host.inkRole : null
     readonly property bool adaptive: host ? host.adaptive : false
-    readonly property bool useShader: adaptive && host && host.backdrop !== null
-                                      && host.backdrop.Window.window === host.Window.window
+    readonly property bool useShader: adaptive && host && Theme.readable(host.backdrop, host.Window.window)
     readonly property bool styled: host ? host.styled : false
     readonly property string mode: r ? r.blend : ""
     readonly property bool combo: (useShader || styled) && mode.length > 0

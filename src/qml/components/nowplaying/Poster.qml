@@ -116,54 +116,52 @@ Item {
     // sleeve and the cover, and the picture stays as the page's ground,
     // blurred. Without shaders there is no blur, so it stays a poster only.
     property string videoFit: "fill"
-    // the poster title reads the picture only where it stands on it, not on a letterbox bar
-    readonly property bool titleOnPicture: {
-        const r = videoSurf.contentRect
-        return poster.x >= r.x && poster.y >= r.y
-            && poster.x + poster.width * poster.k <= r.x + r.width
-            && poster.y + poster.height * poster.k <= r.y + r.height
-    }
     function readVideoFit() { videoFit = String(Settings.uiGet("videoFit", "fill")) }
     Connections { target: Settings; function onChanged() { s.readVideoFit() } }
-    VideoSurface {
-        id: videoSurf
+    // the picture as drawn, blur and cover included, is what readers over it sample
+    GroundPicture {
         anchors.fill: parent
-        fit: s.videoFit
-        fillMix: Math.min(1, s.p * 2)   // zooms to fill by halfway to the record: the ground always fills
-        running: s.np.showVideo && PlayerState.hasVideo && s.visible && PlayerState.videoWanted
-        frozen: Player.uiFrozen
-        opacity: s.videoIn * Theme.videoOpacity
         visible: videoSurf.opacity > 0.01
-        layer.enabled: s.shaderOk && visible
-        // HueLum turns this layer on for its backdrop; without shaders it must stay plain
-        layer.effect: s.shaderOk ? groundBlur : null
-        Component {
-            id: groundBlur
-            MultiEffect { blurEnabled: true; blur: s.p; blurMax: 64; autoPaddingEnabled: false }
-        }
-        HoverHandler { id: videoHover }
-        TapHandler {
-            acceptedButtons: Qt.LeftButton
-            gesturePolicy: TapHandler.ReleaseWithinBounds
-            enabled: s.videoIn > 0.5 && s.p < 0.5
-            onTapped: s.toggleOverlay()
-        }
-        TapHandler {
-            acceptedButtons: Qt.RightButton
-            enabled: s.videoIn > 0.5 && s.p < 0.5 && s.np.videoMenu !== null
-            onTapped: (ev) => {
-                const g = s.mapToItem(null, ev.position.x, ev.position.y)
-                s.np.videoMenu(g.x, g.y)
+        VideoSurface {
+            id: videoSurf
+            anchors.fill: parent
+            fit: s.videoFit
+            fillMix: Math.min(1, s.p * 2)   // zooms to fill by halfway to the record: the ground always fills
+            running: s.np.showVideo && PlayerState.hasVideo && s.visible && PlayerState.videoWanted
+            frozen: Player.uiFrozen
+            opacity: s.videoIn * Theme.videoOpacity
+            visible: videoSurf.opacity > 0.01
+            layer.enabled: s.shaderOk && visible
+            // without shaders it must stay plain
+            layer.effect: s.shaderOk ? groundBlur : null
+            Component {
+                id: groundBlur
+                MultiEffect { blurEnabled: true; blur: s.p; blurMax: 64; autoPaddingEnabled: false }
+            }
+            HoverHandler { id: videoHover }
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                gesturePolicy: TapHandler.ReleaseWithinBounds
+                enabled: s.videoIn > 0.5 && s.p < 0.5
+                onTapped: s.toggleOverlay()
+            }
+            TapHandler {
+                acceptedButtons: Qt.RightButton
+                enabled: s.videoIn > 0.5 && s.p < 0.5 && s.np.videoMenu !== null
+                onTapped: (ev) => {
+                    const g = s.mapToItem(null, ev.position.x, ev.position.y)
+                    s.np.videoMenu(g.x, g.y)
+                }
             }
         }
-    }
-    // Off the poster the page's own colour (the window's where the page is clear)
-    // covers the blurred picture at up to 75%, so the words keep their contrast.
-    Rectangle {
-        anchors.fill: parent
-        color: Qt.alpha(Theme.page.a > 0.05 ? Theme.page : Theme.window, 1)
-        opacity: s.p * 0.75 * s.videoIn * Theme.videoOpacity
-        visible: opacity > 0.01
+        // Off the poster the page's own colour (the window's where the page is clear)
+        // covers the blurred picture at up to 75%, so the words keep their contrast.
+        Rectangle {
+            anchors.fill: parent
+            color: Qt.alpha(Theme.page.a > 0.05 ? Theme.page : Theme.window, 1)
+            opacity: s.p * 0.75 * s.videoIn * Theme.videoOpacity
+            visible: opacity > 0.01
+        }
     }
 
     // ---- the record, out from behind the sleeve -------------------------
@@ -694,13 +692,13 @@ Item {
         // centred to meet the classic page, without being centred at its own stop.
         property real subCentre: 0
         property bool showMeta: false
-        // The picture is a backdrop only where the words stand on it. Off the
+        // The artwork is a backdrop only where the words stand on it. Off the
         // poster stop it is a sleeve somewhere else and these words are on the
         // page; reading it there maps them outside its texture, the shader
         // clamps, and an adaptive ink or halo samples the poster's picture.
+        // The video is in the ground (GroundPicture).
         property bool onArt: false
-        readonly property Item wordBackdrop: !onArt ? Theme.backdrop
-                                             : s.videoIn > 0.5 ? (s.titleOnPicture ? videoSurf : Theme.backdrop)
+        readonly property Item wordBackdrop: !onArt || s.videoIn > 0.5 ? Theme.backdrop
                                              : artImg.status === Image.Ready ? artImg : Theme.backdrop
         readonly property real k: s.curPx / px
         // Where this block's TITLE sits, not where its box does. The copies

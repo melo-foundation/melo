@@ -1312,6 +1312,7 @@ Window {
             // ...and only while something is reading it. The palette scan says
             // a role COULD adapt; the count says one is on screen now.
             layer.enabled: Theme.anyAdaptive && Theme.adaptiveUsers > 0
+            readonly property Item readItem: groundRead.texture
             Component.onCompleted: Theme.backdrop = ground
 
             Surface {
@@ -1355,6 +1356,7 @@ Window {
                 renderY: height - root.lastFullHeight
             }
         }   // ground
+        GroundPictures { id: groundRead; base: ground }
     }
 
     // mini-mode queue: rendered by the (otherwise invisible) main window,
@@ -1581,14 +1583,39 @@ Window {
             role: "window"
             // The card's corners and frame are the popup's (popupShape); what it holds
             // sits inset by the radius, clear of a cut or rounded corner.
-            Image {   // under the video, for stills and the first beat
+            // the skeleton shows only before there is video, so it can sit over the picture
+            GroundPicture {
                 anchors.fill: parent
                 anchors.margins: Theme.windowRadius
-                source: PlayerState.trackThumbnail
-                fillMode: Image.PreserveAspectCrop
-                asynchronous: true
-                opacity: 1 - popupVideo.fade
-                visible: root.popupVideoMode && opacity > 0.01
+                visible: root.popupVideoMode
+                Image {   // under the video, for stills and the first beat
+                    anchors.fill: parent
+                    source: PlayerState.trackThumbnail
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    opacity: 1 - popupVideo.fade
+                    visible: opacity > 0.01
+                }
+                VideoSurface {
+                    id: popupVideo
+                    anchors.fill: parent
+                    running: root.popupVideoMode && root.miniVisWanted && root.miniQueueShown
+                             && PlayerState.hasVideo
+                    frozen: root.resizeFreeze || !PlayerState.isPlaying
+                    fit: root.videoFit
+                    property real fade: hasFrame ? 1 : 0
+                    Behavior on fade { NumberAnimation { duration: 300 } }
+                    opacity: fade * Theme.videoOpacity
+                    visible: opacity > 0.01
+                    TapHandler {
+                        acceptedButtons: Qt.RightButton
+                        enabled: popupVideo.fade > 0.5
+                        onTapped: (ev) => {
+                            const g = popupVideo.mapToItem(null, ev.position.x, ev.position.y)
+                            root.openVideoMenu(g.x, g.y, root)
+                        }
+                    }
+                }
             }
             Skeleton {
                 anchors.fill: parent
@@ -1597,27 +1624,6 @@ Window {
                 shimmer: true
                 opacity: 0.6
                 visible: root.popupVideoMode && (PlayerState.videoPending || PlayerState.loading) && !PlayerState.hasVideo
-            }
-            VideoSurface {
-                id: popupVideo
-                anchors.fill: parent
-                anchors.margins: Theme.windowRadius
-                running: root.popupVideoMode && root.miniVisWanted && root.miniQueueShown
-                         && PlayerState.hasVideo
-                frozen: root.resizeFreeze || !PlayerState.isPlaying
-                fit: root.videoFit
-                property real fade: hasFrame ? 1 : 0
-                Behavior on fade { NumberAnimation { duration: 300 } }
-                opacity: fade * Theme.videoOpacity
-                visible: opacity > 0.01
-                TapHandler {
-                    acceptedButtons: Qt.RightButton
-                    enabled: popupVideo.fade > 0.5
-                    onTapped: (ev) => {
-                        const g = popupVideo.mapToItem(null, ev.position.x, ev.position.y)
-                        root.openVideoMenu(g.x, g.y, root)
-                    }
-                }
             }
             PopupModeToggle {
                 anchors.top: parent.top
@@ -1703,26 +1709,29 @@ Window {
         onReattachRequested: root.reattach(videoWin)
         onResizeStarting: root.beginDetachedResize(videoWin)
         onMenuRequested: (x, y) => root.openWindowMenu(videoWin, x, y)
-        Image {   // under the video, for stills and the first beat
+        GroundPicture {
             parent: videoWin.body
             anchors.fill: parent
-            source: PlayerState.trackThumbnail
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            opacity: 1 - windowVideo.fade
-            visible: videoWin.open && opacity > 0.01
-        }
-        VideoSurface {
-            id: windowVideo
-            parent: videoWin.body
-            anchors.fill: parent
-            running: videoWin.open && PlayerState.hasVideo
-            frozen: root.resizeFreeze || !PlayerState.isPlaying
-            fit: root.videoFit
-            property real fade: hasFrame ? 1 : 0
-            Behavior on fade { NumberAnimation { duration: 300 } }
-            opacity: fade * Theme.videoOpacity
-            visible: opacity > 0.01
+            visible: videoWin.open
+            Image {   // under the video, for stills and the first beat
+                anchors.fill: parent
+                source: PlayerState.trackThumbnail
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                opacity: 1 - windowVideo.fade
+                visible: opacity > 0.01
+            }
+            VideoSurface {
+                id: windowVideo
+                anchors.fill: parent
+                running: videoWin.open && PlayerState.hasVideo
+                frozen: root.resizeFreeze || !PlayerState.isPlaying
+                fit: root.videoFit
+                property real fade: hasFrame ? 1 : 0
+                Behavior on fade { NumberAnimation { duration: 300 } }
+                opacity: fade * Theme.videoOpacity
+                visible: opacity > 0.01
+            }
         }
         Row {
             parent: videoWin.body

@@ -39,10 +39,9 @@ Item {
     // alpha is the bottom layer's, so a styled surface reads the master
     // opacity from here.
     readonly property real fillOpacity: r ? r.opacity : 1
-    // A ShaderEffectSource renders nothing for an item in another window, so
-    // secondary windows fall back to the hardware inversion instead of a blank surface.
-    readonly property bool sameWindow: backdrop !== null
-        && backdrop.Window.window === root.Window.window
+    // A ShaderEffectSource renders nothing for an item in another window, so a
+    // window with no ground of its own falls back to the hardware inversion.
+    readonly property bool sameWindow: Theme.readable(backdrop, root.Window.window)
     readonly property bool adaptive: wantAdaptive && sameWindow
     readonly property string hwMode: blend.length > 0 ? blend
                                    : (wantAdaptive && !adaptive ? "invert" : "normal")

@@ -27,7 +27,7 @@ Item {
     // against the ink.
     property Item backdrop: null
     readonly property bool adaptiveHalo: on && Theme.sourceOf(effect.colour) === "adaptive"
-                                         && backdrop !== null && backdrop.Window.window === halo.Window.window
+                                         && Theme.readable(backdrop, halo.Window.window)
     readonly property vector4d amounts: on ? Theme.adaptiveOf(effect.colour) : Qt.vector4d(0, 0, 0, 1)
     // a styled effect colour fills the same coverage from styled.frag
     readonly property bool styledHalo: on && Theme.isStyled(Theme.sourceOf(effect.colour))
