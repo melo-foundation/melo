@@ -2,7 +2,9 @@
 // safe no-op; kwinAvailable() is false,
 // so QML uses its non-KWin fallbacks (client-side opacity swap, no blur).
 #include "WindowController.h"
+#include <QDir>
 #include <QGuiApplication>
+#include <QProcess>
 #include <QQuickWindow>
 
 void WindowController::initFocusTracking() {
@@ -28,6 +30,9 @@ bool WindowController::blurAvailable() const { return false; }
 bool WindowController::contrastAvailable() const { return false; }
 void WindowController::setInputRegion(QQuickWindow*, int, int, int, int) {}
 bool WindowController::alignForCollapse(int) { return false; }
+void WindowController::showFile(const QString& path) {
+    QProcess::startDetached(QStringLiteral("explorer"), {QStringLiteral("/select,"), QDir::toNativeSeparators(path)});
+}
 bool WindowController::alignForExpand(int, int, int) { return false; }
 bool WindowController::fitPopupHost(const QString&) { return false; }
 void WindowController::restackBelow(QQuickWindow*, QQuickWindow*) {}

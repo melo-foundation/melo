@@ -72,8 +72,8 @@ PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* si
         engine_->dropFailedVideoDecks();
         state_->setHasVideo(engine_->hasVideoDeck());
     });
+    // retried, or the dialog: never a bar of its own
     connect(engine_, &AudioEngine::pipelineError, this, [this](const QString& m) {
-        state_->setError(m);
         lastPipelineError_ = m;
         // A dead stream (expired/truncated googlevideo URL) must not stop the
         // music: the first failure retries with a fresh resolve from where it
@@ -273,9 +273,7 @@ void PlaybackCoordinator::playTrack(const Track& t, int forceCrossfade, PlayInte
     });
     connect(c, &RpcCall::failed, this, [this, t, gen](int code, const QString& m) {
         if (playGen_ != gen) return;
-        // WITH the code: an expired cookie wants "sign in again", a DNS
-        // failure wants "retry", and the dialog cannot tell them apart from
-        // the message alone.
+        // with the code: the bot wall and a timeout want different answers
         failPlay(t, code, m);
     });
     fetchSuggestions(ytIdOf(t));   // parallel with the stream fetch
@@ -1020,7 +1018,7 @@ void PlaybackCoordinator::startRadioPlaylist(const QString& playlistId, int star
         const QJsonObject o = r.toObject();
         if (!o["ok"].toBool()) {
             state_->setPanelMode(modeBefore);
-            state_->setRadioActive(false); state_->setError(o["error"].toString()); return;
+            state_->setRadioActive(false); emit radioFailed(o["error"].toString()); return;
         }
         QList<Track> q;
         for (const auto& v : o["tracks"].toArray()) q.append(Track::fromJson(v.toObject()));
@@ -1043,7 +1041,7 @@ void PlaybackCoordinator::startRadioPlaylist(const QString& playlistId, int star
         setFetching(radioStarting_, false);
         state_->setPanelMode(modeBefore);
         state_->setRadioActive(false);
-        state_->setError(m);
+        emit radioFailed(m);
     });
 }
 

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import ".."
 import "report.js" as Report
+import "errortext.js" as ErrorText
 
 // Edit Metadata window: artist/title/album/year/
 // genre fields, heuristic suggestion, API lookup chain, art source picker
@@ -52,6 +53,10 @@ Window {
     // an imported file may name the video its plays count as; a YouTube
     // track's link is its own id and is shown, not edited
     readonly property bool isLocal: trackId.startsWith("local-")
+    // what the errors sit on, for their glyph's contrast
+    readonly property color face: Theme.roleColour(Theme.hasPage ? "page" : "window")
+    // Open Settings on a file error: the download folder lives there
+    signal settingsWanted()
     property string fLink
     property string linkWas
     property string linkError
@@ -405,17 +410,14 @@ Window {
             MField { label: "Genre";  value: editor.fGenre;  onEdited: (v) => editor.fGenre = v }
             MField { label: "YouTube"; value: editor.fLink; readOnly: !editor.isLocal
                      onEdited: (v) => { editor.fLink = v; editor.linkError = "" } }
-            Row {
-                visible: editor.linkError.length > 0
-                spacing: Theme.gap(8)
-                InkText {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: editor.linkError
-                    ink: "highlight"
-                    font { pixelSize: Theme.fs(11); family: Theme.fontFamily }
-                }
-                EBtn { objectName: "linkReport"; label: "Report…"
-                       onClicked: Report.send(Settings, "metadata", "link", { error: editor.linkError }) }
+            InlineError {
+                readonly property var t: editor.linkError.length ? ErrorText.metadataLink(editor.linkError) : null
+                objectName: "linkError"
+                width: Math.min(implicitWidth, col.width); height: implicitHeight
+                face: editor.face
+                message: t ? t.text : ""
+                actions: t && t.report ? [{ id: "report", label: "Report…" }] : []
+                onTriggered: Report.send(Settings, "metadata", "link", { message: t.text, error: editor.linkError })
             }
             // the audio this entry plays; replacing it keeps the entry, so a
             // YouTube track still counts as its video
@@ -442,17 +444,18 @@ Window {
                 EBtn { id: replaceBtn; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                        label: "Replace…"; onClicked: audioDialog.open() }
             }
-            Row {
-                visible: editor.fileError.length > 0
-                spacing: Theme.gap(8)
-                InkText {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: editor.fileError
-                    ink: "highlight"
-                    font { pixelSize: Theme.fs(11); family: Theme.fontFamily }
+            InlineError {
+                readonly property var t: editor.fileError.length ? ErrorText.metadataFile(editor.fileError) : null
+                objectName: "fileError"
+                width: Math.min(implicitWidth, col.width); height: implicitHeight
+                face: editor.face
+                message: t ? t.text : ""
+                actions: !t ? [] : (t.fix === "settings" ? [{ id: "settings", label: "Open Settings" }] : [])
+                                   .concat(t.report ? [{ id: "report", label: "Report…" }] : [])
+                onTriggered: (id) => {
+                    if (id === "settings") editor.settingsWanted()
+                    else Report.send(Settings, "metadata", "file", { message: t.text, error: editor.fileError })
                 }
-                EBtn { objectName: "fileReport"; label: "Report…"
-                       onClicked: Report.send(Settings, "metadata", "file", { error: editor.fileError }) }
             }
 
             // art source
@@ -502,12 +505,12 @@ Window {
                            // a lookup already out: nothing to press until it lands
                            enabled: !editor.lookupLoading
                            onClicked: editor.doLookup() }
-                    InkText {
-                        visible: editor.lookupError.length > 0
+                    InlineError {
+                        objectName: "lookupError"
                         anchors.verticalCenter: parent.verticalCenter
-                        text: editor.lookupError
-                        ink: "highlight"
-                        font { pixelSize: Theme.fs(10); family: Theme.fontFamily }
+                        width: implicitWidth; height: implicitHeight
+                        face: editor.face
+                        message: editor.lookupError.length ? ErrorText.lookup(editor.lookupError) : ""
                     }
                 }
                 Row {

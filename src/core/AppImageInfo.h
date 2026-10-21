@@ -57,6 +57,9 @@ inline QByteArray elfSection(const QString& path, const QByteArray& name) {
 struct UpdateInfo {
     QString owner, repo, channel, zsyncName;
     bool valid() const { return !owner.isEmpty() && !repo.isEmpty() && !channel.isEmpty() && !zsyncName.isEmpty(); }
+    QString releasesUrl() const {
+        return QStringLiteral("https://api.github.com/repos/%1/%2/releases?per_page=100").arg(owner, repo);
+    }
     QString apiUrl() const {
         const QString base = QStringLiteral("https://api.github.com/repos/%1/%2/releases/").arg(owner, repo);
         return channel == QLatin1String("latest") ? base + QStringLiteral("latest")
@@ -76,16 +79,32 @@ inline UpdateInfo parseUpdateInfo(const QByteArray& raw) {
     return { p[1], p[2], p[3], p[4] };
 }
 
-// "melo 0.N.P" from an alpha-N(.P) tag; any other tag or a v-number reads as it is
+// "Alpha N" / "Alpha N.P" from an alpha-N(.P) tag, as the releases are named;
+// "melo X.Y.Z" from a v-number; any other tag by its release's name
 inline QString versionLabel(const QString& tag, const QString& name) {
     static const QRegularExpression alpha(QStringLiteral("^alpha-(\\d+)(?:\\.(\\d+))?$"));
     const auto m = alpha.match(tag);
     if (m.hasMatch())
-        return QStringLiteral("melo 0.%1.%2").arg(m.captured(1), m.captured(2).isEmpty() ? QStringLiteral("0") : m.captured(2));
+        return QStringLiteral("Alpha ") + m.captured(1) + (m.captured(2).isEmpty() ? QString() : QStringLiteral(".") + m.captured(2));
     static const QRegularExpression semver(QStringLiteral("^v?(\\d+\\.\\d+(?:\\.\\d+)?)$"));
     const auto v = semver.match(tag);
     if (v.hasMatch()) return QStringLiteral("melo ") + v.captured(1);
     return QStringLiteral("melo ") + (name.trimmed().isEmpty() ? tag : name.trimmed());
+}
+
+// A release's notes as Markdown that loads nothing: images become their alt
+// text, raw HTML goes, autolinks become plain links.
+inline QString safeMarkdown(QString md) {
+    md.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    static const QRegularExpression autolink(QStringLiteral("<(https?://[^>\\s]+)>"));
+    static const QRegularExpression image(QStringLiteral("!\\[([^\\]]*)\\]\\([^)]*\\)"));
+    static const QRegularExpression refImage(QStringLiteral("!\\[([^\\]]*)\\]\\[[^\\]]*\\]"));
+    static const QRegularExpression html(QStringLiteral("<[^>\\n]*>"));
+    md.replace(autolink, QStringLiteral("[\\1](\\1)"));
+    md.replace(image, QStringLiteral("\\1"));
+    md.replace(refImage, QStringLiteral("\\1"));
+    md.replace(html, QString());
+    return md.trimmed();
 }
 
 }   // namespace appimage

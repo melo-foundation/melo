@@ -503,10 +503,9 @@ int main(int argc, char** argv) {
                      &coordinator, [&coordinator] { coordinator.setUiFrozen(false); });
 
     QObject::connect(&sidecar, &SidecarService::rpcFailed,
-                     [&playerState](const QString& what, const QString& msg) {
+                     [](const QString& what, const QString& msg) {
         std::fprintf(stderr, "[melo] RPC %s failed: %s\n",
                      what.toUtf8().constData(), msg.toUtf8().constData());
-        if (what != "search") playerState.setError(what + ": " + msg);
     });
     // lite build, no usable node: fetch the pinned runtime, then retry
     NodeBootstrap nodeSetup;
@@ -619,10 +618,10 @@ int main(int argc, char** argv) {
     qml.rootContext()->setContextProperty("Updater", &updater);
     // non-empty on lite builds whose system GStreamer lacks pieces
     qml.rootContext()->setContextProperty("MELO_MISSING_GST", missingGst.join(", "));
-    // distro-exact install hint for the missing-plugins error (lite builds
+    // the distro's install command for the missing-plugins bar (lite builds
     // lean on system GStreamer; a bare install has core only)
     {
-        QString hint = QStringLiteral("install your distro's GStreamer plugin packages");
+        QString hint;   // empty: a distro melo has no command for
 #ifndef Q_OS_WIN
         QFile osr(QStringLiteral("/etc/os-release"));
         if (osr.open(QIODevice::ReadOnly)) {
@@ -631,13 +630,13 @@ int main(int argc, char** argv) {
                 return os.contains(QLatin1String(k), Qt::CaseInsensitive);
             };
             if (idHas("arch") || idHas("manjaro") || idHas("endeavour"))
-                hint = QStringLiteral("run: sudo pacman -S gst-plugins-base gst-plugins-good gst-plugins-bad");
+                hint = QStringLiteral("sudo pacman -S gst-plugins-base gst-plugins-good gst-plugins-bad");
             else if (idHas("debian") || idHas("ubuntu") || idHas("mint") || idHas("pop"))
-                hint = QStringLiteral("run: sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad");
+                hint = QStringLiteral("sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad");
             else if (idHas("fedora") || idHas("nobara"))
-                hint = QStringLiteral("run: sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free");
+                hint = QStringLiteral("sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free");
             else if (idHas("opensuse") || idHas("suse"))
-                hint = QStringLiteral("run: sudo zypper install gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad");
+                hint = QStringLiteral("sudo zypper install gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad");
         }
 #endif
         qml.rootContext()->setContextProperty("MELO_GST_HINT", hint);
@@ -664,10 +663,14 @@ int main(int argc, char** argv) {
     settings.loadLocal();
     if (updater.supported()) {
         auto syncUpdates = [&settings, &updater] {
+            updater.setSkipped(settings.uiGet(QStringLiteral("updateSkipped"), QString()).toString());
+            updater.setLaterUntil(settings.uiGet(QStringLiteral("updateLaterUntil"), 0).toLongLong());
             updater.setEnabled(settings.uiGet(QStringLiteral("checkUpdates"), true).toBool());
         };
         syncUpdates();
         QObject::connect(&settings, &SettingsStore::changed, &updater, syncUpdates);
+        QObject::connect(&updater, &AppImageUpdater::remember, &settings,
+                         [&settings](const QString& k, const QVariant& v) { settings.uiSet(k, v); });
     }
     qml.load(QUrl::fromLocalFile(qmlDir + "/Main.qml"));
     // the splash goes with the first frame that shows the window's content
@@ -1163,7 +1166,9 @@ int main(int argc, char** argv) {
         LogFile::stopTee();
         return n == 0 ? rc : 3;
     }
+    // a verified update Restart was not pressed for: the next launch is the new version
     if (updater.relaunchPending()) updater.relaunch();
+    else updater.applyAtQuit();
     LogFile::stopTee();
     return rc;
 

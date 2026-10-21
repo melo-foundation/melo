@@ -3,7 +3,7 @@ import ".."
 import "playfail.js" as PlayFail
 
 // The playing track could not be loaded: the error dialog (ErrorPanel) with
-// the answers for that cause (playfail.js). Waits for one; Escape or a click
+// the words and answers for that cause (playfail.js). Waits for one; Escape or a click
 // outside dismisses it and the track stays where it is. In a host too short
 // for a panel (the mini player) it is the bar size, covering the host.
 Item {
@@ -14,12 +14,16 @@ Item {
     property bool shown: false
     property string cause: ""
     property string reason: ""
+    // the sidecar said a newer yt-dlp would likely play it
+    property bool stale: false
+    // yt-dlp is on the nightly channel already: no switch to offer
+    property bool nightly: typeof Settings !== "undefined" && Settings !== null && Settings.ytdlpChannel === "nightly"
     // the signed-in browsers to pick from, and a browser check in flight
     property var choices: []
     property bool busy: false
     signal answered(string action)
 
-    readonly property var actions: PlayFail.actionsFor(cause, choices)
+    readonly property var actions: PlayFail.actionsFor(cause, choices, reason, stale, nightly)
     readonly property bool compact: height < Theme.ctl(200)
     visible: shown && cause.length > 0
     onVisibleChanged: if (visible) panel.forceActiveFocus()
@@ -43,7 +47,7 @@ Item {
         maxWidth: width
         radius: dlg.compact ? 0 : Theme.radiusLg
         borderWidth: dlg.compact ? 0 : 1
-        message: dlg.reason
+        message: PlayFail.messageFor(dlg.cause, dlg.reason, dlg.stale)
         messageName: dlg.compact ? "playFailReasonCompact" : "playFailReason"
         namePrefix: "playFail_"
         actions: dlg.actions.map((a) => ({ id: a, label: PlayFail.labelFor(a, dlg.busy),

@@ -609,6 +609,7 @@ if(Qt6Test_FOUND)
         src/core/ThemeStore.cpp
         src/core/ThemeFormat.cpp
         src/core/SettingsStore.cpp
+        src/core/LogFile.cpp
         src/rpc/SidecarService.cpp
         src/rpc/SidecarProcess.cpp
         src/rpc/RpcClient.cpp
@@ -632,6 +633,7 @@ if(Qt6Test_FOUND)
         src/core/ThemeStore.cpp
         src/core/ThemeFormat.cpp
         src/core/SettingsStore.cpp
+        src/core/LogFile.cpp
         src/rpc/SidecarService.cpp
         src/rpc/SidecarProcess.cpp
         src/rpc/RpcClient.cpp
@@ -647,6 +649,7 @@ if(Qt6Test_FOUND)
         src/core/ThemeStore.cpp
         src/core/ThemeFormat.cpp
         src/core/SettingsStore.cpp
+        src/core/LogFile.cpp
         src/rpc/SidecarService.cpp
         src/rpc/SidecarProcess.cpp
         src/rpc/RpcClient.cpp
@@ -662,6 +665,7 @@ if(Qt6Test_FOUND)
         src/core/ThemeStore.cpp
         src/core/ThemeFormat.cpp
         src/core/SettingsStore.cpp
+        src/core/LogFile.cpp
         src/rpc/SidecarService.cpp
         src/rpc/SidecarProcess.cpp
         src/rpc/RpcClient.cpp
@@ -773,6 +777,7 @@ if(Qt6Test_FOUND)
         src/core/LibraryStore.h
         src/core/JsonRowModel.h
         src/core/SettingsStore.cpp
+        src/core/LogFile.cpp
         src/rpc/SidecarService.cpp
         src/rpc/SidecarProcess.cpp
         src/rpc/RpcClient.cpp
@@ -990,9 +995,10 @@ if(Qt6Test_FOUND)
 
     # the Check for updates rows exist only in an AppImage
     add_executable(tst_updaterows tests/cpp/tst_updaterows.cpp)
+    target_include_directories(tst_updaterows PRIVATE src/core)
     target_compile_definitions(tst_updaterows PRIVATE
         MELO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-    target_link_libraries(tst_updaterows PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)
+    target_link_libraries(tst_updaterows PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Network Qt6::Test)
     add_test(NAME updaterows COMMAND tst_updaterows)
     set_tests_properties(updaterows PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -1039,6 +1045,7 @@ if(Qt6Test_FOUND)
         src/core/Track.h
         src/core/PlaybackCoordinator.cpp
         src/core/SettingsStore.cpp
+        src/core/LogFile.cpp
         src/rpc/SidecarService.cpp
         src/rpc/RpcClient.cpp
         src/rpc/SidecarProcess.cpp
@@ -1076,6 +1083,7 @@ if(Qt6Test_FOUND)
         src/core/Track.h
         src/core/PlaybackCoordinator.cpp
         src/core/SettingsStore.cpp
+        src/core/LogFile.cpp
         src/rpc/SidecarService.cpp
         src/rpc/RpcClient.cpp
         src/rpc/SidecarProcess.cpp
@@ -1111,6 +1119,7 @@ if(Qt6Test_FOUND)
         src/core/Track.h
         src/core/PlaybackCoordinator.cpp
         src/core/SettingsStore.cpp
+        src/core/LogFile.cpp
         src/rpc/SidecarService.cpp
         src/rpc/RpcClient.cpp
         src/rpc/SidecarProcess.cpp
@@ -1150,6 +1159,7 @@ if(Qt6Test_FOUND)
         src/core/Track.h
         src/core/PlaybackCoordinator.cpp
         src/core/SettingsStore.cpp
+        src/core/LogFile.cpp
         src/core/WindowController.h
         ${MELO_WINDOWCTL}
         src/rpc/SidecarService.cpp
@@ -1194,6 +1204,7 @@ if(Qt6Test_FOUND)
         src/core/Track.h
         src/core/PlaybackCoordinator.cpp
         src/core/SettingsStore.cpp
+        src/core/LogFile.cpp
         src/core/WindowController.h
         ${MELO_WINDOWCTL}
         src/rpc/SidecarService.cpp
@@ -1246,6 +1257,7 @@ if(Qt6Test_FOUND)
         src/core/Track.h
         src/core/PlaybackCoordinator.cpp
         src/core/SettingsStore.cpp
+        src/core/LogFile.cpp
         src/core/WindowController.h
         ${MELO_WINDOWCTL}
         src/rpc/SidecarService.cpp

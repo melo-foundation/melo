@@ -8,6 +8,8 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QDateTime>
+#include <QRegularExpression>
 #include <QDir>
 #include <QElapsedTimer>
 #include <memory>
@@ -229,8 +231,21 @@ struct Release {
         writeFile(app, oldFile);
         gh.files["m.AppImage"] = newFile;
         gh.files["m.zsync"] = makeZsync(newFile, 2048, 2, 2, 5, "m.AppImage", "m.AppImage");
-        gh.files["latest"] = QJsonDocument(QJsonObject { { "tag_name", tag }, { "assets", QJsonArray {
-            QJsonObject { { "name", "m.zsync" }, { "browser_download_url", QString(gh.base() + "/m.zsync") } } } } }).toJson();
+        setLatest(tag);
+    }
+    void setLatest(const QString& tag) {
+        QJsonObject r = entry(tag, "2026-11-02", "- notes of " + tag);
+        r["assets"] = QJsonArray { QJsonObject { { "name", "m.zsync" }, { "browser_download_url", QString(gh.base() + "/m.zsync") } } };
+        gh.files["latest"] = QJsonDocument(r).toJson();
+    }
+    static QJsonObject entry(const QString& tag, const QString& date, const QString& body,
+                             bool draft = false, bool pre = false) {
+        static const QRegularExpression a("^alpha-(.*)$");
+        const auto m = a.match(tag);
+        return QJsonObject { { "tag_name", tag }, { "name", m.hasMatch() ? "Alpha " + m.captured(1) : QString("Nightly") },
+                             { "published_at", date + "T12:00:00Z" }, { "body", body },
+                             { "draft", draft }, { "prerelease", pre },
+                             { "html_url", "https://example.org/releases/" + tag } };
     }
     QUrl api() const { return QUrl(gh.base() + "/latest"); }
 };
@@ -515,6 +530,10 @@ private slots:
         QVERIFY(checked.wait(30000));
         QCOMPARE(u.state(), QString("available"));
         qInfo("real: %s, notes %s", qPrintable(u.version()), qPrintable(u.notesUrl()));
+        QTRY_VERIFY_WITH_TIMEOUT(u.notes().size() > 1, 15000);
+        QStringList labels;
+        for (const QVariant& n : u.notes()) labels << n.toMap().value("label").toString() + " " + n.toMap().value("date").toString();
+        qInfo("real: What's new: %s", qPrintable(labels.join(", ")));
         u.update();
         QTRY_VERIFY_WITH_TIMEOUT(u.state() != QString("downloading"), 120000);
         QCOMPARE(u.state(), QString("ready"));
@@ -560,8 +579,8 @@ private slots:
         QVERIFY(!appimage::parseUpdateInfo("zsync|https://example.org/x.zsync").valid());
         QVERIFY(!appimage::parseUpdateInfo("gh-releases-zsync|o|r|latest").valid());
         QVERIFY(!appimage::parseUpdateInfo(QByteArray(1024, '\0')).valid());
-        QCOMPARE(appimage::versionLabel("alpha-5", "Alpha 5"), QString("melo 0.5.0"));
-        QCOMPARE(appimage::versionLabel("alpha-3.1", "Alpha 3.1 (hotfix)"), QString("melo 0.3.1"));
+        QCOMPARE(appimage::versionLabel("alpha-5", "Alpha 5"), QString("Alpha 5"));
+        QCOMPARE(appimage::versionLabel("alpha-3.1", "Alpha 3.1 (hotfix)"), QString("Alpha 3.1"));
         QCOMPARE(appimage::versionLabel("v1.2.3", ""), QString("melo 1.2.3"));
         QCOMPARE(appimage::versionLabel("nightly", "Nightly"), QString("melo Nightly"));
     }
@@ -621,7 +640,7 @@ private slots:
         u.check();
         QVERIFY(checked.wait(10000));
         QCOMPARE(u.state(), QString("available"));
-        QCOMPARE(u.version(), QString("melo 0.5.0"));
+        QCOMPARE(u.version(), QString("Alpha 5"));
         QCOMPARE(u.notesUrl(), QString("https://example.org/releases/alpha-5"));
 
         u.update();
@@ -965,6 +984,236 @@ private slots:
         QVERIFY(!zsync::parse("zsync: 0.6.2\nBlocksize: 2097152\nLength: 4000\nHash-Lengths: 2,2,4\nURL: x\nSHA-1: 0000000000000000000000000000000000000000\n\n"));
         QVERIFY(!zsync::parse("zsync: 0.6.2\nBlocksize: 2048\nLength: 5000000000\nHash-Lengths: 2,2,4\nURL: x\nSHA-1: 0000000000000000000000000000000000000000\n\n"));
         QVERIFY(!zsync::parse("zsync: 0.6.2\nBlocksize: 1\nLength: 100000000\nHash-Lengths: 2,2,4\nURL: x\nSHA-1: 0000000000000000000000000000000000000000\n\n"));
+    }
+
+    void skipIsRememberedAndCheckNowIgnoresIt() {
+        QTemporaryDir dir;
+        Release rel(dir.path());
+        AppImageUpdater u(rel.app);
+        u.setApiUrl(rel.api());
+        QSignalSpy remembered(&u, &AppImageUpdater::remember);
+        QSignalSpy checked(&u, &AppImageUpdater::checkDone);
+        u.check();
+        QVERIFY(checked.wait(10000));
+        QCOMPARE(u.state(), QString("available"));
+        u.skip();
+        QCOMPARE(u.state(), QString());
+        QCOMPARE(remembered.size(), 1);
+        QCOMPARE(remembered.last().at(0).toString(), QString("updateSkipped"));
+        QCOMPARE(remembered.last().at(1).toString(), QString("alpha-5"));
+
+        // the next launch, with the stored skip: the automatic check offers nothing
+        AppImageUpdater v(rel.app);
+        v.setApiUrl(rel.api());
+        v.setSkipped("alpha-5");
+        QSignalSpy vChecked(&v, &AppImageUpdater::checkDone);
+        v.check();
+        QVERIFY(vChecked.wait(10000));
+        QCOMPARE(v.state(), QString());
+        QCOMPARE(v.checkResult(), QString("current"));
+        // Check now offers it anyway
+        v.checkNow();
+        QVERIFY(vChecked.wait(10000));
+        QCOMPARE(v.state(), QString("available"));
+        QCOMPARE(v.checkResult(), QString("available"));
+
+        // a newer release is offered over the skip
+        rel.setLatest("alpha-6");
+        AppImageUpdater w(rel.app);
+        w.setApiUrl(rel.api());
+        w.setSkipped("alpha-5");
+        QSignalSpy wChecked(&w, &AppImageUpdater::checkDone);
+        w.check();
+        QVERIFY(wChecked.wait(10000));
+        QCOMPARE(w.state(), QString("available"));
+        QCOMPARE(w.version(), QString("Alpha 6"));
+    }
+
+    // the window opens once per release a run, again after Later, and on every Check now
+    void anOfferIsAnnouncedOnce() {
+        QTemporaryDir dir;
+        Release rel(dir.path());
+        AppImageUpdater u(rel.app);
+        u.setApiUrl(rel.api());
+        QSignalSpy offered(&u, &AppImageUpdater::offerFound);
+        QSignalSpy checked(&u, &AppImageUpdater::checkDone);
+        u.check();
+        QVERIFY(checked.wait(10000));
+        QCOMPARE(offered.size(), 1);
+        u.check();
+        QVERIFY(checked.wait(10000));
+        QCOMPARE(offered.size(), 1);
+        u.checkNow();
+        QVERIFY(checked.wait(10000));
+        QCOMPARE(offered.size(), 2);
+        u.later();
+        u.setLaterUntil(0);   // the next day
+        u.check();
+        QVERIFY(checked.wait(10000));
+        QCOMPARE(offered.size(), 3);
+    }
+
+    void laterHoldsUntilTheNextDailyCheck() {
+        QTemporaryDir dir;
+        Release rel(dir.path());
+        AppImageUpdater u(rel.app);
+        u.setApiUrl(rel.api());
+        QSignalSpy remembered(&u, &AppImageUpdater::remember);
+        QSignalSpy checked(&u, &AppImageUpdater::checkDone);
+        const qint64 before = QDateTime::currentMSecsSinceEpoch();
+        u.check();
+        QVERIFY(checked.wait(10000));
+        QCOMPARE(u.state(), QString("available"));
+        u.later();
+        QCOMPARE(u.state(), QString());
+        QCOMPARE(remembered.last().at(0).toString(), QString("updateLaterUntil"));
+        const qint64 until = remembered.last().at(1).toLongLong();
+        QVERIFY(until >= before + AppImageUpdater::kIntervalMs);
+        QVERIFY(until <= QDateTime::currentMSecsSinceEpoch() + AppImageUpdater::kIntervalMs);
+
+        // later the same day: not offered again, except by Check now
+        AppImageUpdater v(rel.app);
+        v.setApiUrl(rel.api());
+        v.setLaterUntil(until);
+        QSignalSpy vChecked(&v, &AppImageUpdater::checkDone);
+        v.check();
+        QVERIFY(vChecked.wait(10000));
+        QCOMPARE(v.state(), QString());
+        v.checkNow();
+        QVERIFY(vChecked.wait(10000));
+        QCOMPARE(v.state(), QString("available"));
+
+        // the next day's check offers it
+        AppImageUpdater w(rel.app);
+        w.setApiUrl(rel.api());
+        w.setLaterUntil(QDateTime::currentMSecsSinceEpoch() - 1000);
+        QSignalSpy wChecked(&w, &AppImageUpdater::checkDone);
+        w.check();
+        QVERIFY(wChecked.wait(10000));
+        QCOMPARE(w.state(), QString("available"));
+    }
+
+    void quittingAppliesAVerifiedUpdate() {
+        QTemporaryDir dir;
+        Release rel(dir.path());
+        AppImageUpdater a(rel.app);
+        QVERIFY(!a.applyAtQuit());   // nothing downloaded
+        QCOMPARE(checkAndUpdate(a, rel.api()), QString("ready"));
+        {
+            AppImageUpdater b(rel.app);   // a second melo on the same AppImage
+            QVERIFY(QFile::exists(a.stagedPath()));
+            QVERIFY(!b.applyAtQuit());
+        }
+        QVERIFY(QFile::exists(a.stagedPath()));
+        QVERIFY(a.applyAtQuit());
+        QVERIFY(!a.relaunchPending());
+        QCOMPARE(readFile(rel.app), rel.newFile);
+        QVERIFY(updateFiles(dir.path()).isEmpty());
+        QVERIFY(!a.applyAtQuit());   // once
+    }
+
+    void quittingNeverAppliesAFailedOrChangedUpdate() {
+        {
+            QTemporaryDir dir;
+            Release rel(dir.path());
+            QByteArray bad = rel.newFile;
+            for (int i = 0; i < 3000; ++i) bad[2048 * 205 + i] = char(~bad[2048 * 205 + i]);
+            rel.gh.corrupt["m.AppImage"] = bad;
+            AppImageUpdater u(rel.app);
+            QCOMPARE(checkAndUpdate(u, rel.api()), QString("failed"));
+            QVERIFY(!u.applyAtQuit());
+            QCOMPARE(readFile(rel.app), rel.oldFile);
+        }
+        {
+            QTemporaryDir dir;
+            Release rel(dir.path());
+            AppImageUpdater u(rel.app);
+            QCOMPARE(checkAndUpdate(u, rel.api()), QString("ready"));
+            QByteArray other = rel.newFile;
+            other[100] = char(~other[100]);
+            QVERIFY(writeFile(dir.filePath("other"), other));
+            QVERIFY(::rename(QFile::encodeName(dir.filePath("other")).constData(),
+                             QFile::encodeName(u.stagedPath()).constData()) == 0);
+            QVERIFY(!u.applyAtQuit());
+            QCOMPARE(u.errorKind(), QString("damaged"));
+            QCOMPARE(readFile(rel.app), rel.oldFile);
+        }
+    }
+
+    // What's new: every tagged release above the running one, newest first
+    void notesListEveryNewerRelease() {
+        QTemporaryDir dir;
+        Release rel(dir.path());
+        rel.gh.files["releases"] = QJsonDocument(QJsonArray {
+            Release::entry("alpha-4", "2026-10-20", "- four"),
+            Release::entry("alpha-6", "2026-11-10", "- six", false, true),     // a prerelease
+            Release::entry("alpha-3.1", "2026-10-04", "- three one"),         // the running one
+            Release::entry("alpha-5", "2026-11-02", "## Five\n\n![shot](https://example.org/a.png) <b>x</b>"),
+            Release::entry("nightly", "2026-11-11", "- nightly", false, true),
+            Release::entry("alpha-4.2", "2026-10-30", "- draft", true),       // a draft
+            Release::entry("alpha-3", "2026-10-01", "- three"),
+            Release::entry("alpha-4.1", "2026-10-25", "- four one"),
+        }).toJson();
+        AppImageUpdater u(rel.app);
+        u.setApiUrl(rel.api());
+        u.setCurrentVersion("0.3.1");
+        QSignalSpy checked(&u, &AppImageUpdater::checkDone);
+        u.check();
+        QVERIFY(checked.wait(10000));
+        QCOMPARE(u.state(), QString("available"));
+        QCOMPARE(u.version(), QString("Alpha 5"));
+        QTRY_COMPARE(u.notes().size(), 3);
+        QStringList labels, dates;
+        for (const QVariant& n : u.notes()) {
+            labels << n.toMap().value("label").toString();
+            dates << n.toMap().value("date").toString();
+        }
+        QCOMPARE(labels, (QStringList { "Alpha 5", "Alpha 4.1", "Alpha 4" }));
+        QCOMPARE(dates, (QStringList { "2026-11-02", "2026-10-25", "2026-10-20" }));
+        const QString five = u.notes().first().toMap().value("body").toString();
+        QVERIFY(five.contains("## Five"));
+        QVERIFY(!five.contains("example.org"));
+        QVERIFY(!five.contains("<b>"));
+    }
+
+    // before the list answers, or when it cannot be read: the offered release's own notes
+    void notesFallBackToTheOfferedRelease() {
+        QTemporaryDir dir;
+        Release rel(dir.path());   // no list on the server
+        AppImageUpdater u(rel.app);
+        u.setApiUrl(rel.api());
+        QSignalSpy checked(&u, &AppImageUpdater::checkDone);
+        u.check();
+        QVERIFY(checked.wait(10000));
+        QCOMPARE(u.notes().size(), 1);
+        QCOMPARE(u.notes().first().toMap().value("label").toString(), QString("Alpha 5"));
+        QCOMPARE(u.notes().first().toMap().value("body").toString(), QString("- notes of alpha-5"));
+    }
+
+    void aNightlyHasNoNotes() {
+        QTemporaryDir dir;
+        Release rel(dir.path(), "nightly");
+        AppImageUpdater u(rel.app);
+        u.setApiUrl(rel.api());
+        QSignalSpy checked(&u, &AppImageUpdater::checkDone);
+        u.check();
+        QVERIFY(checked.wait(10000));
+        QCOMPARE(u.state(), QString("available"));
+        QVERIFY(u.notes().isEmpty());
+    }
+
+    void safeMarkdownLoadsNothing() {
+        const QString md = appimage::safeMarkdown(
+            "# Title\r\n\r\n![alt text](https://example.org/a.png) and ![ref][1]\n"
+            "<img src=\"https://example.org/b.png\"> <script>alert(1)</script>\n"
+            "<https://example.org/page> [a link](https://example.org/c)\n\n[1]: https://example.org/d.png");
+        QVERIFY(!md.contains("!["));
+        QVERIFY(!md.contains("<img"));
+        QVERIFY(!md.contains("<script"));
+        QVERIFY(!md.contains("\r"));
+        QVERIFY(md.contains("alt text"));
+        QVERIFY(md.contains("[https://example.org/page](https://example.org/page)"));
+        QVERIFY(md.contains("[a link](https://example.org/c)"));
     }
 
     void readOnlyFolderCannotUpdate() {

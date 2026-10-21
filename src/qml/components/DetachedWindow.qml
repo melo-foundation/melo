@@ -212,6 +212,7 @@ MeloWindow {
     property bool failShown: false
     property var failChoices: []
     property bool failBusy: false
+    property bool failStale: false
     signal failAnswered(string action)
     PlayFailDialog {
         parent: dw.contentItem
@@ -221,6 +222,7 @@ MeloWindow {
         reason: PlayerState.failReason
         choices: dw.failChoices
         busy: dw.failBusy
+        stale: dw.failStale
         onAnswered: (a) => dw.failAnswered(a)
     }
 }

@@ -2,6 +2,7 @@
 #include "SettingsStore.h"
 #include "paths.h"
 #include "LogTail.h"
+#include "LogFile.h"
 #include "jsvalue.h"
 #include "SidecarService.h"
 #include "RpcClient.h"
@@ -48,14 +49,38 @@ QVariantMap SettingsStore::writeReport(const QString& kind, const QVariantMap& d
         const QVariant v = it.value();
         const QString text = (v.typeId() == QMetaType::QVariantMap || v.typeId() == QMetaType::QVariantList)
             ? QString::fromUtf8(QJsonDocument::fromVariant(v).toJson(QJsonDocument::Compact)) : v.toString();
-        out += QStringLiteral("%1: %2\n").arg(it.key(), text);
+        // the log's rules: a detail can carry a cookie or a stream URL
+        out += QString::fromUtf8(LogFile::redact(QStringLiteral("%1: %2").arg(it.key(), text).toUtf8())) + QLatin1Char('\n');
     }
     const QStringList tail = meloLogTail(dataDir() + QStringLiteral("/logs"), 500);
     if (!tail.isEmpty()) out += QStringLiteral("\n--- last %1 lines of melo.log ---\n%2\n").arg(tail.size()).arg(tail.join(QLatin1Char('\n')));
     f.write(out.toUtf8());
     f.close();
+    writeReportReadme(dir);
     std::fprintf(stderr, "[melo] %s report written to %s\n", kind.toUtf8().constData(), path.toUtf8().constData());
-    return {{"path", path}, {"folder", QUrl::fromLocalFile(dir.absolutePath()).toString()}};
+    return {{"path", path}, {"folder", QUrl::fromLocalFile(dir.absolutePath()).toString()},
+            {"version", QCoreApplication::applicationVersion()}, {"system", QSysInfo::prettyProductName()}};
+}
+
+const char* const SettingsStore::kReportIssueUrl =
+    "https://github.com/melo-foundation/melo/issues/new?template=bug_report.yml";
+
+// README.txt beside the reports, rewritten with each one
+void SettingsStore::writeReportReadme(const QDir& dir) {
+    QFile f(dir.filePath(QStringLiteral("README.txt")));
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) return;
+    f.write(QStringLiteral(
+        "Reporting a problem in melo\n"
+        "\n"
+        "1. Open the bug form: %1\n"
+        "2. Fill in \"Steps to reproduce\".\n"
+        "3. Drag the newest .txt file from this folder into the \"Report file\" box.\n"
+        "\n"
+        "No GitHub account: post the file in melo's Discord instead: %2\n"
+        "\n"
+        "Cookies, passwords and tokens are removed from these files.\n"
+        "They can still name tracks and folders: delete anything you want to keep private.\n")
+        .arg(QString::fromLatin1(kReportIssueUrl), QStringLiteral("https://discord.gg/T2jHMX6AcG")).toUtf8());
 }
 
 bool SettingsStore::loadLocal() {

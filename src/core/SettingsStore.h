@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QMap>
 #include <QHash>
+class QDir;
 
 class SidecarService;
 
@@ -103,9 +104,11 @@ public:
     bool uiHas(const QString& key) const;
 
     Q_INVOKABLE void refresh();   // settings/get -> replace local mirror
-    // An error's details, with versions and OS, to <config>/reports/<kind>-<time>.txt;
-    // {path, folder} or empty
+    // An error's details, with versions and OS, to <config>/reports/<kind>-<time>.txt,
+    // redacted as the log is, and README.txt beside it; {path, folder, version, system} or empty
     Q_INVOKABLE QVariantMap writeReport(const QString& kind, const QVariantMap& details) const;
+    static const char* const kReportIssueUrl;
+    static void writeReportReadme(const QDir& dir);
     // The file as saved, read before the sidecar is up, so the first frame
     // has the saved theme, size and layout. The sidecar's reply replaces it.
     // False when there is no file or it will not parse.

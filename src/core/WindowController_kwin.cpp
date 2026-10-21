@@ -7,6 +7,9 @@
 #include <QDBusConnectionInterface>
 #include <QDBusMessage>
 #include <QDBusReply>
+#include <QDBusPendingCallWatcher>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QFile>
 #include <QFileInfo>
 #include <QClipboard>
@@ -394,6 +397,24 @@ void WindowController::logLine(const QString& text) {
 
 void WindowController::copyToClipboard(const QString& text) {
     if (auto* cb = QGuiApplication::clipboard()) cb->setText(text);
+}
+
+void WindowController::showFile(const QString& path) {
+    const QUrl folder = QUrl::fromLocalFile(QFileInfo(path).absolutePath());
+    auto* bus = QDBusConnection::sessionBus().interface();
+    const QString fm = QStringLiteral("org.freedesktop.FileManager1");
+    if (!bus || !(bus->isServiceRegistered(fm).value() || bus->activatableServiceNames().value().contains(fm))) {
+        QDesktopServices::openUrl(folder);
+        return;
+    }
+    QDBusMessage m = QDBusMessage::createMethodCall(fm, QStringLiteral("/org/freedesktop/FileManager1"), fm,
+                                                    QStringLiteral("ShowItems"));
+    m << QStringList{QUrl::fromLocalFile(path).toString()} << QString();
+    auto* w = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(m, 5000), this);
+    connect(w, &QDBusPendingCallWatcher::finished, this, [w, folder] {
+        if (w->isError()) QDesktopServices::openUrl(folder);
+        w->deleteLater();
+    });
 }
 
 // Run a KWin script. Unique path and unique name per call: KWin keys its

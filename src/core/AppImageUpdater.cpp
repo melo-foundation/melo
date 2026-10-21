@@ -28,9 +28,10 @@
 
 namespace {
 void logLine(const QString& s) { std::fprintf(stderr, "[update] %s\n", qPrintable(s)); }
+}   // namespace
 
 // 0.N.P from alpha-N(.P), X.Y.Z from vX.Y.Z; null for a named channel
-QVersionNumber tagVersion(const QString& tag) {
+QVersionNumber AppImageUpdater::tagVersion(const QString& tag) {
     static const QRegularExpression alpha(QStringLiteral("^alpha-(\\d+)(?:\\.(\\d+))?$"));
     static const QRegularExpression semver(QStringLiteral("^v?(\\d+(?:\\.\\d+){1,2})$"));
     if (const auto m = alpha.match(tag); m.hasMatch())
@@ -39,6 +40,7 @@ QVersionNumber tagVersion(const QString& tag) {
     return {};
 }
 
+namespace {
 bool identOf(int fd, quint64* dev, quint64* ino, qint64* size, qint64* mtimeNs) {
     struct stat st {};
     if (fd < 0 || ::fstat(fd, &st) != 0) return false;
@@ -73,6 +75,7 @@ AppImageUpdater::AppImageUpdater(const QString& appImage, QObject* parent)
     if (!appImage_.isEmpty()) info_ = appimage::parseUpdateInfo(appimage::elfSection(appImage_, ".upd_info"));
     if (!supported()) return;
     apiUrl_ = QUrl(info_.apiUrl());
+    releasesUrl_ = QUrl(info_.releasesUrl());
     nam_ = new QNetworkAccessManager(this);
     nam_->setRedirectPolicy(QNetworkRequest::NoLessSafeRedirectPolicy);
     nam_->setTransferTimeout(timeoutMs_);
@@ -172,17 +175,48 @@ void AppImageUpdater::setEnabled(bool on) {
     QTimer::singleShot(kFirstCheckMs, this, [this] { if (enabled_) check(); });
 }
 
+void AppImageUpdater::setChecking(bool on, const QString& result) {
+    checking_ = on;
+    if (!on) { checkResult_ = result; manual_ = false; }
+    emit checkingChanged();
+}
+
 void AppImageUpdater::checkFailed(const QString& why) {
-    checking_ = false;
+    setChecking(false, QStringLiteral("failed"));
     logLine(QStringLiteral("check failed: ") + why);
     emit checkDone();
+}
+
+void AppImageUpdater::checkNow() {
+    if (checking_) { manual_ = true; return; }
+    manual_ = true;
+    check();
+    if (!checking_) manual_ = false;
+}
+
+void AppImageUpdater::skip() {
+    if (state_ != QLatin1String("available") || tag_.isEmpty()) return;
+    skipped_ = tag_;
+    logLine(QStringLiteral("%1 skipped").arg(version_));
+    emit remember(QStringLiteral("updateSkipped"), skipped_);
+    setState({});
+}
+
+void AppImageUpdater::later() {
+    if (state_ != QLatin1String("available")) return;
+    // until the daily check after the one that found it
+    laterUntilMs_ = (lastCheckMs_ ? lastCheckMs_ : QDateTime::currentMSecsSinceEpoch()) + kIntervalMs;
+    announced_.clear();
+    logLine(QStringLiteral("%1 later").arg(version_));
+    emit remember(QStringLiteral("updateLaterUntil"), laterUntilMs_);
+    setState({});
 }
 
 void AppImageUpdater::check() {
     if (!supported() || checking_) return;
     // a download in flight or one waiting for Restart is not checked over
     if (state_ == QLatin1String("downloading") || state_ == QLatin1String("ready")) return;
-    checking_ = true;
+    setChecking(true, {});
     lastCheckMs_ = QDateTime::currentMSecsSinceEpoch();
     logLine(QStringLiteral("checking ") + apiUrl_.toString());
     QNetworkRequest req(apiUrl_);
@@ -211,6 +245,10 @@ void AppImageUpdater::onRelease(const QByteArray& json) {
     if (!zsyncUrl.isValid() || zsyncUrl.isEmpty())
         return checkFailed(QStringLiteral("release %1 has no %2").arg(tag, info_.zsyncName));
     const QString name = rel.value("name").toString(), html = rel.value("html_url").toString();
+    // the offered release's own notes, until the list of everything newer answers
+    const QVariantList own { QVariantMap { { "label", appimage::versionLabel(tag, name) },
+                                           { "date", rel.value("published_at").toString().left(10) },
+                                           { "body", appimage::safeMarkdown(rel.value("body").toString()) } } };
     QNetworkRequest req(zsyncUrl);
     req.setHeader(QNetworkRequest::UserAgentHeader, QByteArrayLiteral("melo"));
     QNetworkReply* r = get(req, zsync::kMaxControlBytes);
@@ -218,7 +256,7 @@ void AppImageUpdater::onRelease(const QByteArray& json) {
         r->deleteLater();
         if (r->error() != QNetworkReply::NoError) return checkFailed(r->errorString());
         // the control file's URL line is relative to where it was asked for, not to the redirect
-        onControl(r->readAll(), zsyncUrl, tag, name, html);
+        onControl(r->readAll(), zsyncUrl, tag, name, html, own);
     });
 }
 
@@ -243,30 +281,82 @@ void AppImageUpdater::withLocalSha1(std::function<void(QByteArray)> then) {
 }
 
 void AppImageUpdater::onControl(const QByteArray& bytes, const QUrl& from, const QString& tag,
-                                const QString& name, const QString& html) {
+                                const QString& name, const QString& html, const QVariantList& own) {
     QString err;
     std::optional<zsync::Control> c = zsync::parse(bytes, &err);
     if (!c) return checkFailed(from.toString() + QStringLiteral(": ") + err);
     withLocalSha1([=](QByteArray local) mutable {
-        checking_ = false;
         if (local.isEmpty()) return checkFailed(QStringLiteral("could not read ") + appImage_);
-        const bool newer = offered(tag, current_, local, c->sha1);
+        bool newer = offered(tag, current_, local, c->sha1);
         logLine(QStringLiteral("%1 %2: %3").arg(tag, QString::fromLatin1(c->sha1),
                 newer ? QStringLiteral("differs from the running %1").arg(QString::fromLatin1(local))
                 : !differs(local, c->sha1) ? QStringLiteral("is the running AppImage")
                 : QStringLiteral("is not newer than %1").arg(current_)));
+        // Skip this version and Later hold for the automatic checks, not for Check now
+        if (newer && !manual_ && tag == skipped_) {
+            logLine(QStringLiteral("%1 was skipped").arg(appimage::versionLabel(tag, name)));
+            newer = false;
+        } else if (newer && !manual_ && lastCheckMs_ < laterUntilMs_) {
+            logLine(QStringLiteral("%1 is postponed").arg(appimage::versionLabel(tag, name)));
+            newer = false;
+        }
+        const QString result = newer ? QStringLiteral("available") : QStringLiteral("current");
         if (newer && state_ != QLatin1String("downloading") && state_ != QLatin1String("ready")) {
             control_ = std::move(c);
             controlUrl_ = from;
+            tag_ = tag;
             version_ = appimage::versionLabel(tag, name);
             notesUrl_ = html;
+            // notes are for numbered releases; a named channel offers the update alone
+            const QVersionNumber v = tagVersion(tag);
+            notes_ = v.isNull() ? QVariantList() : own;
+            emit notesChanged();
+            if (!v.isNull()) fetchNotes(v);
             error_.clear(); errorKind_.clear(); errorDetail_.clear();
             if (state_ != QLatin1String("available")) state_ = QStringLiteral("available");
             emit changed();
+            if (manual_ || announced_ != tag) {
+                announced_ = tag;
+                emit offerFound();
+            }
         } else if (!newer && state_ == QLatin1String("available")) {
             setState({});
         }
+        setChecking(false, result);
         emit checkDone();
+    });
+}
+
+// Every tagged release above the running one up to the offered one, newest first.
+// One page of the list; on any failure the offered release's own notes stay.
+void AppImageUpdater::fetchNotes(const QVersionNumber& latest) {
+    QNetworkRequest req(releasesUrl_);
+    req.setRawHeader("Accept", "application/vnd.github+json");
+    req.setHeader(QNetworkRequest::UserAgentHeader, QByteArrayLiteral("melo"));
+    QNetworkReply* r = get(req, kMaxReleaseBytes * 4);
+    const QString forTag = tag_;
+    connect(r, &QNetworkReply::finished, this, [this, r, latest, forTag] {
+        r->deleteLater();
+        if (r->error() != QNetworkReply::NoError) { logLine(QStringLiteral("notes: ") + r->errorString()); return; }
+        if (forTag != tag_) return;
+        const QVersionNumber current = QVersionNumber::fromString(current_);
+        QList<QPair<QVersionNumber, QVariantMap>> found;
+        for (const QJsonValue& v : QJsonDocument::fromJson(r->readAll()).array()) {
+            const QJsonObject rel = v.toObject();
+            if (rel.value("draft").toBool() || rel.value("prerelease").toBool()) continue;
+            const QString tag = rel.value("tag_name").toString();
+            const QVersionNumber tv = tagVersion(tag);
+            if (tv.isNull() || tv > latest || (!current.isNull() && tv <= current)) continue;
+            found.append({ tv, QVariantMap { { "label", appimage::versionLabel(tag, rel.value("name").toString()) },
+                                             { "date", rel.value("published_at").toString().left(10) },
+                                             { "body", appimage::safeMarkdown(rel.value("body").toString()) } } });
+        }
+        if (found.isEmpty()) return;
+        std::sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        QVariantList out;
+        for (const auto& f : found) out << f.second;
+        notes_ = out;
+        emit notesChanged();
     });
 }
 
@@ -274,13 +364,19 @@ void AppImageUpdater::failWith(const QString& kind, const QString& detail) {
     errorKind_ = kind;
     errorDetail_ = detail;
     if (kind == QLatin1String("download"))
-        error_ = QStringLiteral("The update could not be downloaded. Check your connection and retry.");
+        error_ = QStringLiteral("The update didn't download. Check your connection and try again.");
     else if (kind == QLatin1String("damaged"))
-        error_ = QStringLiteral("The downloaded update is damaged. Retry to download it again.");
-    else if (kind == QLatin1String("write"))
-        error_ = QStringLiteral("The update could not be written next to melo's AppImage. Check that folder's free space and permissions, then retry.");
-    else
-        error_ = QStringLiteral("melo's AppImage could not be replaced. Check its folder's permissions and retry.");
+        error_ = QStringLiteral("The update arrived damaged. Try again.");
+    else if (kind == QLatin1String("write")) {
+        // the detail is strerror's text, or QFile's, which carries it
+        static const QRegularExpression full(QStringLiteral("No space left|quota"), QRegularExpression::CaseInsensitiveOption);
+        static const QRegularExpression denied(QStringLiteral("Permission denied|Read-only file system|Operation not permitted"),
+                                               QRegularExpression::CaseInsensitiveOption);
+        error_ = full.match(detail).hasMatch() ? QStringLiteral("The disk is full. Free some space.")
+               : denied.match(detail).hasMatch() ? QStringLiteral("melo can't write next to its AppImage. Check that folder's permissions.")
+               : QStringLiteral("The update couldn't be saved next to melo's AppImage. Check the space and permissions there.");
+    } else
+        error_ = QStringLiteral("The update didn't replace melo's AppImage. Check its folder's permissions, then try again.");
     logLine(QStringLiteral("failed (%1): %2").arg(kind, detail));
     state_ = QStringLiteral("failed");
     emit changed();
@@ -361,6 +457,20 @@ void AppImageUpdater::update() {
 
 void AppImageUpdater::restart() {
     if (!staged_ || relaunch_) return;
+    if (!swapIn()) return;
+    relaunch_ = true;
+    logLine(QStringLiteral("replaced %1 with %2, restarting").arg(appImage_, version_));
+    if (quit_) quit_(); else QCoreApplication::quit();
+}
+
+bool AppImageUpdater::applyAtQuit() {
+    if (!staged_ || relaunch_) return false;
+    if (!swapIn()) return false;
+    logLine(QStringLiteral("replaced %1 with %2 at quit").arg(appImage_, version_));
+    return true;
+}
+
+bool AppImageUpdater::swapIn() {
     // only the file this melo verified: same inode, size and modification time
     Ident now, at;
     const bool same = identOf(stagedFd_, &now.dev, &now.ino, &now.size, &now.mtimeNs)
@@ -370,13 +480,15 @@ void AppImageUpdater::restart() {
                       && now.mtimeNs == ident_.mtimeNs;
     if (!same) {
         dropStaged();
-        return failWith(QStringLiteral("damaged"), QStringLiteral("the update file changed after it was verified"));
+        failWith(QStringLiteral("damaged"), QStringLiteral("the update file changed after it was verified"));
+        return false;
     }
     const QByteArray from = QFile::encodeName(stagedPath_), to = QFile::encodeName(appImage_);
     // rename(2) replaces in one step: the old file stays whole until the new one is in place
     if (::rename(from.constData(), to.constData()) != 0) {
         const QString why = QString::fromLocal8Bit(std::strerror(errno));
-        return failWith(QStringLiteral("replace"), why);
+        failWith(QStringLiteral("replace"), why);
+        return false;
     }
     const int dirFd = ::open(QFile::encodeName(QFileInfo(appImage_).absolutePath()).constData(),
                              O_RDONLY | O_DIRECTORY | O_CLOEXEC);
@@ -384,9 +496,7 @@ void AppImageUpdater::restart() {
     ::close(stagedFd_);
     stagedFd_ = -1;
     staged_ = false;
-    relaunch_ = true;
-    logLine(QStringLiteral("replaced %1 with %2, restarting").arg(appImage_, version_));
-    if (quit_) quit_(); else QCoreApplication::quit();
+    return true;
 }
 
 void AppImageUpdater::retry() {

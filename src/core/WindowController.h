@@ -202,6 +202,9 @@ public:
     // desktop integration, same as the rest of this object: QML has no
     // clipboard type of its own
     Q_INVOKABLE void copyToClipboard(const QString& text);
+    // the file manager on `path`'s folder with the file selected (FileManager1
+    // ShowItems, as Firefox and Chromium do), else the folder
+    Q_INVOKABLE void showFile(const QString& path);
 
     // QML console.log is a no-op on builds where Qt's debug output is
     // compiled out — which is every Qt app on some distributions, and is why

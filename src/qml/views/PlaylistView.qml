@@ -4,6 +4,7 @@ import ".."
 import "../components"
 import "../components/skeletonmodel.js" as SkeletonModel
 import "../components/report.js" as Report
+import "../components/errortext.js" as ErrorText
 
 // Playlist page: back + title + Save [& Download] /
 // Sync header, indexed track rows in the shared layouts. Row click: RD mixes
@@ -25,6 +26,7 @@ Item {
     property var rpc: (method, params, cb) => sidecar.rpc(method, params, cb)
     property bool syncing: false
     property string plError
+    property bool plErrorSync: false   // plError came from Sync, not the load
 
     // hasPlaylist is a plain call, so a binding on it re-runs only on
     // playlistId, and the library arrives later over RPC. Re-derive on both.
@@ -129,7 +131,9 @@ Item {
 
     // album: { browseId, artist, kind, year } for a YouTube Music album, which
     // loads whole from its own page; id stays its playlist, for Save and Sync
+    property var openArgs: null   // the last open, for Try again
     function open(id, title, initialTracks, album) {
+        openArgs = [id, title, album]
         openedAt = Date.now()
         listCursor = ""
         fetchingMore = false
@@ -140,7 +144,7 @@ Item {
                     + " layout=" + view.layout + (album && album.browseId ? " album=" + album.browseId : ""))
         playlistTitle = title || ""
         playlistSubtitle = albumSubtitle(album)
-        plError = ""
+        plError = ""; plErrorSync = false
         // Clear the previous playlist's rows first. apply() fills placeholders in place
         // so skeletons morph, but reused across a navigation the old rows and thumbnails
         // flash until each new one decodes.
@@ -270,7 +274,8 @@ Item {
                     () => { view.syncing = false })
             } else {
                 view.syncing = false
-                view.plError = (r.result && r.result.error) || "Sync failed"
+                view.plErrorSync = true
+                view.plError = (r.result && r.result.error) || r.error || "Sync failed"
             }
         })
     }
@@ -350,22 +355,26 @@ Item {
         }
     }
 
-    Column {
+    // plError is the backend's line; the words are errortext.js's
+    readonly property var plFail: !view.plError.length ? null
+        : view.plErrorSync ? ErrorText.playlistSync(view.plError) : ErrorText.playlist(view.plError)
+    InlineError {
+        objectName: "playlistError"
         anchors.centerIn: parent
-        visible: view.plError.length > 0
-        spacing: Theme.gap(8)
-        InkText {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: view.plError
-            ink: "highlight"
-            font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
-        }
-        PushButton {
-            objectName: "playlistReport"
-            anchors.horizontalCenter: parent.horizontalCenter
-            pad: 16; fontSize: 11
-            label: "Report…"
-            onClicked: Report.send(Settings, "playlist", "", { message: view.plError })
+        width: implicitWidth; height: implicitHeight
+        centred: true
+        message: view.plFail ? view.plFail.text : ""
+        actions: !view.plFail ? []
+            : (view.plFail.fix === "retry" ? [{ id: "retry", label: "Try again" }] : [])
+              .concat(view.plFail.report ? [{ id: "report", label: "Report…" }] : [])
+        onTriggered: (id) => {
+            if (id === "report") {
+                Report.send(Settings, "playlist", view.plErrorSync ? "sync" : "",
+                            { message: view.plFail.text, error: view.plError })
+                return
+            }
+            if (view.plErrorSync) { view.plError = ""; view.plErrorSync = false; view.sync() }
+            else if (view.openArgs) view.open(view.openArgs[0], view.openArgs[1], null, view.openArgs[2])
         }
     }
 

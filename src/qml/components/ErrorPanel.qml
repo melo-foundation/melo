@@ -42,11 +42,14 @@ Surface {
         : padY * 2 + Math.max(Theme.btnH, line.height)
 
     readonly property real iconW: alert ? icon.width + Theme.gap(8) : 0
+    // the glyph centres on the first line's capitals, however many lines wrap below it
+    TextMetrics { id: cap; font: line.font; text: "H" }
     Icon {
         id: icon
+        objectName: "alertGlyph"
         visible: panel.alert
         x: panel.padX
-        y: panel.blocking ? panel.padY + (line.lineH - height) / 2 : (panel.height - height) / 2
+        y: line.y + line.baselineOffset - cap.tightBoundingRect.height / 2 - height / 2
         name: "alert"
         size: Theme.glyph(panel.blocking ? 16 : 14)
         color: ErrorUi.glyphOn(Theme.danger, panel.color)
@@ -54,7 +57,6 @@ Surface {
     InkText {
         id: line
         objectName: panel.messageName
-        readonly property real lineH: fontInfo.pixelSize * 1.3
         x: panel.padX + panel.iconW
         y: panel.blocking ? panel.padY : (panel.height - height) / 2
         width: panel.blocking ? panel.width - x - panel.padX

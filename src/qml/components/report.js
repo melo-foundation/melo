@@ -1,25 +1,26 @@
 .pragma library
 
-// Report…: the error's details to a local file (SettingsStore.writeReport),
-// that folder opened, and the public tracker's bug form titled by the error's
-// kind. The URL carries the title only; a detail can name a video or a path.
+// Report…: the error's details to a local file (SettingsStore.writeReport,
+// with README.txt beside it), that file shown in the file manager, and the
+// public tracker's bug form opened, titled by the error's kind. The form gets
+// the words melo showed, the version and the system; any other detail can
+// name a video or a path, so it stays in the file.
+
+const ISSUE_FORM = "https://github.com/melo-foundation/melo/issues/new?template=bug_report.yml"
 
 const TITLES = {
     playback: "Playback problem",
-    error: "Error message",
+    error: "Backend call failed",
     backend: "Backend not running",
-    node: "Node.js download failed",
-    ytdlp: "yt-dlp problem",
     download: "Download failed",
+    search: "Search failed",
+    radio: "Radio failed to start",
     plugin: "Plugin problem",
-    gstreamer: "Missing GStreamer elements",
-    blur: "Window blur not detected",
     home: "Home failed to load",
     playlist: "Playlist failed to load",
     cookies: "Cookie import failed",
     tagging: "Tagging failed",
     metadata: "Metadata editor problem",
-    update: "Update failed",
 }
 
 // `sub`: a cause, a code or a plugin id; never free text
@@ -27,17 +28,27 @@ function title(kind, sub) {
     return (TITLES[kind] || "Problem") + (sub !== undefined && sub !== "" ? " (" + sub + ")" : "")
 }
 
-function issueUrl(kind, sub) {
-    return "https://github.com/melo-foundation/melo/issues/new?template=bug_report.yml"
-        + "&title=" + encodeURIComponent(title(kind, sub))
+// `said`: the words the error showed; `info`: writeReport's { version, system }
+function issueUrl(kind, sub, said, info) {
+    let u = ISSUE_FORM + "&title=" + encodeURIComponent(title(kind, sub))
+    if (said) u += "&what=" + encodeURIComponent("melo said: " + said)
+    if (info && info.version) u += "&version=" + encodeURIComponent(info.version)
+    if (info && info.system) u += "&system=" + encodeURIComponent(info.system)
+    return u
 }
 
+// Main.qml sets it to WindowCtl.showFile; unset (a test), the folder opens
+let showFile = null
+function setShowFile(fn) { showFile = fn }
+
 // `settings` has writeReport(kind, details); `open` is Qt.openUrlExternally
-// unless a test passes its own
+// unless a test passes its own. `details.message` is the words the error showed.
 function send(settings, kind, sub, details, open) {
     const go = open || ((u) => Qt.openUrlExternally(u))
-    const r = settings && settings.writeReport ? settings.writeReport(kind, details || {}) : null
-    if (r && r.folder) go(r.folder)
-    go(issueUrl(kind, sub))
+    const d = details || {}
+    const r = settings && settings.writeReport ? settings.writeReport(kind, d) : null
+    if (r && r.path && showFile) showFile(r.path)
+    else if (r && r.folder) go(r.folder)
+    go(issueUrl(kind, sub, d.message, r))
     return r
 }

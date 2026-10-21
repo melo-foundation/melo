@@ -8,6 +8,7 @@ import "slots.js" as Slots
 import "locales.js" as Locales
 import "accounts.js" as Accounts
 import "report.js" as Report
+import "errortext.js" as ErrorText
 import "errorui.js" as ErrorUi
 
 // Settings in a frameless window of its own, 480x520 by default:
@@ -16,6 +17,7 @@ Window {
     id: win
     signal importPaths(var paths)   // Main imports them and opens the metadata editor
     signal guestReset()             // Main reloads Home
+    signal updateNotesRequested()   // Main opens the update's window
     // A rounded corner is at most half its rectangle's height, so the title bar
     // draws less than the window radius when it is short; the ground and the
     // border above it follow what it draws, or the bar pokes past their curve
@@ -168,6 +170,15 @@ Window {
     property bool checkUpdates: true
     // an AppImage that can update itself; packages update through their manager
     readonly property bool updatable: typeof Updater !== "undefined" && Updater !== null && Updater.supported
+    // the Updates row's value: the check's state, or the release on offer
+    readonly property string updateStatus: !updatable ? ""
+        : Updater.checking ? "Checking…"
+        : Updater.state === "available" ? Updater.version + " available"
+        : Updater.state === "downloading" ? "Downloading " + Updater.version
+        : Updater.state === "ready" ? Updater.version + " ready"
+        : Updater.state === "failed" ? "Update failed"
+        : Updater.checkResult === "current" ? "Up to date"
+        : Updater.checkResult === "failed" ? "Check failed" : ""
     property int scrollSpeed: 3
     property real tileGrowth: 4
     // At a fractional scale a logical size is a fractional device size, Qt stretches
@@ -478,11 +489,10 @@ Window {
     // `state` and `error` disagree after a plugin is toggled off while broken:
     // the sidecar sets state "stopped" and leaves the old error in place. Read
     // the STATE, and show the message only where it is still the live one.
+    // the plugin's own error line stays in the log and the report
     function pluginStatus(p) {
-        // one line: a stack trace belongs in the log
-        if (p.state === "error")   return String(p.error || "invalid").split("\n")[0]
-        if (p.state === "crashed") return String(p.error || "crashed").split("\n")[0]
-        return ""
+        const t = ErrorText.plugin(p)
+        return t ? t.text : ""
     }
     function openPluginSettings(id) {
         pluginSettingsFor = id
@@ -551,10 +561,13 @@ Window {
     property string importResult: ""
     property string importError: ""
     readonly property bool importFailed: importResult === "Import failed"
+    readonly property var importFail: importFailed
+        ? ErrorText.cookieImport(importError, Accounts.browserLabel(importBrowser)) : null
     property bool importing: false
     property string enrichResult: ""
     property string enrichError: ""
     readonly property bool enrichFailed: enrichResult === "Failed"
+    readonly property var enrichFail: enrichFailed ? ErrorText.tagging(enrichError) : null
     property bool enriching: false
     readonly property var browserOptions: [
         { value: "firefox", label: "Firefox" },
@@ -1871,9 +1884,33 @@ Window {
                 SRow {
                     objectName: "checkUpdatesRow"
                     visible: win.updatable
-                    name: "Check for updates"
+                    name: "Check automatically"
                     SToggle { checked: win.checkUpdates
                               onToggled: (v) => { win.checkUpdates = v; Settings.uiSet("checkUpdates", v) } }
+                }
+                SRow {
+                    objectName: "updatesRow"
+                    visible: win.updatable
+                    reserve: 300
+                    name: "Updates"
+                    desc: win.updateStatus
+                    Row {
+                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        spacing: Theme.gap(8)
+                        SBtn { objectName: "updateNotesBtn"; label: "What's new"
+                               anchors.verticalCenter: parent.verticalCenter
+                               visible: win.updatable && Updater.notes.length > 0 && Updater.state !== ""
+                               onClicked: win.updateNotesRequested() }
+                        SBtn { objectName: "updateRestartBtn"; label: "Restart"
+                               anchors.verticalCenter: parent.verticalCenter
+                               visible: win.updatable && Updater.state === "ready"
+                               onClicked: Updater.restart() }
+                        SBtn { objectName: "checkUpdatesNow"; label: "Check now"
+                               anchors.verticalCenter: parent.verticalCenter
+                               visible: win.updatable && Updater.state !== "downloading" && Updater.state !== "ready"
+                               enabled: !Updater.checking
+                               onClicked: Updater.checkNow() }
+                    }
                 }
                 SRow {
                     name: "Add to Library"
@@ -1919,7 +1956,7 @@ Window {
                               onToggled: (v) => { win.gridSnap = v; Settings.uiSet("gridSnap", v) } }
                 }
                 SRow {
-                    name: "Download path"
+                    name: "Download folder"
                     desc: Settings.downloadPath
                     Item { }
                 }
@@ -2017,7 +2054,7 @@ Window {
                     visible: Settings.cookieSource === "guest"
                     name: "Import browser cookies"
                     desc: win.importFailed ? "" : win.importResult
-                    error: win.importFailed ? "The import failed. Try again, or report it." : ""
+                    error: win.importFail ? win.importFail.text : ""
                     Row {
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.gap(6)
@@ -2026,10 +2063,11 @@ Window {
                                   // clear the self-anchor: it conflicts inside a Row
                                   anchors.right: undefined; anchors.verticalCenter: undefined
                                   onPicked: (v) => win.importBrowser = v }
-                        SBtn { objectName: "importReport"; visible: win.importFailed
+                        SBtn { objectName: "importReport"; visible: !!win.importFail && win.importFail.report
                                label: "Report…"
                                onClicked: Report.send(Settings, "cookies", win.importBrowser,
-                                                      { browser: win.importBrowser, error: win.importError }) }
+                                                      { message: win.importFail.text, browser: win.importBrowser,
+                                                        error: win.importError }) }
                         SBtn { objectName: "importButton"; label: win.importing ? "..." : "Import"
                                // an import already running: nothing to press
                                enabled: !win.importing
@@ -2139,13 +2177,14 @@ Window {
                 SRow {
                     name: "Auto-tag library"
                     desc: win.enrichFailed ? "" : win.enrichResult
-                    error: win.enrichFailed ? "Tagging failed. Try again, or report it." : ""
+                    error: win.enrichFail ? win.enrichFail.text : ""
                     Row {
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.gap(6)
-                        SBtn { objectName: "taggingReport"; visible: win.enrichFailed
+                        SBtn { objectName: "taggingReport"; visible: !!win.enrichFail && win.enrichFail.report
                                label: "Report…"
-                               onClicked: Report.send(Settings, "tagging", "", { error: win.enrichError }) }
+                               onClicked: Report.send(Settings, "tagging", "", { message: win.enrichFail.text,
+                                                                                error: win.enrichError }) }
                         SBtn { label: win.enriching ? "..." : "Heuristic"
                                // one pass at a time
                                enabled: !win.enriching
@@ -4289,9 +4328,10 @@ Window {
                                 SBtn {
                                     anchors.verticalCenter: parent.verticalCenter
                                     objectName: "pluginReport_" + pluginBlock.modelData.id
-                                    visible: win.pluginStatus(pluginBlock.modelData).length > 0
+                                    visible: (ErrorText.plugin(pluginBlock.modelData) || {}).report === true
                                     label: "Report…"
                                     onClicked: Report.send(Settings, "plugin", pluginBlock.modelData.id, {
+                                        message: win.pluginStatus(pluginBlock.modelData),
                                         plugin: pluginBlock.modelData.id, version: pluginBlock.modelData.version,
                                         state: pluginBlock.modelData.state, error: pluginBlock.modelData.error || "" })
                                 }

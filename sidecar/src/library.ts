@@ -1,6 +1,7 @@
 import { dataDir } from "./env";
 import { join, basename, extname } from "path";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync, renameSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync, renameSync,
+         accessSync, constants as fsConstants } from "fs";
 import { writeFileAtomic, backupOnce, backupPath } from "./atomic";
 import { isSafeIdForPath } from "./trackid";
 import { randomUUID } from "crypto";
@@ -424,6 +425,8 @@ export function replaceFile(id: string, path: string): { ok: boolean; error?: st
   if (!existsSync(path)) return { ok: false, error: "file not found" };
   const ext = extname(path).toLowerCase();
   if (!AUDIO_EXTS.has(ext)) return { ok: false, error: "not an audio file" };
+  // a source that cannot be read is told apart from a folder that cannot be written
+  try { accessSync(path, fsConstants.R_OK); } catch { return { ok: false, error: "the file cannot be read" }; }
   const dest = `${t.id}${ext}`;
   const part = join(downloadPath, `${dest}.part`);
   try {

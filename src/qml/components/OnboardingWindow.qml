@@ -521,7 +521,7 @@ MeloWindow {
                         height: obw.rowH
                         InkText {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "Check for updates"
+                            text: "Check for updates automatically"
                             ink: "text"
                             font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
                         }

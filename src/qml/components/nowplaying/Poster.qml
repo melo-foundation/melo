@@ -5,6 +5,7 @@ import Melo 1.0
 import ".."
 import "../.."
 import "../overlay.js" as Overlay
+import "sleeve.js" as Sleeve
 
 // Poster: artwork fills the page, title across the bottom. Drag, scroll and
 // the page picker all drive one `phase`, which morphs the poster into the sleeve
@@ -69,6 +70,7 @@ Item {
     // stacks: record up top, everything it has to say underneath. Same number the bar rearranges
     // on, so the whole window changes shape in one move.
     readonly property bool stacked: width < GridUi.narrowW
+    readonly property real sleeveCover: Sleeve.cover(s.p, s.videoIn)
     // 1 while the picture shows; artwork, glass and scrim follow it
     property real videoIn: videoSurf.hasFrame && (s.shaderOk || s.p < 0.5) ? 1 : 0
     Behavior on videoIn { enabled: s.settled; NumberAnimation { duration: 300 } }
@@ -193,7 +195,7 @@ Item {
         readonly property real tucked: baseX + (s.sleeveW - width) / 2
         readonly property real out: baseX + s.sleeveW * 0.62
         // out over the first leg, and back in over the start of the second
-        readonly property real emerge: s.late * Math.max(0, 1 - s.q / 0.3)
+        readonly property real emerge: Sleeve.emerge(s.p, s.q)
         x: tucked + (out - tucked) * emerge
         y: baseY + (s.sleeveW - height) / 2
         // no fade at all: once it is tucked there is nothing showing anyway
@@ -574,7 +576,7 @@ Item {
         // The words toggle eases at its source instead (see Classic).
         radius: Theme.radiusLg * s.q
         // Over the live video the box is glass until it becomes a sleeve.
-        color: Qt.alpha(Theme.card, Theme.card.a * (1 - s.videoIn * (1 - s.p)))
+        color: Qt.alpha(Theme.card, Theme.card.a * s.sleeveCover)
         clip: true
         // Under the picture, not instead of it: the art arrives a beat after
         // the track does, and a flat panel in that gap is the page looking
@@ -591,7 +593,7 @@ Item {
             source: s.np.art
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
-            opacity: status !== Image.Ready ? 0 : 1 - s.videoIn * (1 - s.p)
+            opacity: status !== Image.Ready ? 0 : s.sleeveCover
         }
         // ---- sleeve chrome: only while it is a sleeve --------------------
         Item {

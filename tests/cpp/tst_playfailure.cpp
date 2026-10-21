@@ -114,8 +114,7 @@ private slots:
     void causeForEveryCode() {
         QCOMPARE(PlayerState::failCauseFor(-32040), QString("guestWall"));
         QCOMPARE(PlayerState::failCauseFor(-32041), QString("browserWall"));
-        QCOMPARE(PlayerState::failCauseFor(-32010), QString("signin"));
-        QCOMPARE(PlayerState::failCauseFor(-32020), QString("network"));
+        QCOMPARE(PlayerState::failCauseFor(-32020), QString("dropped"));    // melo's own: the stream dropped
         QCOMPARE(PlayerState::failCauseFor(-32030), QString("network"));
         QCOMPARE(PlayerState::failCauseFor(-32001), QString("network"));   // RpcClient's timeout
         QCOMPARE(PlayerState::failCauseFor(-32002), QString("network"));   // the sidecar died
@@ -130,7 +129,6 @@ private slots:
         QTest::newRow("guest wall") << "guestwall1" << "guestWall" << "YouTube is refusing guest playback from this address.";
         QTest::newRow("browser wall") << "browserwall1" << "browserWall"
                                       << "YouTube is refusing playback from this address, even with your browser's account.";
-        QTest::newRow("sign-in") << "signin1" << "signin" << "Your sign-in has expired.";
         QTest::newRow("network") << "network1" << "network" << "Network error";
         QTest::newRow("other") << "unavailable1" << "other" << "This video is unavailable";
     }
@@ -165,7 +163,7 @@ private slots:
         QJsonArray arr{track("dropped1"), track("unavailable9")};
         coord_->playQueue(arr, 0);
         QTRY_VERIFY_WITH_TIMEOUT(!state_.failCause().isEmpty(), 10000);
-        QCOMPARE(state_.failCause(), QString("network"));
+        QCOMPARE(state_.failCause(), QString("dropped"));
         QCOMPARE(state_.failReason(), QString("There was a problem with playback."));
         QCOMPARE(queue_.currentIndex(), 0);
         QCOMPARE(state_.currentTrack().id, QString("dropped1"));
@@ -175,7 +173,7 @@ private slots:
         QTRY_COMPARE(streamRequests("dropped1").size(), 2);
         QCOMPARE(streamRequests("dropped1").last()["fresh"].toBool(), true);
         QTRY_VERIFY_WITH_TIMEOUT(!state_.failCause().isEmpty(), 10000);   // dropped again
-        QCOMPARE(state_.failCause(), QString("network"));
+        QCOMPARE(state_.failCause(), QString("dropped"));
         coord_->answerFailure("dismiss");
     }
 
@@ -185,7 +183,7 @@ private slots:
         freshPlayer();
         coord_->playQueue(QJsonArray{track("broken1")}, 0);
         QTRY_VERIFY_WITH_TIMEOUT(!state_.failCause().isEmpty(), 10000);
-        QCOMPARE(state_.failCause(), QString("network"));
+        QCOMPARE(state_.failCause(), QString("dropped"));
         QCOMPARE(state_.failReason(), QString("There was a problem with playback."));
         QDir().mkpath(dir_.filePath("cfg/logs"));
         QFile lf(dir_.filePath("cfg/logs/melo.log"));
@@ -198,7 +196,24 @@ private slots:
         const QString text = QString::fromUtf8(f.readAll());
         QVERIFY(f.fileName().startsWith(dir_.filePath("cfg/reports/playback-")));
         QVERIFY2(text.contains("track: broken1\n"), qPrintable(text));
-        QVERIFY(text.contains("cause: network\n"));
+        // README.txt beside it: where the file goes and that the secrets are out
+        QFile readme(dir_.filePath("cfg/reports/README.txt"));
+        QVERIFY(readme.open(QIODevice::ReadOnly));
+        const QString how = QString::fromUtf8(readme.readAll());
+        QVERIFY2(how.contains("https://github.com/melo-foundation/melo/issues/new?template=bug_report.yml"), qPrintable(how));
+        QVERIFY(how.contains("newest .txt file"));
+        QVERIFY(how.contains("\"Report file\" box"));
+        QVERIFY(how.contains("https://discord.gg/T2jHMX6AcG"));
+        QVERIFY(how.contains("tokens are removed"));
+        QVERIFY(how.contains("\"Steps to reproduce\""));
+        // a detail is redacted as the log is
+        const QVariantMap r2 = settings_->writeReport("redact", {{"url", "https://rr1.googlevideo.com/videoplayback?sig=abc"},
+                                                                   {"header", "Cookie: SAPISID=secret123"}});
+        QFile f2(r2.value("path").toString());
+        QVERIFY(f2.open(QIODevice::ReadOnly));
+        const QString text2 = QString::fromUtf8(f2.readAll());
+        QVERIFY2(!text2.contains("secret123") && !text2.contains("googlevideo.com/videoplayback"), qPrintable(text2));
+        QVERIFY(text.contains("cause: dropped\n"));
         QVERIFY(text.contains("kind: playback\n"));
         QVERIFY(text.contains("--- last 2 lines of melo.log ---\n[melo] an earlier line\n[melo] the line before the failure"));
         QVERIFY(text.contains("code: -32020\n"));
@@ -231,7 +246,7 @@ private slots:
         emit sidecar_->streamDropped(QStringLiteral("file:///another"), 1);   // not this stream
         QVERIFY(state_.failCause().isEmpty());
         emit sidecar_->streamDropped(qEnvironmentVariable("MELO_FAKE_SHORT_URL"), 4321);
-        QCOMPARE(state_.failCause(), QString("network"));
+        QCOMPARE(state_.failCause(), QString("dropped"));
         QCOMPARE(state_.failReason(), QString("There was a problem with playback."));
         QCOMPARE(state_.currentTrack().id, QString("short2"));
         // Retry plays again from where it stopped
@@ -309,13 +324,13 @@ private slots:
         QCOMPARE(streamRequests("browserwall2").last()["fresh"].toBool(), true);
     }
 
-    void dismissAndSignInOnlyClose() {
-        playFails({"signin2"});
-        coord_->answerFailure("signin");
+    void dismissOnlyCloses() {
+        playFails({"network2"});
+        coord_->answerFailure("dismiss");
         QVERIFY(state_.failCause().isEmpty());
         QTest::qWait(200);
-        QCOMPARE(streamRequests("signin2").size(), 1);
-        QCOMPARE(state_.currentTrack().id, QString("signin2"));
+        QCOMPARE(streamRequests("network2").size(), 1);
+        QCOMPARE(state_.currentTrack().id, QString("network2"));
     }
 
     // A walled prefetch stays silent and is asked once, not on every tick.

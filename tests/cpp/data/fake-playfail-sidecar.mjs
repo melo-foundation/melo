@@ -7,7 +7,6 @@ let settings = { prefetchPercent: 0, crossfadeSeconds: 0, silenceSkip: false, ui
 const walls = {
   guestwall: [-32040, "YouTube is refusing guest playback from this address."],
   browserwall: [-32041, "YouTube is refusing playback from this address, even with your browser's account."],
-  signin: [-32010, "Your sign-in has expired."],
   network: [-32030, "Network error"],
 };
 const reply = (id, body) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, ...body }) + "\n");

@@ -33,14 +33,6 @@ class PlayerState : public QObject {
     Q_PROPERTY(bool videoSupported READ videoSupported NOTIFY videoSupportedChanged)
     Q_PROPERTY(int panelMode READ panelMode WRITE setPanelMode NOTIFY panelModeChanged)
     Q_PROPERTY(QString error READ error WRITE setError NOTIFY errorChanged)
-    // The sidecar's own bands (rpc.ts:22): -32010 auth/cookies, -32020 yt-dlp,
-    // -32030 network. Kept so an expired cookie and a DNS failure can each
-    // offer the action that fixes it.
-    Q_PROPERTY(int errorCode READ errorCode NOTIFY errorChanged)
-    // "" while nothing is wrong; "signin", "retry" or "" — what the surface
-    // should OFFER, decided from the code in one place rather than by a
-    // string match in QML.
-    Q_PROPERTY(QString errorAction READ errorAction NOTIFY errorChanged)
     // The playing track could not be loaded: "" while nothing failed, else
     // what kind of failure (failCauseFor). Shown as a dialog that waits for an
     // answer (PlaybackCoordinator::answerFailure); the reason is the sidecar's line.
@@ -86,24 +78,17 @@ public:
     bool videoSupported() const { return videoSupported_; }
     int panelMode() const { return panelMode_; }
     QString error() const { return error_; }
-    int errorCode() const { return errorCode_; }
-    QString errorAction() const {
-        if (error_.isEmpty()) return {};
-        if (errorCode_ == -32010) return QStringLiteral("signin");
-        if (errorCode_ == -32020 || errorCode_ == -32030) return QStringLiteral("retry");
-        if (errorCode_ == -32040) return QStringLiteral("playbackCookies");
-        return {};
-    }
     QString failCause() const { return failCause_; }
     QString failReason() const { return failReason_; }
     // The sidecar's code bands (rpc.ts), plus RpcClient's own -32001 timeout
-    // and -32002 sidecar died. 0: the resolve answered ok:false.
+    // and -32002 sidecar died; -32020 is melo's own: the stream dropped.
+    // 0: the resolve answered ok:false.
     static QString failCauseFor(int code) {
         switch (code) {
         case -32040: return QStringLiteral("guestWall");
         case -32041: return QStringLiteral("browserWall");
-        case -32010: return QStringLiteral("signin");
-        case -32020: case -32030: case -32001: case -32002: return QStringLiteral("network");
+        case -32020: return QStringLiteral("dropped");
+        case -32030: case -32001: case -32002: return QStringLiteral("network");
         default: return QStringLiteral("other");
         }
     }
@@ -141,10 +126,7 @@ public:
     void setVideoPending(bool v) { if (v != videoPending_) { videoPending_ = v; emit videoPendingChanged(); } }
     void setVideoSupported(bool v) { if (v != videoSupported_) { videoSupported_ = v; emit videoSupportedChanged(); } }
     void setPanelMode(int v) { if (v != panelMode_) { panelMode_ = v; emit panelModeChanged(); } }
-    void setError(const QString& e) { error_ = e; errorCode_ = 0; emit errorChanged(); }
-    void setErrorWithCode(const QString& e, int code) {
-        error_ = e; errorCode_ = code; emit errorChanged();
-    }
+    void setError(const QString& e) { error_ = e; emit errorChanged(); }
     void setFailure(const QString& cause, const QString& reason) {
         failCause_ = cause; failReason_ = reason; emit failureChanged();
     }
@@ -195,6 +177,5 @@ private:
     bool videoPending_ = false;
     int panelMode_ = Suggestions;
     QString error_;
-    int errorCode_ = 0;
     QString failCause_, failReason_;
 };

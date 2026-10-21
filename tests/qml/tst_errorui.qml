@@ -16,6 +16,7 @@ Item {
         width: 400; height: implicitHeight; maxWidth: 400
         message: "This video is unavailable"
         namePrefix: "d_"
+        messageName: "dialogText"
         actions: [{ id: "retry", label: "Retry" }, { id: "skip", label: "Skip" }, { id: "report", label: "Report…" }]
     }
     // an update notice: no alert glyph, Release notes left of Update
@@ -27,6 +28,26 @@ Item {
         alert: false
         namePrefix: "u_"
         actions: [{ id: "update", label: "Update" }, { id: "notes", label: "Release notes" }]
+    }
+    // a message that wraps to three lines in a bar as narrow as the mini player's
+    readonly property string wrapping: "YouTube is blocking guest playback from your network. Use your browser's YouTube account."
+    ErrorPanel {
+        id: narrowBar
+        y: 250
+        width: 300; height: implicitHeight; maxWidth: 300
+        message: root.wrapping
+        messageName: "narrowText"
+        actions: [{ id: "retry", label: "Try again" }, { id: "skip", label: "Skip" }]
+    }
+    // the test theme's words are light ink, so the page under them is dark
+    Rectangle { x: 305; y: 245; width: 215; height: inline.height + 10; color: inline.face }
+    InlineError {
+        id: inline
+        objectName: "inline"
+        face: "#1a1a1a"
+        x: 310; y: 250
+        width: 200; height: implicitHeight
+        message: root.wrapping
     }
     Rectangle { id: bar; anchors.bottom: parent.bottom; width: parent.width; height: 80 }
     ErrorBarStack {
@@ -83,6 +104,37 @@ Item {
             const notes = findChild(updateBar, "u_notes"), upd = findChild(updateBar, "u_update")
             verify(notes.mapToItem(updateBar, 0, 0).x < upd.mapToItem(updateBar, 0, 0).x)
             verify(upd.accent && !notes.accent)
+        }
+
+        // rows of `img` with ink in columns [x0, x1) of `rect` (root coordinates, dpr 1)
+        function inkRows(img, x0, x1, y0, y1) {
+            const bg = img.pixel(Math.round(x0) - 2, Math.round(y0))
+            const far = (c) => Math.abs(c.r - bg.r) + Math.abs(c.g - bg.g) + Math.abs(c.b - bg.b) > 0.45
+            let top = -1, bot = -1
+            for (let y = Math.round(y0); y < Math.round(y1); y++)
+                for (let x = Math.round(x0); x < Math.round(x1); x++)
+                    if (far(img.pixel(x, y))) { if (top < 0) top = y; bot = y; break }
+            return (top + bot) / 2
+        }
+
+        // the glyph's ink centres on the first line's capital, in the bar, the dialog and a page
+        function test_the_glyph_lines_up_with_the_first_line_data() {
+            return [{ tag: "bar", host: narrowBar, text: "narrowText" },
+                    { tag: "dialog", host: dialogSize, text: "dialogText" },
+                    { tag: "inline", host: inline, text: "inlineText" }]
+        }
+        function test_the_glyph_lines_up_with_the_first_line(data) {
+            waitForRendering(data.host)
+            const img = grabImage(root)
+            const glyph = findChild(data.host, "alertGlyph")
+            const words = findChild(data.host, data.text)
+            if (data.tag !== "dialog") verify(words.lineCount >= 2, "the message wraps")
+            const g = glyph.mapToItem(root, 0, 0), t = words.mapToItem(root, 0, 0)
+            const firstLine = words.contentHeight / words.lineCount
+            const glyphMid = inkRows(img, g.x, g.x + glyph.width, g.y - 4, g.y + glyph.height + 4)
+            // the "Y" that opens the message
+            const capMid = inkRows(img, t.x, t.x + words.font.pixelSize * 0.55, t.y, t.y + firstLine)
+            verify(Math.abs(glyphMid - capMid) <= 1, data.tag + ": glyph " + glyphMid + ", capital " + capMid)
         }
 
         function test_buttons_answer_and_a_click_dismisses_the_transient_one() {

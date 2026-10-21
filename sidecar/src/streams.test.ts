@@ -7,9 +7,10 @@ const h = vi.hoisted(() => ({
   ytdlp: vi.fn(),
   poTokenSession: vi.fn(),
   mergeGuestCookies: vi.fn(),
+  channel: "stable",
 }));
 vi.mock("./ytdlp", () => ({
-  ytdlp: h.ytdlp, looksStale: () => false, ytdlpChannel: () => "stable",
+  ytdlp: h.ytdlp, looksStale: () => false, ytdlpChannel: () => h.channel,
 }));
 vi.mock("./settings", async (orig) => ({
   ...(await orig<typeof import("./settings")>()),
@@ -197,6 +198,17 @@ describe("fetchStreamUrl identities", () => {
     expect(e).toMatchObject({ code: -32041, message: WALL_MESSAGES.browser,
                               data: { identity: "browser", signedIn: true } });
     expect(e.message).not.toMatch(/guest/);
+  });
+
+  it("offers no switch to nightly when yt-dlp is on nightly already", async () => {
+    setBrowserSignedInForTest(async () => true);
+    h.channel = "nightly";
+    try {
+      ytdlpAnswers(() => ({ err: WALL }));
+      const e = await fetchStreamUrl("idW3n").catch((x) => x);
+      expect(e).toMatchObject({ code: -32041, message: WALL_MESSAGES.browserNightly });
+      expect(e.message).not.toMatch(/nightly/);
+    } finally { h.channel = "stable"; }
   });
 
   it("says the browser is signed out when its store has no YouTube login", async () => {

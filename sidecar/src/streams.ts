@@ -736,11 +736,13 @@ export const BOT_WALL = -32040;
 export const BOT_WALL_BROWSER = -32041;
 
 export const WALL_MESSAGES = {
-  guest: "YouTube is refusing guest playback from this address.",
-  none: "YouTube is refusing playback without an account from this address.",
-  browser: "YouTube is refusing playback from this address, even with your browser's account.",
-  browserSignedOut: "YouTube is refusing playback from this address, and your browser is not signed in to YouTube.",
-  browserUnread: "YouTube is refusing playback from this address, and your browser's cookies could not be read.",
+  guest: "YouTube is blocking guest playback from your network. Use your browser's YouTube account.",
+  none: "YouTube is blocking playback without an account from your network. Use your browser's YouTube account.",
+  browser: "YouTube is blocking playback from your network, even with your browser's account. Use yt-dlp nightly.",
+  // already on nightly: nothing left to switch to
+  browserNightly: "YouTube is blocking playback from your network, even with your browser's account.",
+  browserSignedOut: "YouTube is blocking playback from your network, and your browser isn't signed in to YouTube. Sign in there, then try again.",
+  browserUnread: "YouTube is blocking playback from your network, and melo can't read your browser's cookies. Close the browser, then try again.",
 } as const;
 
 /** The wall as the identity that met it; yt-dlp's own sentence rides in `data`
@@ -754,7 +756,7 @@ type BrowserOutcome = "walled" | "unread" | "other";
 
 /** The wall after the browser's cookies failed too: the message says what the browser had. */
 async function browserWallError(reason: string, browser: string, outcome: BrowserOutcome): Promise<RpcError> {
-  let message: string = WALL_MESSAGES.browser;
+  let message: string = ytdlpChannel() === "nightly" ? WALL_MESSAGES.browserNightly : WALL_MESSAGES.browser;
   let signedIn: boolean | null = null;
   if (outcome === "unread") message = WALL_MESSAGES.browserUnread;
   else {

@@ -7,6 +7,8 @@
 #include <QPointer>
 #include <QTimer>
 #include <QUrl>
+#include <QVariantList>
+#include <QVersionNumber>
 #include <functional>
 #include <optional>
 
@@ -35,6 +37,12 @@ class AppImageUpdater : public QObject {
     // "download" | "damaged" | "write" | "replace"
     Q_PROPERTY(QString errorKind READ errorKind NOTIFY changed)
     Q_PROPERTY(QString errorDetail READ errorDetail NOTIFY changed)
+    // every tagged release above the running one, newest first:
+    // [{ label: "Alpha 4.1", date: "2026-10-04", body: <Markdown that loads nothing> }]
+    Q_PROPERTY(QVariantList notes READ notes NOTIFY notesChanged)
+    Q_PROPERTY(bool checking READ checking NOTIFY checkingChanged)
+    // the last check's answer: "" | "current" | "available" | "failed"
+    Q_PROPERTY(QString checkResult READ checkResult NOTIFY checkingChanged)
 
 public:
     // `appImage` is the running file; empty means not an AppImage
@@ -53,6 +61,8 @@ public:
                         const QByteArray& localSha1Hex, const QByteArray& remoteSha1Hex);
     // the arguments the new AppImage starts with: melo's flags, never a file or URL
     static QStringList relaunchArgs(const QStringList& args);
+    // 0.N.P from alpha-N(.P), X.Y.Z from vX.Y.Z; null for a named channel
+    static QVersionNumber tagVersion(const QString& tag);
     static constexpr qint64 kIntervalMs = 24 * 60 * 60 * 1000;
     // wall-clock: a suspended laptop still checks once a day
     static constexpr int kTickMs = 10 * 60 * 1000;
@@ -71,13 +81,23 @@ public:
     QString error() const { return error_; }
     QString errorKind() const { return errorKind_; }
     QString errorDetail() const { return errorDetail_; }
+    QVariantList notes() const { return notes_; }
+    bool checking() const { return checking_; }
+    QString checkResult() const { return checkResult_; }
+    QString offeredTag() const { return tag_; }
     const appimage::UpdateInfo& updateInfo() const { return info_; }
     QString stagedPath() const;
 
     // Settings → Check for updates: on checks at launch and every 24 h
     void setEnabled(bool on);
     // where the release is read from; the update information's by default
-    void setApiUrl(const QUrl& url) { apiUrl_ = url; }
+    // (tests: the release list is then read from beside it, at "releases")
+    void setApiUrl(const QUrl& url) { apiUrl_ = url; releasesUrl_ = url.resolved(QUrl(QStringLiteral("releases"))); }
+    // the release list the notes come from; the update information's by default
+    void setReleasesUrl(const QUrl& url) { releasesUrl_ = url; }
+    // what Skip this version and Later stored (ui.updateSkipped, ui.updateLaterUntil)
+    void setSkipped(const QString& tag) { skipped_ = tag; }
+    void setLaterUntil(qint64 ms) { laterUntilMs_ = ms; }
     // what Restart calls once the files are swapped; QCoreApplication::quit by default
     void setQuit(std::function<void()> quit) { quit_ = std::move(quit); }
     // MELO_VERSION by default
@@ -86,6 +106,12 @@ public:
     void setTransferTimeout(int ms);
 
     Q_INVOKABLE void check();
+    // Check now: offers a skipped or postponed release too
+    Q_INVOKABLE void checkNow();
+    // not this release again; a newer one is offered as usual
+    Q_INVOKABLE void skip();
+    // not before the next daily check
+    Q_INVOKABLE void later();
     Q_INVOKABLE void update();
     Q_INVOKABLE void restart();
     // the failed step again: the download, or the swap
@@ -94,20 +120,32 @@ public:
     // Restart swapped the files: main() starts the new AppImage after quitting
     bool relaunchPending() const { return relaunch_; }
     bool relaunch() const;
+    // At quit: a verified update not yet swapped in is, with Restart's checks.
+    bool applyAtQuit();
 
 signals:
     void changed();
     void progressChanged();
     void checkDone();
+    void notesChanged();
+    // a release to show: once per release a run, again after Later, and on every Check now
+    void offerFound();
+    void checkingChanged();
+    // a choice to keep in the settings' ui object
+    void remember(const QString& key, const QVariant& value);
 
 private:
     void setState(const QString& s);
     void failWith(const QString& kind, const QString& detail);
     void onRelease(const QByteArray& json);
     void onControl(const QByteArray& bytes, const QUrl& from, const QString& tag,
-                   const QString& name, const QString& html);
+                   const QString& name, const QString& html, const QVariantList& own);
     void withLocalSha1(std::function<void(QByteArray)> then);
     void checkFailed(const QString& why);
+    void setChecking(bool on, const QString& result);
+    void fetchNotes(const QVersionNumber& latest);
+    // the swap Restart and quitting share
+    bool swapIn();
     void removeStale();
     void dropStaged();
     void tick();
@@ -115,7 +153,12 @@ private:
 
     QString appImage_;
     appimage::UpdateInfo info_;
-    QUrl apiUrl_;
+    QUrl apiUrl_, releasesUrl_;
+    QString tag_, skipped_, checkResult_;
+    qint64 laterUntilMs_ = 0;
+    bool manual_ = false;
+    QString announced_;
+    QVariantList notes_;
     bool enabled_ = false;
     bool checking_ = false;
     QTimer tick_;

@@ -38,8 +38,7 @@ public:
     // The answer to PlayerState.failCause: "retry" resolves the same track
     // again past the sidecar's remembered wall, "skip" plays the next,
     // "browser" switches playback cookies to the browser's and retries,
-    // "update" pulls the nightly yt-dlp and retries; "signin" and "dismiss"
-    // only close it. Retry also works with no failure showing.
+    // "update" pulls the nightly yt-dlp and retries; "dismiss" only closes it. Retry also works with no failure showing.
     Q_INVOKABLE void answerFailure(const QString& action);
     // the last failure's details, for a report
     Q_INVOKABLE QVariantMap lastFailure() const { return lastFailure_; }
@@ -137,6 +136,8 @@ signals:
     // without it a controller shows the pre-scrub position until the next
     // track. Seconds; MprisService converts.
     void seeked(double seconds);
+    // radio/start failed; `reason` is the sidecar's line, for the log and a report
+    void radioFailed(const QString& reason);
 
 private:
     enum class PlayIntent { UserSelect, Advance };

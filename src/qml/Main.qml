@@ -9,6 +9,8 @@ import "components/shortcuts.js" as SC
 import "components/videowanted.js" as VideoWanted
 import "components/layoutstate.js" as LayoutState
 import "components/report.js" as Report
+import "components/errortext.js" as ErrorText
+import "components/playfail.js" as PlayFail
 import "views"
 import "."
 
@@ -1647,6 +1649,7 @@ Window {
         failShown: root.failHost === kind
         failChoices: root.failBrowsers
         failBusy: root.failChecking
+        failStale: root.ytdlpStale.length > 0
         onFailAnswered: (a) => root.answerFailure(a)
         listEmpty: popupQueuePanel.empty
         defaultControls: root.detachedControls
@@ -1662,6 +1665,7 @@ Window {
         failShown: root.failHost === kind
         failChoices: root.failBrowsers
         failBusy: root.failChecking
+        failStale: root.ytdlpStale.length > 0
         onFailAnswered: (a) => root.answerFailure(a)
         defaultControls: root.detachedControls
         onFrameShown: root.windowFramed(visWin)
@@ -1703,6 +1707,7 @@ Window {
         failShown: root.failHost === kind
         failChoices: root.failBrowsers
         failBusy: root.failChecking
+        failStale: root.ytdlpStale.length > 0
         onFailAnswered: (a) => root.answerFailure(a)
         defaultControls: root.detachedControls
         onFrameShown: root.windowFramed(videoWin)
@@ -1788,6 +1793,7 @@ Window {
             shown: root.failHost === "mini" && root.miniPlayer
             cause: PlayerState.failCause
             reason: PlayerState.failReason
+            stale: root.ytdlpStale.length > 0
             choices: root.failBrowsers
             busy: root.failChecking
             onAnswered: (a) => root.answerFailure(a)
@@ -3037,6 +3043,7 @@ Window {
             objectName: "settingsWin"
             transientParent: root
             onImportPaths: (paths) => root.importAndEdit(paths)
+            onUpdateNotesRequested: root.openUpdateNotes()
             onGuestReset: homeView.refresh()
             mainAreaRatio: (root.lastFullWidth * root.lastFullHeight) / 2073600
         }
@@ -3048,7 +3055,7 @@ Window {
         sourceComponent: EqWindow { objectName: "eqWin"; transientParent: root }
     }
     function eqWindow() { eqLoader.active = true; return eqLoader.item }
-    MetadataEditor { id: metadataEditor }
+    MetadataEditor { id: metadataEditor; onSettingsWanted: root.settingsWindow().open("general") }
 
     // A library edit reaches the track that is playing: the bar, Now playing
     // and MPRIS take the new name without waiting for the next track
@@ -3232,10 +3239,10 @@ Window {
     // A popup rather than a band across the top, so a stream failure also
     // shows in the compact window.
     // ---------- the error bars ----------
-    // Every non-blocking error: the player's last error (8 s, or a click), the
-    // backend being down (a state: it stays), missing GStreamer elements, the
-    // blur notice and the yt-dlp channel question. Above the player bar, never
-    // on it; in the mini player, in a popup above the bar.
+    // Every non-blocking error: the last failure melo raised (8 s, or a click),
+    // the backend being down (a state: it stays), missing GStreamer elements,
+    // the blur notice and the yt-dlp channel question. Above the player bar,
+    // never on it; in the mini player, in a popup above the bar.
     property bool backendDown: false
     Timer {   // a sidecar that is merely starting does not flash the state
         interval: 500
@@ -3253,34 +3260,34 @@ Window {
     property bool gstDismissed: false
     property bool blurShown: false
     property string ytdlpStale: ""
-    function errorActionLabel(a) {
-        if (a === "signin") return "Sign in"
-        if (a === "playbackCookies" && Settings.streamCookieSource !== "browser" && Settings.cookieSource !== "browser")
-            return "Use browser cookies"
-        return "Retry"
-    }
-    // An AppImage's update: the release, its download, then Restart. A click
-    // hides the offer or a failure until the next one.
+    // An AppImage's update. A tagged release opens its window by itself (once per
+    // offer, when nothing else holds the screen) and the window carries the
+    // download and Restart; a nightly has only the bar. A click on the bar's
+    // offer is Later; on a failure it hides it until the next one.
     readonly property var updater: typeof Updater !== "undefined" ? Updater : null
     property string updateHidden: ""
     readonly property string updateKey: updater ? updater.state + ":" + updater.version + ":" + updater.errorKind : ""
     function updateNotice() {
         const u = root.updater
         if (!u || u.state === "" || root.updateHidden === root.updateKey) return null
-        const notes = { id: "notes", label: "Release notes" }
+        // a tagged release lives in its own window; a bar only for a failure while it is closed
+        if (u.notes.length > 0) {
+            if (u.state !== "failed" || root.updateWindowOpen) return null
+            return { key: "update", message: u.error, actions: [{ id: "retry", label: "Try again" }] }
+        }
+        // a nightly has no notes: the bar is all there is
         const mb = 1024 * 1024
         if (u.state === "available")
             return { key: "update", message: u.version, alert: false,
-                     actions: u.canUpdate ? [{ id: "update", label: "Update" }, notes] : [notes] }
+                     actions: u.canUpdate ? [{ id: "update", label: "Update" }] : [] }
         if (u.state === "downloading")
             return { key: "update", message: "Downloading " + u.version + (u.total > 0
                          ? "  " + (u.fetched / mb).toFixed(1) + " / " + (u.total / mb).toFixed(1) + " MB" : ""),
-                     alert: false, sticky: true, actions: [notes] }
+                     alert: false, sticky: true, actions: [] }
         if (u.state === "ready")
             return { key: "update", message: u.version, alert: false, sticky: true,
-                     actions: [{ id: "restart", label: "Restart" }, notes] }
-        return { key: "update", message: u.error,
-                 actions: [{ id: "retry", label: "Retry" }, { id: "report", label: "Report…" }] }
+                     actions: [{ id: "restart", label: "Restart" }] }
+        return { key: "update", message: u.error, actions: [{ id: "retry", label: "Try again" }] }
     }
     readonly property var notices: {
         const out = []
@@ -3288,65 +3295,106 @@ Window {
         const upd = root.updateNotice()
         if (upd) out.push(upd)
         if (root.backendDown && !sidecar.ready)
-            out.push({ key: "backend", message: "melo's backend is not running.", actions: [report], sticky: true })
+            out.push({ key: "backend", message: "melo's backend isn't running.",
+                       actions: [report], sticky: true })
         if (MELO_MISSING_GST.length > 0 && !root.gstDismissed)
-            out.push({ key: "gstreamer", message: "GStreamer elements missing: " + MELO_MISSING_GST + " — " + MELO_GST_HINT,
-                       actions: [{ id: "ok", label: "OK" }, report], sticky: true })
+            out.push({ key: "gstreamer", sticky: true,
+                       message: "Some GStreamer plugins are missing."
+                                + (MELO_GST_HINT.length ? "" : " Install your distribution's GStreamer plugins."),
+                       actions: (MELO_GST_HINT.length ? [{ id: "copy", label: "Copy install command" }] : [])
+                                .concat([{ id: "ok", label: "OK" }]) })
         if (root.blurShown)
-            out.push({ key: "blur", message: "Window blur is not available, so this theme may be hard to read.",
-                       actions: [{ id: "ok", label: "OK" }, { id: "never", label: "Don't show again" }, report], sticky: true })
-        if (root.ytdlpStale.length)
-            out.push({ key: "ytdlp", message: "Playback needs a newer yt-dlp.",
-                       actions: [{ id: "nightly", label: "Switch to Nightly" }, { id: "no", label: "Not now" }, report], sticky: true })
-        if (PlayerState.error.length) {
-            const a = PlayerState.errorAction
-            out.push({ key: "error", message: PlayerState.error,
-                       actions: (a.length ? [{ id: a, label: root.errorActionLabel(a) }] : []).concat([report]) })
-        }
+            out.push({ key: "blur", message: "Your desktop doesn't blur windows. This theme needs it.",
+                       actions: [{ id: "theme", label: "Change theme" }, { id: "ok", label: "Not now" },
+                                 { id: "never", label: "Don't show again" }], sticky: true })
+        // while a track's failure is up, its dialog offers the switch instead; on nightly there is none
+        if (root.ytdlpStale.length && !PlayerState.failCause && Settings.ytdlpChannel !== "nightly")
+            out.push({ key: "ytdlp", message: "yt-dlp is out of date.",
+                       actions: [{ id: "nightly", label: "Use yt-dlp nightly" }, { id: "no", label: "Not now" }], sticky: true })
+        const c = root.errorContext
+        if (PlayerState.error.length && c && c.text === PlayerState.error)
+            out.push({ key: "error", message: c.text,
+                       actions: (c.fix === "retry" && c.retry ? [{ id: "retry", label: "Try again" }]
+                                 : c.fix === "settings" ? [{ id: "settings", label: "Open Settings" }] : [])
+                                .concat(c.report ? [report] : []) })
         return out
     }
     function noticeAnswered(key, id) {
         if (key === "update") {
             const u = root.updater
-            if (id === "notes") Qt.openUrlExternally(u.notesUrl)
-            else if (id === "update") u.update()
+            if (id === "update") u.update()
             else if (id === "restart") u.restart()
             else if (id === "retry") u.retry()
-            else if (id === "report")
-                Report.send(Settings, "update", u.errorKind, { version: u.version, error: u.error, detail: u.errorDetail })
             return
         }
-        if (key === "backend") { Report.send(Settings, "backend", "", { message: "melo's backend is not running." }); return }
+        if (key === "backend") { Report.send(Settings, "backend", "", { message: root.notices.find((n) => n.key === "backend").message }); return }
         if (key === "gstreamer") {
-            if (id === "report") Report.send(Settings, "gstreamer", "", { missing: MELO_MISSING_GST, hint: MELO_GST_HINT })
-            else root.gstDismissed = true
+            if (id === "copy") { WindowCtl.copyToClipboard(MELO_GST_HINT); return }
+            root.gstDismissed = true
             return
         }
         if (key === "blur") {
-            if (id === "report") { Report.send(Settings, "blur", "", { platform: Qt.platform.pluginName, glassBlur: Theme.glassBlur }); return }
             root.blurShown = false
             blurNotice.dismiss(id === "never")
+            if (id === "theme") root.settingsWindow().open("appearance")
             return
         }
         if (key === "ytdlp") {
-            if (id === "report") { Report.send(Settings, "ytdlp", "outdated", { ytdlp: root.ytdlpStale, channel: Settings.ytdlpChannel }); return }
             root.ytdlpStale = ""
             if (id === "nightly") sidecar.rpc("ytdlp/setChannel", { channel: "nightly" }, () => Settings.refresh())
             return
         }
-        // the player's error: each action fixes the error it appears on; a cookie
-        // switch or a retry plays the same track again
+        // the failure melo raised: its fix, or Report…
+        const c = root.errorContext
         if (id === "report") { root.reportError(); return }
         PlayerState.error = ""
-        if (id === "signin") root.settingsWindow().open("personalization")
-        if (id === "playbackCookies") { root.playbackCookiesFromBrowser(); return }
-        // trackInfo is YouTube's numbers, not a track: replaying it cleared the queue
-        if (id === "retry" && PlayerState.hasTrack) Player.answerFailure("retry")
+        if (!c) return
+        if (id === "retry" && c.retry) c.retry()
+        if (id === "settings") root.settingsWindow().open(c.tab || "general")
     }
     function noticeDismissed(key) {
         if (key === "error") PlayerState.error = ""
-        if (key === "update") root.updateHidden = root.updateKey
+        if (key !== "update") return
+        if (root.updater.state === "available") root.updater.later()
+        else root.updateHidden = root.updateKey
     }
+    Loader {
+        id: updateNotesLoader
+        active: false
+        sourceComponent: UpdateNotesWindow { objectName: "updateNotesWin"; transientParent: root }
+    }
+    function openUpdateNotes() { updateNotesLoader.active = true; (updateNotesLoader.item as UpdateNotesWindow).open() }
+    readonly property bool updateWindowOpen: updateNotesLoader.item !== null && (updateNotesLoader.item as UpdateNotesWindow).visible
+    // an offer waiting for the screen: not over first-run setup or a dialog that asks
+    property bool updatePending: false
+    property string updateReadyShown: ""
+    function updateScreenFree() {
+        return root.ready && !onboarding.visible && !promptDialog.visible && !PlayerState.failCause
+    }
+    function tryOpenUpdate() {
+        if (!root.updatePending || !root.updateScreenFree()) return
+        root.updatePending = false
+        if (root.updater && root.updater.notes.length > 0 && root.updater.state !== "") root.openUpdateNotes()
+    }
+    Timer { interval: 1000; repeat: true; running: root.updatePending; onTriggered: root.tryOpenUpdate() }
+    Connections {
+        target: root.updater
+        function onOfferFound() {
+            if (root.updater.notes.length === 0) return   // a nightly: the bar
+            root.updatePending = true
+            root.tryOpenUpdate()
+        }
+        // a download finished with its window closed: the window again, for Restart
+        function onChanged() {
+            const u = root.updater
+            if (u.state !== "ready" || u.notes.length === 0 || root.updateWindowOpen
+                    || root.updateReadyShown === u.version) return
+            root.updateReadyShown = u.version
+            root.updatePending = true
+            root.tryOpenUpdate()
+        }
+    }
+    QtObject { Component.onCompleted: Report.setShowFile((p) => WindowCtl.showFile(p)) }
     ErrorBarStack {
         id: noticeStack
         objectName: "noticeStack"
@@ -3437,53 +3485,46 @@ Window {
         // the dialog stays: its other answers still stand
         if (action === "report") {
             Report.send(Settings, "playback", PlayerState.failCause,
-                        Object.assign({ message: PlayerState.failReason }, Player.lastFailure()))
+                        Object.assign({ message: PlayFail.messageFor(PlayerState.failCause, PlayerState.failReason,
+                                                                     root.ytdlpStale.length > 0) },
+                                      Player.lastFailure()))
             return
         }
         root.browserPickGen++   // an answer made while the check runs wins over it
-        if (action === "signin") root.settingsWindow().open("personalization")
+        // a dialog that asked about yt-dlp: any answer is the answer to that too
+        if (PlayerState.failCause !== "guestWall" && PlayerState.failCause !== "browserWall") root.ytdlpStale = ""
         Player.answerFailure(action)
     }
-    // An error melo raises itself carries its kind and details for Report…; one
-    // the player raised (PlayerState.error from C++) reports its message and code.
+    // The bar's failure: `t` is errortext.js's answer, `details` what Report…
+    // writes beside it (the backend's own line among them), `retry` the call
+    // Try again makes. The same words again only restart its time.
     property var errorContext: null
-    function showError(kind, sub, message, details) {
-        root.errorContext = { kind: kind, sub: sub, message: message, details: details || {} }
-        PlayerState.error = message
+    function showError(kind, sub, t, details, retry) {
+        root.errorContext = { kind: kind, sub: sub, text: t.text, fix: t.fix, report: t.report,
+                              tab: t.fix === "settings" ? "general" : "", details: details || {}, retry: retry || null }
+        PlayerState.error = t.text
     }
     function reportError() {
-        const c = root.errorContext && root.errorContext.message === PlayerState.error ? root.errorContext : null
-        const base = { message: PlayerState.error, code: PlayerState.errorCode }
-        if (c) Report.send(Settings, c.kind, c.sub, Object.assign(base, c.details))
-        else Report.send(Settings, "error", PlayerState.errorCode ? String(PlayerState.errorCode) : "", base)
+        const c = root.errorContext
+        if (c) Report.send(Settings, c.kind, c.sub, Object.assign({ message: c.text }, c.details))
     }
     Connections {
         target: Library
         function onDownloadFailed(videoId, error) {
-            root.showError("download", "", "The download failed.", { videoId: videoId, error: error })
+            root.showError("download", "", ErrorText.download(error), { videoId: videoId, error: error },
+                           () => Library.download(videoId))
         }
     }
     Connections {
-        target: sidecar
-        function onYtdlpStateChanged() {
-            if (sidecar.ytdlpState === "failed")
-                root.showError("ytdlp", "download", "yt-dlp could not be downloaded.", {})
-        }
-    }
-    // the error bar's "Use browser cookies": several signed in is a choice, made in settings
-    function playbackCookiesFromBrowser() {
-        root.pickBrowser((res) => {
-            if (res.pick && Settings.browser !== res.pick) Settings.browser = res.pick
-            Settings.streamCookieSource = "browser"
-            if (res.choose && res.choose.length > 1) root.settingsWindow().open("personalization")
-            else if (PlayerState.hasTrack) Player.answerFailure("retry")
-        })
+        target: Player
+        function onRadioFailed(reason) { root.showError("radio", "", ErrorText.radio(reason), { error: reason }) }
     }
     PlayFailDialog {
         id: playFailMain
         shown: root.failHost === "main"
         cause: PlayerState.failCause
         reason: PlayerState.failReason
+        stale: root.ytdlpStale.length > 0
         choices: root.failBrowsers
         busy: root.failChecking
         onAnswered: (a) => root.answerFailure(a)
@@ -3504,13 +3545,10 @@ Window {
             width: Math.min(Theme.ctl(400), parent.width - Theme.gap(32))
             height: implicitHeight
             maxWidth: width
-            message: "The Node.js download failed. Check the connection and retry."
+            message: "Node.js didn't download. Check your connection and try again."
             namePrefix: "node_"
-            actions: [{ id: "retry", label: "Retry" }, { id: "report", label: "Report…" }]
-            onTriggered: (id) => {
-                if (id === "report") Report.send(Settings, "node", "", { error: NodeSetup.error })
-                else NodeSetup.download()
-            }
+            actions: [{ id: "retry", label: "Try again" }]
+            onTriggered: (id) => NodeSetup.download()
         }
         Surface {
             visible: NodeSetup.active && NodeSetup.error.length === 0
@@ -3644,7 +3682,11 @@ Window {
             if (!append && results.length > 0) PlayerState.view = 2
         }
         function onRpcFailed(what, message) {
-            if (what !== "search") return
+            if (what !== "search") {
+                const t = ErrorText.rpc(what)
+                if (t) root.showError("error", what, t, { what: what, error: message })
+                return
+            }
             searchInput.searching = false
             root.searchFetchingMore = false
             if (root.searchFlow) {   // resolve the flow empty: single trim
@@ -3652,7 +3694,11 @@ Window {
                 root.searchFlow = null
                 root.flushPendingPluginRows()   // plugin rows that already arrived survive a YT failure
             }
-            root.showError("error", "search", message, { what: what })
+            root.showError("search", "", ErrorText.search(message), { error: message }, () => {
+                if (!root.lastQuery.length) return
+                searchInput.text = root.lastQuery
+                searchInput.accepted()
+            })
         }
     }
     // Singles get their length from their album pages once they show; a one-track
