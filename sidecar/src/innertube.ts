@@ -1,7 +1,7 @@
 import { localePref, loadSettings } from "./settings";
 import { createHash } from "crypto";
 import type { CookieSource } from "./settings";
-import { getGuestCookies, clearGuestCache, captureResponseCookies, dumpBrowserCookies } from "./guest-cookies";
+import { getGuestCookies, clearGuestCache, captureResponseCookies, dumpBrowserCookies, hasSignInCookie, KeyringError, KEYRING_FAILED } from "./guest-cookies";
 import { USER_AGENT } from "./platform";
 
 interface Cookie {
@@ -57,22 +57,58 @@ const browserCookies = new Map<string, Cookie[]>();
 const accountCache = new Map<string, AccountInfo | null>();
 let cachedVisitorData: string | null = null;
 
-/**
- * Extract cookies from browser via yt-dlp --cookies-from-browser → temp Netscape file
- */
+// Reads in flight, so callers asking at once share one read (and one prompt).
+const browserReads = new Map<string, Promise<Cookie[]>>();
+// Browsers whose keyring gave no key this session. Each read would prompt
+// again, so none is made until the browser is picked again.
+const unreadBrowsers = new Map<string, KeyringError>();
+
+/** The browser's YouTube cookies, read once a session (see dumpBrowserCookies). */
 async function extractBrowserCookies(browser: string): Promise<Cookie[]> {
   const hit = browserCookies.get(browser);
   if (hit) return hit;
-  // one reader for the browser's store, shared with a profile made from the
-  // browser — see dumpBrowserCookies for why a non-zero exit is not a failure
-  const cookies = (await dumpBrowserCookies(browser))
-    .map((c) => ({ domain: c.domain, name: c.name, value: c.value }));
-  browserCookies.set(browser, cookies);
-  return cookies;
+  const denied = unreadBrowsers.get(browser);
+  if (denied) throw denied;
+  let read = browserReads.get(browser);
+  if (!read) {
+    read = dumpBrowserCookies(browser).then((all) => {
+      const cookies = all.map((c) => ({ domain: c.domain, name: c.name, value: c.value }));
+      if (browserReads.get(browser) === read) browserCookies.set(browser, cookies);
+      return cookies;
+    }, (e) => {
+      if (e instanceof KeyringError && browserReads.get(browser) === read) unreadBrowsers.set(browser, e);
+      throw e;
+    }).finally(() => { if (browserReads.get(browser) === read) browserReads.delete(browser); });
+    browserReads.set(browser, read);
+  }
+  return read;
+}
+
+/** The browser's keyring gave no key this session. */
+export function browserUnread(browser: string): boolean {
+  return unreadBrowsers.has(browser);
+}
+
+/** yt-dlp said the browser's keyring gave no key: remembered as a read's
+ *  would be, but only when melo's own read of that browser also came back
+ *  without the sign-in cookies (a stream run's jar is not seen). */
+export function noteKeyringFailure(browser: string, stderr: string | undefined): void {
+  if (!browser || !stderr || !KEYRING_FAILED.test(stderr)) return;
+  const held = browserCookies.get(browser);
+  if (!held || hasSignInCookie(held)) return;
+  unreadBrowsers.set(browser, new KeyringError(stderr));
+  browserCookies.delete(browser);
+}
+
+/** The keyring denial is forgotten: the next read asks it again. */
+export function retryBrowser(browser: string): void {
+  unreadBrowsers.delete(browser);
 }
 
 export function clearCookieCache(): void {
   browserCookies.clear();
+  browserReads.clear();
+  unreadBrowsers.clear();
   accountCache.clear();
   cachedVisitorData = null;
   musicVisitorData = "";
@@ -209,6 +245,8 @@ export async function fetchAccountInfo(source: CookieSource, browser: string, pr
       clientName: "WEB", clientVersion: "2.20260301.00.00", hl: localePref().hl, gl: localePref().gl,
     } } }),
   });
+  // a refused sign-in: the browser's cookies are read again next time
+  if (res.status === 401 && source === "browser") forgetBrowser(browser);
   // no answer is not "no account": the caller falls back to the cookie
   if (!res.ok) throw new Error(`account_menu ${res.status}`);
   const info = parseAccountMenu(await res.json());
@@ -454,10 +492,11 @@ export async function fetchRecommendedByChip(token: string, cookieSource: Cookie
 // vs the innertube visitorData, plus a content sample — for pinning down the
 // reported "one generic page mid-feed" (not reproducible synthetically).
 function logRecPage(kind: string, headers: Record<string, string>, tracks: SearchResult[]): void {
-  const vi = /VISITOR_INFO1_LIVE=([^;]+)/.exec(headers["Cookie"] || "")?.[1] || "-";
+  // whether each identity is there, never any part of it
+  const vi = /VISITOR_INFO1_LIVE=[^;]+/.test(headers["Cookie"] || "") ? "set" : "-";
   console.error(
-    `[rec] ${kind}: ${tracks.length} tracks cookieVisitor=${vi.slice(0, 8)} ` +
-    `vd=${(cachedVisitorData || "-").slice(0, 8)} ` +
+    `[rec] ${kind}: ${tracks.length} tracks cookieVisitor=${vi} ` +
+    `vd=${cachedVisitorData ? "set" : "-"} ` +
     `sample=${tracks.slice(0, 3).map((t) => JSON.stringify(t.title.slice(0, 40))).join(" | ")}`,
   );
 }

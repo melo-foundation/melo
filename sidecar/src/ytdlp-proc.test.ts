@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { spawnSync } from "child_process";
 import {
-  chooseUnpackDir, findOrphans, makeTempDir, privateTmp, runYtdlp, shutdownYtdlp, sweepStale,
+  chooseUnpackDir, findOrphans, makeTempDir, privateTmp, runYtdlp, shutdownYtdlp, splitConfigArgs, sweepStale,
 } from "./ytdlp-proc";
 
 const linux = process.platform === "linux";
@@ -31,6 +32,13 @@ case "$1" in
   # like PyInstaller's launcher: unpacks, removes the folder on SIGTERM, not on SIGKILL
   unpack) d="$TMPDIR/_MEItest$$"; mkdir -p "$d"; trap 'rm -rf "$d"; exit 143' TERM
           sleep 60 & echo "$$ $! $d" > "$2"; wait ;;
+  # like yt-dlp reading a browser: Python removes its database copy on SIGINT only
+  copy) d="$TMPDIR/yt_dlptest$$"; mkdir -p "$d"; echo x > "$d/temporary.sqlite"
+        trap 'rm -rf "$d"; echo INT > "$3"; exit 130' INT; trap 'echo TERM > "$3"; exit 143' TERM
+        echo "$$ $d" > "$2"; while :; do sleep 0.05; done ;;
+  stubborn) d="$TMPDIR/yt_dlptest$$"; mkdir -p "$d"; echo x > "$d/temporary.sqlite"; trap '' INT TERM
+            echo "$$ $d" > "$2"; while :; do sleep 0.05; done ;;
+  --config-locations) printf '%s\n' "$@"; echo ---; cat; exit 0 ;;
 esac`);
     chmodSync(fake, 0o755);
   });
@@ -39,10 +47,41 @@ esac`);
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("unpacks into melo's own folder, not /tmp", async () => {
+  it("unpacks into a folder of its own in melo's, not /tmp, removed when it exits", async () => {
     const { stdout } = await runYtdlp(fake, ["tmpdir"]);
-    expect(stdout.trim()).toBe(join(root, "cache", "melo", "tmp"));
+    expect(stdout.trim().startsWith(join(root, "cache", "melo", "tmp", `melo-run-${process.pid}-`))).toBe(true);
+    expect(existsSync(stdout.trim())).toBe(false);
     expect(privateTmp()).toBe(join(root, "cache", "melo", "tmp"));
+  });
+
+  it("a timeout stops yt-dlp with SIGINT, which removes its cookie database copy", async () => {
+    mkdirSync(pids, { recursive: true });
+    const f = join(pids, "copy"), sig = join(pids, "copy-signal");
+    await expect(runYtdlp(fake, ["copy", f, sig], { timeout: 500 })).rejects.toMatchObject({ killed: true });
+    const [pid, dir] = readFileSync(f, "utf-8").trim().split(" ");
+    expect(await until(() => !alive(Number(pid)))).toBe(true);
+    expect(readFileSync(sig, "utf-8").trim()).toBe("INT");
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("a run that ignores SIGINT and SIGTERM is killed, and its copy goes with its folder", async () => {
+    mkdirSync(pids, { recursive: true });
+    const f = join(pids, "stubborn");
+    const t0 = Date.now();
+    await expect(runYtdlp(fake, ["stubborn", f], { timeout: 300 })).rejects.toMatchObject({ killed: true });
+    const [pid, dir] = readFileSync(f, "utf-8").trim().split(" ");
+    expect(alive(Number(pid))).toBe(false);
+    expect(Date.now() - t0).toBeGreaterThan(3000);   // SIGINT's grace, then SIGTERM's
+    expect(existsSync(dir)).toBe(false);
+  }, 15000);
+
+  it("extractor args go in on stdin, not on the command line", async () => {
+    const { stdout } = await runYtdlp(fake, ["args", "--extractor-args", "youtube:po_token=web.gvs+SECRET;visitor_data=VD", "-j"]);
+    const [argv, stdin] = stdout.split("---\n");
+    expect(argv).not.toContain("SECRET");
+    expect(argv).not.toContain("VD");
+    expect(argv.trim().split("\n")).toEqual(["--config-locations", "-", "args", "-j"]);
+    expect(stdin.trim()).toBe("--extractor-args 'youtube:po_token=web.gvs+SECRET;visitor_data=VD'");
   });
 
   it("a timeout ends the child as well as the parent", async () => {
@@ -51,8 +90,8 @@ esac`);
     const run = runYtdlp(fake, ["hang", f], { timeout: 500 });
     await expect(run).rejects.toMatchObject({ killed: true });
     const [parent, child] = readFileSync(f, "utf-8").trim().split(" ").map(Number);
-    expect(await until(() => !alive(parent) && !alive(child))).toBe(true);
-  });
+    expect(await until(() => !alive(parent) && !alive(child), 8000)).toBe(true);
+  }, 15000);
 
   it("the sidecar exiting ends runs in flight and removes temporary folders", async () => {
     const f = join(pids, "exit");
@@ -125,6 +164,50 @@ describe("leftovers", () => {
     expect(sweepStale(own, [shared])).toBe(3);
     expect([oldDump, oldUnpack, oldSubs].some(existsSync)).toBe(false);
     expect([newDump, othersUnpack].every(existsSync)).toBe(true);
+  });
+
+  it("removes yt-dlp's cookie database copies in melo's folders only", () => {
+    const own = join(root, "own2"), shared = join(root, "shared2");
+    for (const d of [own, shared]) mkdirSync(d, { recursive: true });
+    const copy = (base: string, name: string, hoursAgo: number): string => {
+      const p = join(base, name); mkdirSync(p); writeFileSync(join(p, "temporary.sqlite"), "x"); old(p, hoursAgo); return p;
+    };
+    const left = copy(own, "yt_dlpabc123", 1);
+    const reading = copy(own, "yt_dlpdef456", 0);     // a read still going
+    const others = copy(shared, "yt_dlpghi789", 1);
+    expect(sweepStale(own, [shared])).toBe(1);
+    expect(existsSync(left)).toBe(false);
+    expect([reading, others].every(existsSync)).toBe(true);
+  });
+
+  it("removes a melo folder once the sidecar named in it is gone, whatever its age", () => {
+    const own = join(root, "own3");
+    mkdirSync(own, { recursive: true });
+    const dead = spawnSync("true").pid!;
+    const mk = (name: string): string => { const p = join(own, name); mkdirSync(p); return p; };
+    const deadRun = mk(`melo-run-${dead}-aaaaaa`);
+    const deadChrome = mk(`melo-chrome-${dead}-bbbbbb`);
+    const liveRun = mk(`melo-run-${process.ppid}-cccccc`);   // another melo's run
+    const mine = makeTempDir("melo-run-");                    // this sidecar's, in use
+    expect(sweepStale([own, privateTmp()], [])).toBeGreaterThanOrEqual(2);
+    expect([deadRun, deadChrome].some(existsSync)).toBe(false);
+    expect([liveRun, mine].every(existsSync)).toBe(true);
+    rmSync(mine, { recursive: true, force: true });
+  });
+
+  it("never sweeps a melo folder that is a link to someone else's", () => {
+    const target = join(root, "elsewhere"), link = join(root, "own-link");
+    mkdirSync(target, { recursive: true });
+    const unpack = join(target, "_MEIold"); mkdirSync(unpack); old(unpack, 5);
+    symlinkSync(target, link);
+    expect(sweepStale([link], [])).toBe(0);
+    expect(existsSync(unpack)).toBe(true);
+  });
+
+  it("splits only extractor args out of argv", () => {
+    expect(splitConfigArgs(["-j", "url"])).toEqual({ argv: ["-j", "url"], config: "" });
+    // a quote would end the config's quoting: it stays where it was
+    expect(splitConfigArgs(["--extractor-args", "a'b"]).argv).toEqual(["--extractor-args", "a'b"]);
   });
 
   it("finds yt-dlp runs whose sidecar is gone, with their children", () => {

@@ -12,7 +12,8 @@ import { fileURLToPath } from "url";
 import { setEnv, type SidecarEnv } from "./env";
 import { registerHandlers } from "./handlers";
 import { initLibrary } from "./library";
-import { loadSettings } from "./settings";
+import { loadSettings, saveSettings } from "./settings";
+import { migrateProfiles } from "./guest-cookies";
 import { ensureYtdlp, maybeUpdateYtdlp, downloadYtdlp } from "./ytdlp";
 import { reapOrphans, sweepStale } from "./ytdlp-proc";
 import { warmStreamSession } from "./streams";
@@ -29,6 +30,13 @@ method("initialize", (params: SidecarEnv & { ytdlpSeedPath?: string }) => {
   // and temporary folders, cookie dumps among them
   const reaped = reapOrphans(params.ytdlpPath), swept = sweepStale();
   if (reaped || swept) log(`[init] ended ${reaped} leftover yt-dlp runs, removed ${swept} leftover folders`);
+
+  // profile names from before names were checked: renamed once, and the
+  // setting follows its profile
+  const was = loadSettings().cookieProfile;
+  const { moved, profile } = migrateProfiles(was);
+  if (profile !== was) saveSettings({ cookieProfile: profile });
+  if (moved.size) log(`[init] renamed profiles: ${[...moved].map(([a, b]) => `${a} -> ${b}`).join(", ")}`);
 
   const settings = loadSettings();
   initLibrary(settings.downloadPath);

@@ -16,6 +16,8 @@ function statusKey(kind, id) {
 
 function detailOf(st) {
     if (!st) return ""
+    // the keyring gave no key: not known to be signed out
+    if (st.unread) return "couldn't read"
     if (!st.signedIn) return "signed out"
     return st.account && st.account.name ? st.account.name : "signed in"
 }
@@ -82,7 +84,7 @@ function askStatus(host, kind, id, done, fresh, fail) {
     const key = statusKey(kind, id)
     host.rpc("cookies/status", p, (r) => {
         if (!r || !r.ok || !r.result) { if (fail) fail(key); return }
-        done(key, { signedIn: !!r.result.signedIn, account: r.result.account || null })
+        done(key, { signedIn: !!r.result.signedIn, account: r.result.account || null, unread: !!r.result.unread })
     })
 }
 
@@ -93,11 +95,6 @@ function browsersToAsk(browsers, fresh, menuOpened, cookieSource, browser) {
     const list = browsers || []
     if (fresh || menuOpened) return list.slice()
     return cookieSource === "browser" ? list.filter((b) => b === browser) : []
-}
-
-// the browser re-read when melo comes to the front: only the one in use
-function frontRead(cookieSource, browser) {
-    return cookieSource === "browser" && browser ? browser : ""
 }
 
 function activeOf(list) {

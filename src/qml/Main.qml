@@ -2110,14 +2110,19 @@ Window {
             // Same flow as the settings window's New button, and it switches
             // to what it just made — picking "New profile…" from a list of
             // identities is a request to use one, not only to have one.
-            onNewProfileRequested: promptDialog.promptDialog("New profile name", "", (name) => {
-                if (!name || !name.trim()) return
-                const n = name.trim()
-                sidecar.rpc("cookies/create", { name: n }, () => {
-                    Settings.cookieProfile = n
-                    Settings.cookieSource = "guest"
+            onNewProfileRequested: mainTitle.newProfile("New profile name", "")
+            // a refused name is asked again with what was wrong
+            function newProfile(title, initial) {
+                promptDialog.promptDialog(title, initial, (name) => {
+                    if (!name || !name.trim()) return
+                    const n = name.trim()
+                    sidecar.rpc("cookies/create", { name: n }, (r) => {
+                        if (!r.ok) { mainTitle.newProfile(String(r.error), n); return }
+                        Settings.cookieProfile = n
+                        Settings.cookieSource = "guest"
+                    })
                 })
-            })
+            }
             backdrop: ground
             // The title runs to the frame as every other band of the window
             // does, and its own contents come in by the cut. Inset whole, it

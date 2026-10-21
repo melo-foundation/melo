@@ -105,7 +105,11 @@ MeloWindow {
     function createProfile(name) {
         const n = (name || "").trim()
         if (!n.length || !rpcReady()) return
-        sidecar.rpc("cookies/create", { name: n }, () => Accounts.applyChoice({ kind: "guest", id: n }, Settings))
+        sidecar.rpc("cookies/create", { name: n }, (r) => {
+            // a refused name: asked again with what was wrong
+            if (!r.ok) { obPrompt.promptDialog(String(r.error), n, (m) => obw.createProfile(m)); return }
+            Accounts.applyChoice({ kind: "guest", id: n }, Settings)
+        })
     }
 
     function presetName(kind) {

@@ -3,8 +3,10 @@
 //
 // yt-dlp's release binary unpacks ~80 MB into TMPDIR on each start and runs as
 // a parent and a child. Each run gets its own process group: killing the
-// parent alone leaves the child running. It is stopped with SIGTERM, which lets
-// it remove what it unpacked; SIGKILL leaves the 80 MB behind.
+// parent alone leaves the child running. Each run also gets its own TMPDIR,
+// removed when it exits: yt-dlp copies the browser's cookie database there.
+// It is stopped with SIGINT, then SIGTERM, then SIGKILL: only SIGINT lets
+// Python remove that copy (measured: SIGTERM leaves yt_dlp*/temporary.sqlite).
 
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, statfsSync } from "fs";
@@ -25,14 +27,18 @@ export function chooseUnpackDir(dirs: DirRoom[]): string {
   return usable.reduce((a, b) => (b.free > a.free ? b : a)).dir;
 }
 
-// A 0700 folder that is ours: not a link, owned by this user.
-function ownFolder(dir: string): string | null {
+// A folder that is ours: not a link, owned by this user.
+function isOwnFolder(dir: string): boolean {
   try {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
     const st = lstatSync(dir);
-    if (!st.isDirectory() || (process.getuid && st.uid !== process.getuid())) return null;
-    return dir;
-  } catch { return null; }
+    return st.isDirectory() && !(process.getuid && st.uid !== process.getuid());
+  } catch { return false; }
+}
+
+// A 0700 folder that is ours, made if missing.
+function ownFolder(dir: string): string | null {
+  try { mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch { return null; }
+  return isOwnFolder(dir) ? dir : null;
 }
 
 function freeBytes(dir: string | null): number {
@@ -57,21 +63,38 @@ export function privateTmp(): string {
 const running = new Set<ChildProcess>();
 const tempDirs = new Set<string>();
 
-/** A 0700 folder under privateTmp(), removed by removeTempDir or at exit. */
+/** A process the exit handler ends with the yt-dlp runs (headless Chrome). */
+export function trackChild(child: ChildProcess): void {
+  running.add(child);
+  child.once("exit", () => running.delete(child));
+}
+
+/** A 0700 folder under privateTmp(), removed by removeTempDir or at exit. Its
+ *  name carries this sidecar's pid, so a sweep can tell a dead run's folder. */
 export function makeTempDir(prefix: string): string {
-  const dir = mkdtempSync(join(privateTmp(), prefix));
+  const dir = mkdtempSync(join(privateTmp(), `${prefix}${process.pid}-`));
   tempDirs.add(dir);
   return dir;
 }
 
-export function removeTempDir(dir: string): void {
+// Windows: a file still open in a process that is exiting fails with EBUSY.
+const RM_RETRIES = { maxRetries: 5, retryDelay: 200 } as const;
+
+/** Removes a temporary folder; false (and a log line) when it could not. */
+export function removeTempDir(dir: string): boolean {
   tempDirs.delete(dir);
-  try { rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ }
+  try { rmSync(dir, { recursive: true, force: true, ...RM_RETRIES }); return true; }
+  catch (e: any) {
+    console.error(`[ytdlp-proc] could not remove ${dir}: ${e?.code ?? "error"}`);
+    return false;
+  }
 }
 
+const INT_GRACE_MS = 3000;
 const KILL_GRACE_MS = 2000;
 
-// SIGTERM to the group, then SIGKILL to whatever ignored it.
+// SIGINT to the group, SIGTERM to what ignored it, then SIGKILL. Without a
+// grace (the exit handler, which removes the run's folder itself): SIGTERM.
 function stopTree(child: ChildProcess, grace = true): void {
   const pid = child.pid;
   if (pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
@@ -79,9 +102,22 @@ function stopTree(child: ChildProcess, grace = true): void {
     spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
     return;
   }
-  try { process.kill(-pid, "SIGTERM"); } catch { return; }
+  try { process.kill(-pid, grace ? "SIGINT" : "SIGTERM"); } catch { return; }
   if (!grace) return;
-  setTimeout(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* gone */ } }, KILL_GRACE_MS).unref();
+  // Closed: the run and every child holding its pipes have exited, and the
+  // group id may be another process's; no further signal. Exited alone is not
+  // enough: the unpacked child can outlive its launcher.
+  let closed = false;
+  child.once("close", () => { closed = true; });
+  const gone = (): boolean => closed;
+  setTimeout(() => {
+    if (gone()) return;
+    try { process.kill(-pid, "SIGTERM"); } catch { return; }
+    setTimeout(() => {
+      if (gone()) return;
+      try { process.kill(-pid, "SIGKILL"); } catch { /* gone */ }
+    }, KILL_GRACE_MS).unref();
+  }, INT_GRACE_MS).unref();
 }
 
 export interface RunOptions { timeout?: number; maxBuffer?: number }
@@ -91,20 +127,44 @@ export interface RunResult { stdout: string; stderr: string }
 export const UNPACK_FAILED = /Failed to extract|No space left on device|Disk quota exceeded/;
 export const unpackFailedMessage = (): string => `yt-dlp could not unpack into ${privateTmp()}: the disk is full`;
 
+/** argv shows to every local user (/proc/<pid>/cmdline), and extractor args
+ *  can hold a PO token and visitor_data: those go in on stdin as a config file. */
+export function splitConfigArgs(args: string[]): { argv: string[]; config: string } {
+  const argv: string[] = [], lines: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const v = args[i + 1];
+    if (args[i] === "--extractor-args" && v !== undefined && !/['\\\n\r]/.test(v)) { lines.push(`--extractor-args '${v}'`); i++; }
+    else argv.push(args[i]);
+  }
+  return lines.length ? { argv: ["--config-locations", "-", ...argv], config: lines.join("\n") + "\n" } : { argv, config: "" };
+}
+
 /** Runs yt-dlp like execFile: resolves with its output on exit 0, rejects with
  *  an Error carrying code, signal, killed, stdout and stderr otherwise. */
 export function runYtdlp(bin: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
   const maxBuffer = opts.maxBuffer ?? 1024 * 1024;
-  const tmp = privateTmp();
+  const { argv, config } = splitConfigArgs(args);
   // nothing is unpacking now, so any unpack folder left is a leftover
-  if (running.size === 0 && process.platform === "linux") sweepStale(ownTmpDirs(), []);
+  if (running.size === 0) sweepStale();
+  let tmp: string;
+  try { tmp = makeTempDir("melo-run-"); } catch (e) { return Promise.reject(e); }
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, {
-      detached: unixGroups,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp },
-    });
+    let child: ChildProcess;
+    try {
+      child = spawn(bin, argv, {
+        detached: unixGroups,
+        stdio: [config ? "pipe" : "ignore", "pipe", "pipe"],
+        env: { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp },
+      });
+    } catch (e) { removeTempDir(tmp); reject(e); return; }
+    if (config) { child.stdin!.on("error", () => { /* exited first */ }); child.stdin!.end(config); }
     running.add(child);
+    // what the run left (an unpack, a cookie database copy) goes with it
+    const finished = (): void => {
+      running.delete(child);
+      removeTempDir(tmp);
+      if (running.size === 0) sweepStale();
+    };
     let stdout = "", stderr = "", killed = false, overflow = false;
     const stop = (): void => { killed = true; stopTree(child); };
     const timer = opts.timeout ? setTimeout(stop, opts.timeout) : null;
@@ -114,10 +174,10 @@ export function runYtdlp(bin: string, args: string[], opts: RunOptions = {}): Pr
     };
     child.stdout!.on("data", take("out"));
     child.stderr!.on("data", take("err"));
-    child.on("error", (e) => { if (timer) clearTimeout(timer); running.delete(child); reject(e); });
+    child.on("error", (e) => { if (timer) clearTimeout(timer); finished(); reject(e); });
     child.on("close", (code, signal) => {
       if (timer) clearTimeout(timer);
-      running.delete(child);
+      finished();
       if (code === 0 && !killed) { resolve({ stdout, stderr }); return; }
       const why = overflow ? "output exceeded maxBuffer"
         : killed ? `timed out after ${opts.timeout} ms`
@@ -147,31 +207,49 @@ process.on("exit", shutdownYtdlp);
 
 const STALE_TEMP_MS = 10 * 60 * 1000;
 const STALE_UNPACK_MS = 2 * 60 * 1000;
-const TEMP_PREFIXES = ["melo-cookies-", "melo-subs-"];
+const TEMP_PREFIXES = ["melo-cookies-", "melo-subs-", "melo-chrome-", "melo-run-"];
 
 function olderThan(path: string, ms: number, now: number): boolean {
   try { return now - statSync(path).mtimeMs > ms; } catch { return false; }
 }
 
-/** Removes what earlier runs left: melo's temporary folders (a cookie dump
- *  holds the browser's whole cookie jar in plain text) in `own` and `shared`,
- *  and yt-dlp's unpack folders in `own` only, since other programs unpack into
- *  a shared temp folder too. Returns how many it removed. */
+function pidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (e: any) { return e?.code === "EPERM"; }
+}
+
+// A melo folder is stale once the sidecar named in it is gone; one without a
+// pid (older builds) once it is old.
+function staleMeloDir(path: string, rest: string, now: number): boolean {
+  const pid = /^(\d+)-/.exec(rest)?.[1];
+  if (pid === undefined) return olderThan(path, STALE_TEMP_MS, now);
+  const n = Number(pid);
+  return n === process.pid || !pidAlive(n);
+}
+
+/** Removes what earlier runs left: melo's temporary folders in `own` and
+ *  `shared`, and yt-dlp's unpack folders and cookie database copies (yt_dlp*)
+ *  in `own` only, since other programs use a shared temp folder too. Folders
+ *  this sidecar still uses are kept. Returns how many it removed. */
 export function sweepStale(
   own: string | string[] | null = process.platform === "linux" ? ownTmpDirs() : null,
   shared: string[] = [tmpdir()],
   now = Date.now(),
 ): number {
   let removed = 0;
-  const owned = own === null ? [] : Array.isArray(own) ? own : [own];
+  // a folder named like melo's but not ours (a link, another user's) is never swept
+  const owned = (own === null ? [] : Array.isArray(own) ? own : [own]).filter(isOwnFolder);
   const bases = [...owned, ...shared.filter((d) => !owned.includes(d))];
   for (const base of bases) {
     let names: string[] = [];
     try { names = readdirSync(base); } catch { continue; }
     for (const name of names) {
       const path = join(base, name);
-      const stale = TEMP_PREFIXES.some((p) => name.startsWith(p)) ? olderThan(path, STALE_TEMP_MS, now)
-        : name.startsWith("_MEI") && owned.includes(base) ? olderThan(path, STALE_UNPACK_MS, now)
+      if (tempDirs.has(path)) continue;
+      const prefix = TEMP_PREFIXES.find((p) => name.startsWith(p));
+      const stale = prefix !== undefined ? staleMeloDir(path, name.slice(prefix.length), now)
+        : (name.startsWith("_MEI") || name.startsWith("yt_dlp")) && owned.includes(base)
+          ? olderThan(path, STALE_UNPACK_MS, now)
         : false;
       if (!stale) continue;
       try { rmSync(path, { recursive: true, force: true }); removed++; } catch { /* not ours */ }
@@ -206,9 +284,10 @@ export function reapOrphans(bin: string): number {
   if (process.platform !== "linux") return 0;
   const pids = findOrphans(bin);
   let n = 0;
+  const send = (sig: NodeJS.Signals): void => { for (const pid of pids) { try { process.kill(pid, sig); } catch { /* gone */ } } };
   for (const pid of pids) {
-    try { process.kill(pid, "SIGTERM"); n++; } catch { /* gone */ }
+    try { process.kill(pid, "SIGINT"); n++; } catch { /* gone */ }
   }
-  setTimeout(() => { for (const pid of pids) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } } }, KILL_GRACE_MS).unref();
+  setTimeout(() => { send("SIGTERM"); setTimeout(() => send("SIGKILL"), KILL_GRACE_MS).unref(); }, INT_GRACE_MS).unref();
   return n;
 }

@@ -120,6 +120,12 @@ void SettingsStore::patch(const QJsonObject& p, const QStringList& holdUi, const
             if (pendingSeq_.value(k) == n) { pendingUi_.remove(k); pendingSeq_.remove(k); }
         apply(r.toObject());
     });
+    // a refused write (a profile name the sidecar rejects): the mirror goes back to what is saved
+    connect(c, &RpcCall::failed, this, [this, holdUi, n](int, const QString&) {
+        for (const QString& k : holdUi)
+            if (pendingSeq_.value(k) == n) { pendingUi_.remove(k); pendingSeq_.remove(k); }
+        refresh();
+    });
 }
 
 void SettingsStore::apply(const QJsonObject& fresh) {

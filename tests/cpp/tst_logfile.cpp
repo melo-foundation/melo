@@ -48,6 +48,16 @@ private slots:
         QTest::newRow("query key") << QByteArray("GET https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key=0123456789abcdef0123456789abcdef") << QByteArray("0123456789abcdef");
         QTest::newRow("json token") << QByteArray("{\"visitorData\":\"CgtXYZabc123\",\"ok\":true}") << QByteArray("CgtXYZabc123");
         QTest::newRow("po token") << QByteArray("[potoken] poToken=MnQabcdefghijkl minted") << QByteArray("MnQabcdefghijkl");
+        QTest::newRow("cookies.txt line") << QByteArray(".youtube.com\tTRUE\t/\tTRUE\t1893456000\tSAPISID\tnetscapeValue9") << QByteArray("netscapeValue9");
+        QTest::newRow("cookies.txt session") << QByteArray("www.youtube.com\tFALSE\t/\tFALSE\t0\tOddName\tsessionValue7") << QByteArray("sessionValue7");
+        QTest::newRow("json cookie") << QByteArray("{\"domain\":\".youtube.com\",\"name\":\"OddName\",\"value\":\"jsonValue5\"}") << QByteArray("jsonValue5");
+        QTest::newRow("prefixed cookies.txt line") << QByteArray("[  1956.4] [sidecar] .youtube.com\tTRUE\t/\tTRUE\t1893456000\tSID\tprefixedValue2") << QByteArray("prefixedValue2");
+        QTest::newRow("inspect cookie") << QByteArray("[sidecar] { domain: '.youtube.com', name: 'OddName', value: 'inspectValue4' }") << QByteArray("inspectValue4");
+        QTest::newRow("header pair") << QByteArray("[sidecar] headers: [ 'cookie', 'OddName=pairValue6' ]") << QByteArray("pairValue6");
+        QTest::newRow("header pair json") << QByteArray("[\"set-cookie\",\"OddName=pairValue8; Path=/\"]") << QByteArray("pairValue8");
+        for (const char* name : {"NID", "LSID", "OSID", "YSC", "PREF", "SOCS", "AEC", "__Host-3PLSID", "__Host-GAPS",
+                                 "CONSENT", "ST-1b2c3d"})
+            QTest::newRow(name) << (QByteArray("got ") + name + "=namedValue3; path=/") << QByteArray("namedValue3");
     }
     void redactsSecrets() {
         QFETCH(QByteArray, line);
@@ -136,6 +146,27 @@ private slots:
         const QString log = readAll(d.filePath("melo.log"));
         QVERIFY2(log.contains("[melo] own line\n"), qPrintable(log));
         QVERIFY(!log.contains("child-line"));
+    }
+
+    // The real stderr (the journal) gets each line redacted, and a line still
+    // waiting for its newline goes out redacted too.
+    void realStderrIsRedacted() {
+        QTemporaryDir d;
+        const QString realErr = d.filePath("real-stderr.txt");
+        const int saved = ::dup(2);
+        const int f = ::open(QFile::encodeName(realErr).constData(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        ::dup2(f, 2); ::close(f);
+        QVERIFY(LogFile::startTee(d.path(), false));
+        std::fprintf(stderr, "[melo] Cookie: SAPISID=wholeLineSecret\n");
+        std::fprintf(stderr, "[melo] half SID=partialSecret");
+        QTest::qWait(500);
+        std::fprintf(stderr, " done\n");
+        LogFile::stopTee();
+        ::dup2(saved, 2); ::close(saved);
+        const QString real = readAll(realErr);
+        QVERIFY2(!real.contains("wholeLineSecret") && !real.contains("partialSecret"), qPrintable(real));
+        QVERIFY2(real.contains("[melo] Cookie: <redacted>\n"), qPrintable(real));
+        QVERIFY2(real.contains("[melo] half SID=<redacted> done\n"), qPrintable(real));
     }
 
     // the GUI thread's cost: a write to a pipe a worker drains

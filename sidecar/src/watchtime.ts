@@ -16,6 +16,28 @@ const BASE = "https://www.youtube.com";
 const CVER = "2.20260301.00.00";
 const UA = "Mozilla/5.0 (X11; Linux x86_64; rv:137.0) Gecko/20100101 Firefox/137.0";
 
+// Tracking URLs come from the watch page. Only https YouTube and Google hosts
+// are fetched, and only YouTube's get the cookies.
+const isHost = (h: string, d: string): boolean => h === d || h.endsWith("." + d);
+export function trackingUrl(raw: unknown): string {
+  if (typeof raw !== "string" || !raw) return "";
+  try {
+    const u = new URL(raw);
+    const h = u.hostname.toLowerCase();
+    return u.protocol === "https:" && (isHost(h, "youtube.com") || isHost(h, "google.com")) ? raw : "";
+  } catch { return ""; }
+}
+
+/** The headers a tracking URL may carry: no identity outside youtube.com. */
+export function trackingHeaders(url: string, headers: Record<string, string>): Record<string, string> {
+  if (isHost(new URL(url).hostname.toLowerCase(), "youtube.com")) return headers;
+  const identity = new Set(["cookie", "authorization", "x-goog-authuser", "x-goog-visitor-id"]);
+  return Object.fromEntries(Object.entries(headers).filter(([k]) => !identity.has(k.toLowerCase())));
+}
+
+const trackFetch = (url: string, headers: Record<string, string>): Promise<Response> =>
+  fetch(url, { headers: trackingHeaders(url, headers) });
+
 // Cached tracking sessions keyed by CPN
 interface TrackingSession {
   playbackUrl: string;
@@ -121,12 +143,12 @@ export async function reportPlayback(
     if (playerData?.playbackTracking) {
       const t = playerData.playbackTracking;
       session = {
-        playbackUrl: t.videostatsPlaybackUrl?.baseUrl || "",
-        delayplayUrl: t.videostatsDelayplayUrl?.baseUrl || "",
-        watchtimeUrl: t.videostatsWatchtimeUrl?.baseUrl || "",
-        ptrackingUrl: t.ptrackingUrl?.baseUrl || "",
-        atrUrl: t.atrUrl?.baseUrl || "",
-        qoeUrl: t.qoeUrl?.baseUrl || "",
+        playbackUrl: trackingUrl(t.videostatsPlaybackUrl?.baseUrl),
+        delayplayUrl: trackingUrl(t.videostatsDelayplayUrl?.baseUrl),
+        watchtimeUrl: trackingUrl(t.videostatsWatchtimeUrl?.baseUrl),
+        ptrackingUrl: trackingUrl(t.ptrackingUrl?.baseUrl),
+        atrUrl: trackingUrl(t.atrUrl?.baseUrl),
+        qoeUrl: trackingUrl(t.qoeUrl?.baseUrl),
         startTime,
         cpn,
         duration: String(playerData?.videoDetails?.lengthSeconds || Math.round(duration)),
@@ -153,7 +175,7 @@ export async function reportPlayback(
     try {
       const url = session.playbackUrl + trackingParams(session);
       const headers = await trkHeaders(cookieSource, browser, profile, videoId);
-      const res = await fetch(url, { headers });
+      const res = await trackFetch(url, headers);
       if (cookieSource === "guest") captureResponseCookies(profile, res);
       console.log(`[watchtime] playback reported for ${videoId}, cpn=${cpn}`);
     } catch (err) {
@@ -186,7 +208,7 @@ export async function reportDelayplay(
   if (session.delayplayUrl) {
     try {
       const url = session.delayplayUrl + trackingParams(session);
-      const res = await fetch(url, { headers });
+      const res = await trackFetch(url, headers);
       if (cookieSource === "guest") captureResponseCookies(profile, res);
       console.log(`[watchtime] delayplay reported for ${videoId}, cpn=${cpn}`);
     } catch (err) {
@@ -198,7 +220,7 @@ export async function reportDelayplay(
   if (session.ptrackingUrl) {
     try {
       const url = session.ptrackingUrl + "&cpn=" + cpn + "&oid=" + session.channelId;
-      const res = await fetch(url, { headers });
+      const res = await trackFetch(url, headers);
       if (cookieSource === "guest") captureResponseCookies(profile, res);
       console.log(`[watchtime] ptracking reported for ${videoId}`);
     } catch (err) {
@@ -235,7 +257,7 @@ export async function reportWatchtime(
           rti: etR,
         });
       const headers = await trkHeaders(cookieSource, browser, profile, videoId);
-      const res = await fetch(url, { headers });
+      const res = await trackFetch(url, headers);
       if (cookieSource === "guest") captureResponseCookies(profile, res);
       console.log(`[watchtime] watchtime reported for ${videoId}: ${stR}-${etR}`);
     } catch (err) {
@@ -260,7 +282,7 @@ export async function reportWatchtime(
         vm: "",
       });
       const url = `${BASE}/api/stats/watchtime?${params}`;
-      const res = await fetch(url, { headers });
+      const res = await trackFetch(url, headers);
       if (cookieSource === "guest") captureResponseCookies(profile, res);
       console.log(`[watchtime] watchtime reported for ${videoId}: ${stR}-${etR} (fallback)`);
     } catch (err) {

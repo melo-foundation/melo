@@ -54,7 +54,8 @@ void LogFile::flush() { if (f_) std::fflush(f_); }
 QByteArray LogFile::redact(const QByteArray& line) {
     // cheap gate: most lines carry none of these
     static const QByteArray hints[] = {"googlevideo", "ookie", "uthorization", "SAPISID", "SID=", "LOGIN_INFO",
-                                       "__Secure-", "VISITOR_", "=", "\":"};
+                                       "__Secure-", "__Host-", "VISITOR_", "CONSENT", "ST-", "=", "\":",
+                                       "\tTRUE\t", "\tFALSE\t", "domain"};
     bool maybe = false;
     for (const QByteArray& h : hints) if (line.contains(h)) { maybe = true; break; }
     if (!maybe) return line;
@@ -66,8 +67,16 @@ QByteArray LogFile::redact(const QByteArray& line) {
                              QRegularExpression::CaseInsensitiveOption),
           QStringLiteral("\\1\\2<redacted>") },
         { QRegularExpression(QStringLiteral(R"re(\bSAPISID(?:1P|3P)?HASH\s+\S+)re")), QStringLiteral("SAPISIDHASH <redacted>") },
-        { QRegularExpression(QStringLiteral(R"re(\b(SAPISID|APISID|HSID|SSID|SID|SIDCC|LOGIN_INFO|VISITOR_INFO1_LIVE|VISITOR_PRIVACY_METADATA|__Secure-[0-9A-Za-z_-]+)=[^;\s"',]+)re")),
+        { QRegularExpression(QStringLiteral(R"re(\b(SAPISID|APISID|HSID|SSID|SID|SIDCC|LSID|OSID|NID|YSC|PREF|SOCS|AEC|CONSENT|LOGIN_INFO|VISITOR_INFO1_LIVE|VISITOR_PRIVACY_METADATA|__Secure-[0-9A-Za-z_-]+|__Host-[0-9A-Za-z_-]+|ST-[0-9A-Za-z_-]+)=[^;\s"',]+)re")),
           QStringLiteral("\\1=<redacted>") },
+        // a cookies.txt line: domain, flag, path, secure, expiry, name, value;
+        // anywhere on the line, as the sidecar's lines carry a prefix
+        { QRegularExpression(QStringLiteral(R"re((^|\s)(\S+\t(?:TRUE|FALSE)\t\S*\t(?:TRUE|FALSE)\t-?\d*\t[^\t]*\t)[^\t\r\n]*)re")),
+          QStringLiteral("\\1\\2<redacted>") },
+        // a raw header pair, as Node prints one: ['cookie', '…'] or ["set-cookie","…"]
+        { QRegularExpression(QStringLiteral(R"re((['"])((?:set-)?cookie|authorization)\1(\s*,\s*)(['"])(?:(?!\4).)*\4)re"),
+                             QRegularExpression::CaseInsensitiveOption),
+          QStringLiteral("\\1\\2\\1\\3\\4<redacted>\\4") },
         { QRegularExpression(QStringLiteral(R"re(([?&;](?:sig|signature|lsig|key|api_key|apikey|token|pot|access_token|refresh_token|visitorData|visitor_data)=)[^&\s"'#]+)re"),
                              QRegularExpression::CaseInsensitiveOption),
           QStringLiteral("\\1<redacted>") },
@@ -79,6 +88,14 @@ QByteArray LogFile::redact(const QByteArray& line) {
     };
     QString s = QString::fromUtf8(line);
     for (const Rule& r : rules) s.replace(r.re, r.with);
+    // a cookie object, as JSON ({"domain":..,"value":"…"}) or as Node's inspect
+    // prints one ({ domain: .., value: '…' }): every value on the line
+    if (s.contains(QLatin1String("domain"))) {
+        static const QRegularExpression json(QStringLiteral(R"re("value"\s*:\s*"(?:[^"\\]|\\.)*")re"));
+        static const QRegularExpression inspect(QStringLiteral(R"re(\bvalue\s*:\s*'(?:[^'\\]|\\.)*')re"));
+        s.replace(json, QStringLiteral("\"value\":\"<redacted>\""));
+        s.replace(inspect, QStringLiteral("value: '<redacted>'"));
+    }
     return s.toUtf8();
 }
 
@@ -118,9 +135,16 @@ void teeHandler(QtMsgType type, const QMessageLogContext& ctx, const QString& ms
 #ifdef Q_OS_UNIX
 // Qt's messages arrive twice when Qt also prints them to stderr: the handler's
 // copy is read first (its pipe is drained before fd 2) and the stderr copy that
-// matches it is not logged again.
+// matches it is not logged again. The real stderr (the journal, when started
+// from a .desktop file) gets the redacted line too; a line without its newline
+// goes out after 250 ms of quiet.
 void work() {
     QByteArray pending[2];   // [0] the Qt pipe, [1] fd 2
+    qsizetype echoed = 0;    // bytes of pending[1] already on the real stderr
+    const auto echo = [](const QByteArray& part, bool newline) {
+        const QByteArray out = LogFile::redact(part) + (newline ? "\n" : "");
+        writeAll(g_origErr, out.constData(), out.size());
+    };
     std::deque<QByteArray> recentQt;
     char buf[16384];
     bool qtOpen = true;
@@ -135,12 +159,12 @@ void work() {
             const ssize_t n = ::read(fds[i].fd, buf, sizeof buf);
             if (n > 0) {
                 any = true;
-                if (i == 1) writeAll(g_origErr, buf, n);
                 pending[i].append(buf, int(n));
                 qsizetype nl;
                 while ((nl = pending[i].indexOf('\n')) >= 0) {
                     const QByteArray line = pending[i].left(nl);
                     pending[i].remove(0, nl + 1);
+                    if (i == 1) { echo(line.mid(echoed), true); echoed = 0; }
                     if (i == 0) {
                         recentQt.push_back(line);
                         if (recentQt.size() > 64) recentQt.pop_front();
@@ -155,8 +179,10 @@ void work() {
             }
         }
         if (any) g_log->flush();
+        else if (pending[1].size() > echoed) { echo(pending[1].mid(echoed), false); echoed = pending[1].size(); }
         if (!qtOpen && !any) break;
     }
+    if (pending[1].size() > echoed) echo(pending[1].mid(echoed), false);
     for (QByteArray& p : pending) if (!p.isEmpty()) g_log->writeLine(p);
     g_log->flush();
 }

@@ -16,7 +16,10 @@ import {
   cookiesTxtPath,
 } from "./guest-cookies";
 import { getDownloadedUrl, getTrackMetadata } from "./library";
-import { fetchMusicAlbum, fetchMusicRadio, hasAuthCookie, resolveCookies } from "./innertube";
+import {
+  browserUnread, cookiesForHost, fetchMusicAlbum, fetchMusicRadio, forgetBrowser, hasAuthCookie, noteKeyringFailure,
+  resolveCookies,
+} from "./innertube";
 import { UNPACK_FAILED, unpackFailedMessage } from "./ytdlp-proc";
 import { relayUrl } from "./stream-relay";
 import { looksStale, ytdlp, ytdlpChannel } from "./ytdlp";
@@ -119,16 +122,20 @@ function keyOf(id: Identity): string {
   return `${id.join(":")}:${hl}-${gl}`;
 }
 
+/** The Cookie header for youtubei.js: what a browser sends www.youtube.com,
+ *  domain-matched, so no Google or look-alike cookie rides along. */
+export function sessionCookie(cookies: { domain: string; name: string; value: string }[]): string | undefined {
+  const yt = cookiesForHost(cookies, "www.youtube.com");
+  return yt.length ? yt.map((c) => `${c.name}=${c.value}`).join("; ") : undefined;
+}
+
 function buildSession([source, browser, profile]: Identity): Promise<Innertube> {
   return (async () => {
     const { Innertube, UniversalCache, Platform } = await import("youtubei.js");
     installEvalShim(Platform);
     let cookie: string | undefined;
     try {
-      const cookies = await resolveCookies(source, browser, profile);
-      const yt = cookies.filter(
-        (c) => c.domain.includes("youtube.com") || c.domain.includes(".google.com"));
-      if (yt.length) cookie = yt.map((c) => `${c.name}=${c.value}`).join("; ");
+      cookie = sessionCookie(await resolveCookies(source, browser, profile));
     } catch { /* anonymous session */ }
     const pot = await poTokenSession();
     // Same locale the browse/search module sends. Without it youtubei.js
@@ -695,10 +702,16 @@ async function streamClientArgs(
   return ["--extractor-args", `youtube:${parts.join(";")}`];
 }
 
+// A run that went on without the keyring's key still says so on stderr.
+function noteKeyringFrom(cookies: string[], stderr: string | undefined): void {
+  if (cookies[0] === "--cookies-from-browser") noteKeyringFailure(cookies[1], stderr);
+}
+
 async function cookieArgsFor([source, browser, profile]: Identity): Promise<string[]> {
   switch (source) {
     case "browser":
-      return ["--cookies-from-browser", browser];
+      // its keyring said no this session: asking again is another prompt
+      return browserUnread(browser) ? [] : ["--cookies-from-browser", browser];
     case "guest":
       return ["--cookies", await writeNetscapeCookieFile(profile)];
     case "none":
@@ -758,8 +771,10 @@ type BrowserOutcome = "walled" | "unread" | "other";
 async function browserWallError(reason: string, browser: string, outcome: BrowserOutcome): Promise<RpcError> {
   let message: string = ytdlpChannel() === "nightly" ? WALL_MESSAGES.browserNightly : WALL_MESSAGES.browser;
   let signedIn: boolean | null = null;
-  if (outcome === "unread") message = WALL_MESSAGES.browserUnread;
+  if (outcome === "unread" || browserUnread(browser)) message = WALL_MESSAGES.browserUnread;
   else {
+    // a sign-in YouTube refused: the store is read again, not the copy from before
+    forgetBrowser(browser);
     signedIn = await browserSignedIn(browser);
     if (signedIn === false) message = WALL_MESSAGES.browserSignedOut;
   }
@@ -910,12 +925,13 @@ async function resolveWithClient(
 ): Promise<CachedStream> {
   // Only the fields read below: the whole `-j` record of a long video with many
   // caption tracks passes the 10 MB maxBuffer, and the run is killed.
-  const { stdout } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
+  const { stdout, stderr } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
      ...YTDLP_COMMON, "-f", "bestaudio/best",
      "-O", "%(.{url,http_headers,title,channel,uploader,duration,thumbnail})j",
      `https://www.youtube.com/watch?v=${videoId}`],
     { timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
   );
+  noteKeyringFrom(cookies, stderr);
   const data = JSON.parse(stdout);
   const raw = typeof data.url === "string" ? data.url : "";
   return {
@@ -1131,6 +1147,7 @@ async function resolveStream(videoId: string): Promise<StreamResult | StreamErro
       lastMsg = rawOf(e);
       if (id[0] === "browser") {
         const reason = ytdlpReason(lastMsg);
+        noteKeyringFailure(id[1], lastMsg);
         browser = { name: id[1], outcome: cookiesUnreadable(reason) ? "unread" : "other", reason };
       }
       const cookiesMatter = (e instanceof ResolveFailed ? e.identity : failsWithIdentity(id, ytdlpReason(lastMsg)))
@@ -1212,12 +1229,13 @@ async function ytdlpVideo(
   const format = videoFormatSelector(maxHeight, codecs);
   for (const client of STREAM_CLIENTS) {
     try {
-      const { stdout } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
+      const { stdout, stderr } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
         ...YTDLP_COMMON,
         "-f", format,
         "-O", "%(.{url,http_headers,width,height,vbr,tbr})j",
         `https://www.youtube.com/watch?v=${videoId}`],
         { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
+      noteKeyringFrom(cookies, stderr);
       const data = JSON.parse(stdout);
       const raw = typeof data.url === "string" ? data.url : "";
       if (!raw) continue;
@@ -1270,6 +1288,7 @@ export async function fetchVideoStreamUrl(
       }
       if (id[0] === "browser") {
         const reason = last.formatMiss ?? last.reason ?? "";
+        noteKeyringFailure(id[1], reason);
         browser = { name: id[1], reason,
                     outcome: last.wall && !last.formatMiss ? "walled" : cookiesUnreadable(reason) ? "unread" : "other" };
       }

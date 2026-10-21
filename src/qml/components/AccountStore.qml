@@ -6,7 +6,7 @@ import "accounts.js" as Accounts
 // the settings window's Account choice change together.
 // No browser store is read until an account menu opens (or one is in use);
 // after that every browser is re-read on a switch and on each menu open.
-// Melo returning to the front re-reads only the browser in use.
+// Melo returning to the front reads nothing: a read can raise a keyring prompt.
 QtObject {
     id: store
 
@@ -80,22 +80,6 @@ QtObject {
                                                    Settings.cookieSource, Settings.browser))
                 store.ask("browser", b, fresh)
         })
-    }
-
-    // Melo coming to the front from any of its windows, including the wizard
-    // and the settings window, usually after a sign-in or out in the browser.
-    // At most every 5 seconds: a read costs about 2 s of CPU. It also drops
-    // the sidecar's copy of the cookies, which home and library use.
-    property double lastFront: 0
-    function cameToFront() {
-        if (Date.now() - lastFront < 5000) return
-        lastFront = Date.now()
-        const b = Accounts.frontRead(Settings.cookieSource, Settings.browser)
-        if (b) ask("browser", b, true)
-    }
-    property Connections appFront: Connections {
-        target: Qt.application
-        function onStateChanged() { if (Qt.application.state === Qt.ApplicationActive) store.cameToFront() }
     }
 
     readonly property string identity:

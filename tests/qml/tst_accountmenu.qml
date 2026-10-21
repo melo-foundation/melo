@@ -162,7 +162,7 @@ TestCase {
         let got = null
         Accounts.askStatus(host, "guest", "Jazz", (k, st) => got = { k: k, st: st })
         compare(host.calls[0].p, { source: "guest", profile: "Jazz" })
-        compare(got.st, { signedIn: false, account: null })
+        compare(got.st, { signedIn: false, account: null, unread: false })
     }
     function test_a_failed_ask_reports_nothing() {
         let called = false
@@ -171,8 +171,8 @@ TestCase {
     }
 
     // a browser's login changes outside melo, so a status asked when a menu
-    // opens or melo comes back to the front re-reads the browser's store
-    // rather than answer from what was read at start
+    // opens re-reads the browser's store rather than answer from what was
+    // read at start
     function test_a_fresh_ask_tells_the_sidecar_to_reread_the_browser() {
         const host = fakeRpc({ ok: true, result: { signedIn: false } })
         Accounts.askStatus(host, "browser", "chromium", () => {}, true)
@@ -198,11 +198,16 @@ TestCase {
         compare(failedKey, "browser:firefox")
     }
 
-    function test_coming_to_the_front_re_reads_only_the_browser_in_use() {
-        compare(Accounts.frontRead("browser", "firefox"), "firefox")
-        compare(Accounts.frontRead("guest", "firefox"), "")
-        compare(Accounts.frontRead("none", "firefox"), "")
-        compare(Accounts.frontRead("browser", ""), "")
+    function test_a_browser_whose_keyring_said_no_is_not_called_signed_out() {
+        const e = list({ status: { "browser:chromium": { signedIn: false, account: null, unread: true } } })
+        compare(e.find((x) => x.id === "chromium").label, "Chromium · couldn't read")
+        compare(e.find((x) => x.id === "chromium").account, null)
+    }
+    function test_an_unread_answer_is_passed_on() {
+        let got = null
+        Accounts.askStatus(fakeRpc({ ok: true, result: { signedIn: false, unread: true } }), "browser", "chrome",
+                           (k, st) => got = st, false)
+        compare(got.unread, true)
     }
 
     function test_no_browser_store_is_read_before_a_menu_opens() {

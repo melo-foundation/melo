@@ -209,11 +209,14 @@ export function registerHandlers(): void {
     // asks about every installed browser, not only the one in use
     const [cs, cb, cp] = ck();
     const source = p?.source ?? cs, browser = p?.browser ?? cb, profile = p?.profile ?? cp;
-    // asked fresh when a menu opens or melo returns to the front: the browser's
-    // login may have changed since it was read
+    // asked fresh when a menu opens: the browser's login may have changed
+    // since it was read
     if (p?.fresh && source === "browser") it.forgetBrowser(browser);
+    if (source === "guest") gc.checkProfileName(profile);
     let cookies: Awaited<ReturnType<typeof it.resolveCookies>> = [];
     try { cookies = await it.resolveCookies(source, browser, profile); } catch { /* none is an answer */ }
+    // the keyring gave no key: one state, not "signed out", until picked again
+    const unread = source === "browser" && it.browserUnread(browser);
     const hasCookie = it.hasAuthCookie(cookies);
     let account: Awaited<ReturnType<typeof it.fetchAccountInfo>> = null;
     let answered = false;
@@ -223,7 +226,7 @@ export function registerHandlers(): void {
     }
     const signedIn = it.signedInFrom(hasCookie, { answered, account });
     return {
-      signedIn, account: signedIn ? account : null,
+      signedIn, account: signedIn ? account : null, unread,
       // what a request to youtube.com actually carries
       cookieCount: it.cookiesForHost(cookies, "www.youtube.com").length,
       source, browser, profile,
@@ -235,6 +238,7 @@ export function registerHandlers(): void {
   method("cookies/pickBrowser", async () => {
     const logins = await Promise.all(installedBrowsers().map(async (browser) => {
       it.forgetBrowser(browser);
+      it.retryBrowser(browser);   // pressed by the user: a denied keyring is asked again
       try { return { browser, signedIn: it.hasAuthCookie(await it.resolveCookies("browser", browser, "")) }; }
       catch { return { browser, signedIn: null }; }
     }));
@@ -243,16 +247,17 @@ export function registerHandlers(): void {
     return { browsers: logins, ...picked };
   });
   method("cookies/profiles", () => ({ profiles: gc.listProfiles() }));
-  method("cookies/import", ({ browser, profile }) => gc.importBrowserCookies(browser, profile).then((count) => ({ count })));
+  method("cookies/import", ({ browser, profile }) => gc.importBrowserCookies(browser, gc.checkProfileName(profile)).then((count) => ({ count })));
   // the feed and stream sessions carry the old visitor id; drop them with the cookies
   method("cookies/resetGuest", async ({ profile }) => {
-    await gc.resetGuestSession(profile);
+    await gc.resetGuestSession(gc.checkProfileName(profile));
     it.clearCookieCache();
     st.resetSession();
   });
-  method("cookies/create", ({ name }) => gc.createProfile(name));
-  method("cookies/delete", ({ name }) => gc.deleteProfile(name));
-  method("cookies/rename", ({ oldName, newName }) => gc.renameProfile(oldName, newName));
+  method("cookies/create", ({ name }) => gc.createProfile(gc.checkProfileName(name)));
+  method("cookies/delete", ({ name }) => gc.deleteProfile(gc.checkProfileName(name)));
+  method("cookies/rename", ({ oldName, newName }) =>
+    gc.renameProfile(gc.checkProfileName(oldName), gc.checkProfileName(newName)));
 
   // --- Audio analysis ---
   method("audio/detectSilence", ({ source, duration, thresholdDb, scanStart, scanEnd, videoId }) => {
@@ -276,6 +281,7 @@ export function registerHandlers(): void {
     return { ok };
   });
   method("settings/set", ({ patch, removeUi }) => {
+    if (patch && patch.cookieProfile !== undefined) patch.cookieProfile = gc.checkProfileName(patch.cookieProfile);
     const saved = saveSettings(patch, Array.isArray(removeUi) ? removeUi : []);
     // Every identity switch passes through here — the title bar's account menu
     // and the settings window's profile picker alike — so the caches are

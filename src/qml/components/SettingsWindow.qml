@@ -2013,29 +2013,36 @@ Window {
                         anchors.right: parent.right; anchors.rightMargin: Theme.gap(16)
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.gap(6)
-                        SBtn { label: "New"
-                               onClicked: winPrompt.promptDialog("New profile name", "", (name) => {
-                                   if (!name || !name.trim()) return
-                                   const n = name.trim()
-                                   if (win.cookieProfiles.indexOf(n) >= 0) return
-                                   sidecar.rpc("cookies/create", { name: n }, () => {
-                                       Settings.cookieProfile = n
-                                       win.refreshProfiles()
+                        SBtn { id: newProfileBtn; label: "New"
+                               // a refused name is asked again with what was wrong
+                               function ask(title, initial) {
+                                   winPrompt.promptDialog(title, initial, (name) => {
+                                       if (!name || !name.trim()) return
+                                       const n = name.trim()
+                                       // a taken name, in any case: the sidecar refuses it and says so
+                                       sidecar.rpc("cookies/create", { name: n }, (r) => {
+                                           if (!r.ok) { newProfileBtn.ask(String(r.error), n); return }
+                                           Settings.cookieProfile = n
+                                           win.refreshProfiles()
+                                       })
                                    })
-                               }) }
-                        SBtn { label: "Rename"
-                               onClicked: winPrompt.promptDialog("Rename profile",
-                                   Settings.cookieProfile, (name) => {
-                                   if (!name || !name.trim()) return
-                                   const n = name.trim()
-                                   if (n === Settings.cookieProfile
-                                       || win.cookieProfiles.indexOf(n) >= 0) return
-                                   sidecar.rpc("cookies/rename",
-                                       { oldName: Settings.cookieProfile, newName: n }, () => {
-                                       Settings.cookieProfile = n
-                                       win.refreshProfiles()
+                               }
+                               onClicked: newProfileBtn.ask("New profile name", "") }
+                        SBtn { id: renameProfileBtn; label: "Rename"
+                               function ask(title, initial) {
+                                   winPrompt.promptDialog(title, initial, (name) => {
+                                       if (!name || !name.trim()) return
+                                       const n = name.trim()
+                                       if (n === Settings.cookieProfile) return   // a taken name: the sidecar says so
+                                       sidecar.rpc("cookies/rename",
+                                           { oldName: Settings.cookieProfile, newName: n }, (r) => {
+                                           if (!r.ok) { renameProfileBtn.ask(String(r.error), n); return }
+                                           Settings.cookieProfile = n
+                                           win.refreshProfiles()
+                                       })
                                    })
-                               }) }
+                               }
+                               onClicked: renameProfileBtn.ask("Rename profile", Settings.cookieProfile) }
                         SBtn { label: "Delete"; danger: true
                                visible: win.cookieProfiles.length > 1
                                onClicked: winPrompt.confirmDialog(

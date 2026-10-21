@@ -64,6 +64,7 @@ class FakeSidecar : public QObject {
 public:
     QQmlEngine* engine = nullptr;
     QStringList statusAsked;   // "browser:<id>" or "guest:<profile>"
+    QStringList freshAsked;    // the asks that re-read the browser's store
     bool ready() const { return true; }
     Q_INVOKABLE void rpc(const QString& method, const QVariantMap& params, QJSValue cb) {
         QVariantMap result;
@@ -73,6 +74,7 @@ public:
             const bool browser = params.value("source").toString() == "browser";
             statusAsked << (browser ? "browser:" + params.value("browser").toString()
                                     : "guest:" + params.value("profile").toString());
+            if (params.value("fresh").toBool()) freshAsked << statusAsked.last();
             result["signedIn"] = false;
         } else if (method == "settings/locales") {
             result["locales"] = QVariantList{}; result["regions"] = QVariantList{};
@@ -110,6 +112,7 @@ private slots:
         engine_ = std::make_unique<QQmlEngine>();
         sidecar_.engine = engine_.get();
         sidecar_.statusAsked.clear();
+        sidecar_.freshAsked.clear();
         settings_.cookieSource = "guest";
         engine_->rootContext()->setContextProperty("Settings", &settings_);
         engine_->rootContext()->setContextProperty("sidecar", &sidecar_);
@@ -173,6 +176,31 @@ private slots:
         QMetaObject::invokeMethod(select, "clicked");
         QTRY_VERIFY(sidecar_.browsersAsked().contains("browser:firefox"));
         QVERIFY(sidecar_.browsersAsked().contains("browser:chrome"));
+    }
+
+    // Browser mode: setup and Settings re-read no
+    // store; the browser in use answers from the sidecar's one read
+    void browserModeReReadsOnlyFromTheAccountMenu() {
+        const QtMessageHandler prev = qInstallMessageHandler([](QtMsgType t, const QMessageLogContext&, const QString& m) {
+            if (t != QtWarningMsg) std::fprintf(stderr, "%s\n", qPrintable(m));
+        });
+        auto restore = qScopeGuard([prev] { qInstallMessageHandler(prev); });
+        settings_.cookieSource = "browser";
+        settings_.browser = "chrome";
+        std::unique_ptr<QObject> setup(make("import QtQuick\nimport \"components\"\nOnboardingWindow { }"));
+        std::unique_ptr<QObject> win(make("import QtQuick\nimport \"components\"\nSettingsWindow { }"));
+        QVERIFY(setup && win);
+        QMetaObject::invokeMethod(setup.get(), "open");
+        QMetaObject::invokeMethod(win.get(), "open", Q_ARG(QVariant, QVariant(QStringLiteral("personalization"))));
+        QTest::qWait(50);
+        QTRY_VERIFY(sidecar_.browsersAsked().contains("browser:chrome"));
+        QVERIFY(!sidecar_.browsersAsked().contains("browser:firefox"));
+        QCOMPARE(sidecar_.freshAsked, QStringList{});
+        QObject* select = win->findChild<QObject*>("accountSelect");
+        QVERIFY(select);
+        QMetaObject::invokeMethod(select, "clicked");
+        QTRY_VERIFY(sidecar_.freshAsked.contains("browser:chrome"));
+        QVERIFY(sidecar_.freshAsked.contains("browser:firefox"));
     }
 };
 
