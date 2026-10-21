@@ -6,7 +6,7 @@ import { tmpdir } from "os";
 import * as openpgp from "openpgp";
 import { setEnv } from "./env";
 import {
-  maybeUpdateYtdlp, downloadYtdlp, updateNow, ytdlpReady, ytdlpReleaseUrl, ytdlpAssetName, setYtdlpTrustForTests,
+  maybeUpdateYtdlp, downloadYtdlp, updateNow, ytdlpReady, ytdlpReleaseUrl, ytdlpAssetName, hostIsMusl, setYtdlpTrustForTests,
 } from "./ytdlp";
 
 const ASSET = ytdlpAssetName();
@@ -303,5 +303,30 @@ describe("release channel", () => {
   it("treats anything that is not nightly as stable", () => {
     expect(ytdlpReleaseUrl("")).toBe(ytdlpReleaseUrl("stable"));
     expect(ytdlpReleaseUrl("banana")).toBe(ytdlpReleaseUrl("stable"));
+  });
+});
+
+describe("asset name", () => {
+  const MUSL = "/lib/ld-musl-x86_64.so.1";
+  const GLIBC = "/lib64/ld-linux-x86-64.so.2";
+  const host = (files: Record<string, string>) => [
+    (p: string) => p in files,
+    (p: string) => (p in files ? Buffer.from(files[p]) : null),
+  ] as const;
+
+  it("picks the musl build on a musl host only", () => {
+    expect(hostIsMusl(...host({ [MUSL]: "musl" }))).toBe(true);
+    expect(hostIsMusl(...host({ [GLIBC]: "\0GLIBC_PRIVATE\0" }))).toBe(false);
+    // Debian with the musl package: glibc stays the system's libc
+    expect(hostIsMusl(...host({ [MUSL]: "musl", [GLIBC]: "\0GLIBC_PRIVATE\0" }))).toBe(false);
+    // Alpine with gcompat: its ld-linux is a musl program
+    expect(hostIsMusl(...host({ [MUSL]: "musl", [GLIBC]: "/lib/ld-musl-x86_64.so.1" }))).toBe(true);
+  });
+
+  it("names the binary per platform", () => {
+    expect(ytdlpAssetName("linux", () => true)).toBe("yt-dlp_musllinux");
+    expect(ytdlpAssetName("linux", () => false)).toBe("yt-dlp_linux");
+    expect(ytdlpAssetName("win32", () => true)).toBe("yt-dlp.exe");
+    expect(ytdlpAssetName("darwin")).toBe("yt-dlp_macos");
   });
 });

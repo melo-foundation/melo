@@ -51,6 +51,31 @@ The AppImage runtimes, the executable part at the start of each file:
 | both | type2-runtime release 20251108 (commit dd6cebe), from github.com/AppImage/type2-runtime | MIT |
 | both | libfuse 3.15.0 (library), squashfuse 0.5.2, zstd, zlib and mimalloc, linked into that runtime | in that order: LGPL-2.1-only, BSD-2-Clause, BSD-3-Clause OR GPL-2.0-only, Zlib, MIT |
 
+The anylinux AppImage (`melo-anylinux-x86_64.AppImage`) ships the full
+AppImage's melo, Node.js, FFmpeg and AV1 plugin with Arch Linux's builds of
+the libraries they load. Each package, its version and its licence is listed in
+`share/melo/arch-packages.txt` inside the AppImage, with the packages' licence
+files and the SPDX texts in `share/melo/arch-licenses/`. Among them:
+
+| Component | Licence |
+|---|---|
+| glibc | LGPL-2.1-or-later |
+| libstdc++ and libgcc | GPL-3.0-or-later WITH GCC-exception-3.1 |
+| Mesa 26.2.3 (Arch) | MIT AND BSD-3-Clause AND SGI-B-2.0 |
+| LLVM 22.1.8 libraries, X86 and AMDGPU targets only, from github.com/pkgforge-dev/archlinux-pkgs-debloated | Apache-2.0 WITH LLVM-exception |
+| libglvnd | BSD-like, text in `share/melo/arch-licenses/libglvnd/` |
+| GStreamer 1.0 core and the base, good and bad plugins it uses | LGPL-2.1-or-later |
+| GStreamer `faad` plugin and libfaad2 | GPL-2.0-or-later |
+| glib, glib-networking, libsoup 3, GnuTLS | LGPL-2.1-or-later (libsoup: LGPL-2.0-or-later) |
+| OpenSSL 3 | Apache-2.0 |
+| sharun 3.5.1, from github.com/pkgforge-dev/Anylinux-sharun, with its helper libraries | MIT, text in `share/melo/sharun-LICENSE` |
+| The AppRun scripts and hooks of quick-sharun, github.com/pkgforge-dev/Anylinux-AppImages commit 48137df | MIT, text in `share/melo/anylinux-AppImages-LICENSE` |
+
+| AppImage | Runtime | Licence |
+|---|---|---|
+| anylinux | uruntime v0.8.1 (`uruntime-appimage-squashfs`), from github.com/VHSgunzo/uruntime | MIT, text in `share/melo/uruntime-LICENSE` |
+| anylinux | squashfuse 0.6.3 (with libfuse 3.18.2, musl and mimalloc) and squashfs-tools 4.7.5 `unsquashfs`, static, embedded in that runtime | BSD-2-Clause (libfuse: LGPL-2.1-only, musl: MIT, mimalloc: MIT), GPL-2.0-or-later |
+
 The lite AppImage and the rpm, deb and Arch packages use the system's
 GStreamer and fontconfig. The rpm and deb packages ship Node.js 22.23.2
 (MIT, licence at `/usr/lib/melo/share/melo/node-LICENSE`); the lite
@@ -113,8 +138,12 @@ lite AppImage's runtime links libfuse 3.15.0 statically, with the runtime's own
 - **Source.** Every Linux release has `melo-sources.tar` beside its builds: the
   source of Qt 6.12.0, projectM 4.1.7 and FFmpeg 7.1.1 with melo's patches, the
   type2-runtime 20251108 source with libfuse 3.15.0 and squashfuse 0.5.2, and
-  the Ubuntu source package of every library the full AppImage bundles.
-  `scripts/release-sources.sh` builds it.
+  the Ubuntu source package of every library the full AppImage bundles, and
+  for the anylinux AppImage: the Arch packaging and upstream sources of every
+  GPL or LGPL package it bundles, at the versions bundled, and the uruntime,
+  squashfuse, libfuse, squashfs-tools, sharun, quick-sharun and
+  cross-libc-dlopen sources at the commits its runtime and tools were built
+  from. `scripts/release-sources.sh` builds it.
 - **Relinking.** To use your own Qt or projectM, build melo from this source
   against a shared Qt, and run `scripts/setup-vendor.sh` without `--static`.
   To use your own libfuse in the lite AppImage, build type2-runtime from its

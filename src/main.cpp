@@ -47,6 +47,9 @@ static void onQuitSignal(int sig) {
     [[maybe_unused]] const ssize_t n = ::write(g_quitFd[0], &c, 1);
 }
 #endif
+#ifdef Q_OS_LINUX
+#include "core/FollowTracer.h"
+#endif
 
 #include "VideoSurface.h"
 #include "VisualizerItem.h"
@@ -310,6 +313,9 @@ int main(int argc, char** argv) {
         sa.sa_flags = SA_RESTART;
         sigaction(SIGTERM, &sa, nullptr);
         sigaction(SIGINT, &sa, nullptr);
+#ifdef Q_OS_LINUX
+        followTracingParent();
+#endif
     }
 #endif
 

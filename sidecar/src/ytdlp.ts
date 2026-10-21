@@ -34,11 +34,31 @@ export function ensureYtdlp(seedPath?: string): boolean {
   return false;
 }
 
+const MUSL_LOADER = "/lib/ld-musl-x86_64.so.1";
+const GLIBC_LOADER = "/lib64/ld-linux-x86-64.so.2";
+
+/** The host's libc is musl: its loader is there and no glibc loader is. Read from
+ *  the files, since node in the anylinux AppImage runs on its own glibc. gcompat's
+ *  ld-linux is a musl program; a glibc loader carries GLIBC_PRIVATE. */
+export function hostIsMusl(exists: (path: string) => boolean = existsSync,
+                           read: (path: string) => Buffer | null = readOrNull): boolean {
+  if (!exists(MUSL_LOADER)) return false;
+  const glibc = read(GLIBC_LOADER);
+  return !glibc || !glibc.includes("GLIBC_PRIVATE");
+}
+
+function readOrNull(path: string): Buffer | null {
+  try { return readFileSync(path); } catch { return null; }
+}
+
+let muslHost: boolean | undefined;
+
 /** Release asset name for this platform (yt-dlp publishes per-OS binaries). */
-export function ytdlpAssetName(platform: NodeJS.Platform = process.platform): string {
+export function ytdlpAssetName(platform: NodeJS.Platform = process.platform,
+                               musl: () => boolean = () => (muslHost ??= hostIsMusl())): string {
   if (platform === "win32") return "yt-dlp.exe";
   if (platform === "darwin") return "yt-dlp_macos";
-  return "yt-dlp_linux";
+  return musl() ? "yt-dlp_musllinux" : "yt-dlp_linux";
 }
 
 function releaseRepo(channel: string): string {

@@ -340,7 +340,7 @@ jobs:
         run: |
           curl -fsSLo linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           curl -fsSLo appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
-          # both AppImages' runtime; release-sources.sh ships its source
+          # the full and lite AppImages' runtime; release-sources.sh ships its source
           curl -fsSLo runtime-x86_64 https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
           sha256sum -c <<'SUMS'
           ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool
@@ -455,6 +455,22 @@ jobs:
             --mksquashfs-opt -b --mksquashfs-opt 1M \
             AppDir melo-x86_64.AppImage
 
+      # Anylinux: the full AppImage's programs on their own glibc, Mesa and GStreamer
+      # (sharun), for musl, older glibc and no FUSE. It builds in Arch: quick-sharun
+      # and the libraries it bundles are Arch's.
+      - name: Anylinux AppImage
+        run: |
+          docker run --rm -v "$PWD/AppDir":/in:ro -v "$PWD/scripts":/scripts:ro \
+            -v "$PWD/anylinux":/out docker.io/library/archlinux:latest \
+            sh /scripts/anylinux-appimage.sh /in /out \
+            "gh-releases-zsync|${GITHUB_REPOSITORY/\//|}|$UPDATE_CHANNEL|melo-anylinux-x86_64.AppImage.zsync"
+          sudo chown -R "$(id -u):$(id -g)" anylinux
+          mv anylinux/melo-anylinux-x86_64.AppImage anylinux/melo-anylinux-x86_64.AppImage.zsync .
+          # musl, and no FUSE in the container
+          docker run --rm -v "$PWD/melo-anylinux-x86_64.AppImage":/melo.AppImage:ro \
+            -e QT_QPA_PLATFORM=offscreen -e MELO_CONFIG_DIR=/tmp/cfg docker.io/library/alpine:latest \
+            sh -c 'mkdir -p /tmp/cfg && timeout 60 /melo.AppImage --smoke > /tmp/log 2>&1; s=$?; cat /tmp/log; exit $s'
+
       # Lite: the system's GStreamer and glib, and Node from the system or
       # melo's first-run download
       - name: Lite AppImage
@@ -523,7 +539,7 @@ jobs:
           for p in rpm deb archlinux; do ./nfpm package -f packaging/nfpm.yaml -p $p -t .; done
           # deb and rpm keep nfpm's versioned names: deb-get reads the version from them
           mv melo-*.pkg.tar.zst melo-x86_64.pkg.tar.zst
-          du -m melo-x86_64.AppImage melo-lite-x86_64.AppImage melo-*.rpm melo_*.deb melo-x86_64.pkg.tar.zst
+          du -m melo-x86_64.AppImage melo-anylinux-x86_64.AppImage melo-lite-x86_64.AppImage melo-*.rpm melo_*.deb melo-x86_64.pkg.tar.zst
           rm -rf "$RUNNER_TEMP/signing.asc" "$RUNNER_TEMP/gnupg"
 
       - name: Sources
@@ -531,13 +547,14 @@ jobs:
           sed -n 's/^deb /deb-src /p' /etc/apt/sources.list | sudo tee /etc/apt/sources.list.d/melo-src.list >/dev/null
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends ubuntu-dev-tools   # pull-lp-source
-          scripts/release-sources.sh AppDir melo-sources.tar
+          scripts/release-sources.sh AppDir melo-sources.tar anylinux/arch-sources.txt
 
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           files="melo-x86_64.AppImage melo-x86_64.AppImage.zsync
+                 melo-anylinux-x86_64.AppImage melo-anylinux-x86_64.AppImage.zsync
                  melo-lite-x86_64.AppImage melo-lite-x86_64.AppImage.zsync
                  $(echo melo-*.rpm melo_*.deb) melo-x86_64.pkg.tar.zst melo-sources.tar"
           if [ "$KIND" = alpha ]; then

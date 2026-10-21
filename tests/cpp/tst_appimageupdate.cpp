@@ -18,6 +18,11 @@
 #include "AppImageUpdater.h"
 #include "Zsync.h"
 #include "ZsyncJob.h"
+#include "paths.h"
+#include "FollowTracer.h"
+#include <poll.h>
+#include <sys/ptrace.h>
+#include <sys/wait.h>
 
 // The AppImage updater: zsync 0.6.2's control file and block matching, the
 // HTTP Range fetch of the rest, the ELF update information, and the decision
@@ -876,6 +881,60 @@ private slots:
         QVERIFY(AppImageUpdater::offered("nightly", "0.5.0", "aa", "bb"));
         QVERIFY(!AppImageUpdater::offered("nightly", "0.5.0", "aa", "aa"));
         QVERIFY(!AppImageUpdater::offered("alpha-6", "0.5.0", "aa", "aa"));
+    }
+
+    // the anylinux AppImage: melo's files are beside sharun's bin/melo, not beside
+    // the loader Qt reports
+    void appDirFollowsSharun() {
+        QTemporaryDir dir;
+        auto restore = qScopeGuard([] { qunsetenv("SHARUN_DIR"); });
+        QCOMPARE(meloAppDir(), QCoreApplication::applicationDirPath());
+        qputenv("SHARUN_DIR", dir.path().toUtf8());
+        QCOMPARE(meloAppDir(), QCoreApplication::applicationDirPath());
+        QVERIFY(QDir(dir.path()).mkpath("bin"));
+        QVERIFY(writeFile(dir.filePath("bin/melo"), "x"));
+        QCOMPARE(meloAppDir(), dir.path() + "/bin");
+    }
+
+    // sharun's old-kernel tracer is melo's parent and dies on TERM without
+    // passing it on: melo must go with it
+    void followsATracingParentOut() {
+        QVERIFY(!followTracingParent());   // nothing traces the test
+        int p[2], go[2];
+        QVERIFY(::pipe(p) == 0 && ::pipe(go) == 0);
+        const pid_t tracer = ::fork();
+        if (tracer == 0) {
+            ::close(p[0]);
+            const pid_t app = ::fork();
+            if (app == 0) {
+                ::close(go[0]);
+                ::signal(SIGTERM, SIG_DFL);   // not QtTest's crash handler
+                if (::ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) != 0) { [[maybe_unused]] auto n = ::write(p[1], "s", 1); ::_exit(0); }
+                ::raise(SIGSTOP);
+                const char c = followTracingParent() ? '1' : '0';
+                [[maybe_unused]] auto n = ::write(p[1], &c, 1);
+                ::close(go[1]);   // tells the tracer to go
+                for (;;) ::pause();   // SIGTERM ends it, closing p[1]
+            }
+            ::close(p[1]); ::close(go[1]);
+            int st = 0;
+            ::waitpid(app, &st, 0);
+            ::ptrace(PTRACE_CONT, app, nullptr, nullptr);
+            char c;
+            [[maybe_unused]] auto n = ::read(go[0], &c, 1);   // EOF once the app has answered
+            ::_exit(0);   // the tracer dies; the app must follow
+        }
+        ::close(p[1]); ::close(go[0]); ::close(go[1]);
+        char c = 0;
+        QCOMPARE(::read(p[0], &c, 1), ssize_t(1));
+        int st = 0;
+        ::waitpid(tracer, &st, 0);
+        if (c == 's') { ::close(p[0]); QSKIP("ptrace is not permitted here"); }
+        QCOMPARE(c, '1');
+        pollfd pf { p[0], POLLIN, 0 };
+        QVERIFY(::poll(&pf, 1, 5000) == 1);
+        QCOMPARE(::read(p[0], &c, 1), ssize_t(0));   // the app is gone
+        ::close(p[0]);
     }
 
     void relaunchKeepsOnlyFlags() {
