@@ -22,8 +22,12 @@ MeloWindow {
     property bool resizing: false
     property bool hovered: false
     Binding on hovered { value: hover.hovered; when: !dw.resizing; restoreMode: Binding.RestoreNone }
-    // set by a Ctrl+drag; let go next to the bar, the window asks to go back under it
+    // set by a Ctrl+drag; let go next to the bar, the window asks to go back under it.
+    // Every move or resize sets it afresh: one KWin never reported the end of arms nothing after it
     property bool reattachArmed: false
+    function startMove(ctrl) { reattachArmed = ctrl; startSystemMove() }
+    onTitleMoveStarting: (mods) => reattachArmed = (mods & Qt.ControlModifier) !== 0
+    onResizeStarting: reattachArmed = false
     // armed by whoever waits on this window's next frame (a swap)
     property bool awaitingFrame: false
     signal frameShown()
@@ -150,7 +154,7 @@ MeloWindow {
         DragHandler {
             target: null
             acceptedModifiers: Qt.NoModifier
-            onActiveChanged: if (active) dw.startSystemMove()
+            onActiveChanged: if (active) dw.startMove(false)
         }
     }
     // on the body, not an item over it: one over the content takes its hover (the visualizer's gear)
@@ -169,7 +173,7 @@ MeloWindow {
             acceptedModifiers: Qt.NoModifier
             // never from an item: a press a tab or a button took stays theirs, however far it wanders
             grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType | PointerHandler.ApprovesTakeOverByAnything
-            onActiveChanged: if (active) dw.startSystemMove()
+            onActiveChanged: if (active) dw.startMove(false)
         }
     }
     // the window's menu: over the picture; under the queue, whose rows have their own
@@ -201,7 +205,7 @@ MeloWindow {
             target: null
             acceptedModifiers: Qt.ControlModifier
             grabPermissions: PointerHandler.CanTakeOverFromAnything   // a queue row holds its press
-            onActiveChanged: if (active) { dw.reattachArmed = true; dw.startSystemMove() }
+            onActiveChanged: if (active) dw.startMove(true)
         }
     }
     // the playing track's failure, when this is the window in use

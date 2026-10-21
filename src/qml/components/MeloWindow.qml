@@ -16,6 +16,8 @@ Window {
     property bool titled: true
     // a resize from this window's own edges is starting: what animates holds still through it
     signal resizeStarting()
+    // a move from the title bar is starting, with the keys held at the press
+    signal titleMoveStarting(int modifiers)
     // edges that resize the window
     property bool resizable: false
     readonly property Item body: bodyItem
@@ -159,7 +161,7 @@ Window {
         role: "title"
         topLeftRadius: Math.min(win.titleCap, height / 2)
         topRightRadius: Math.min(win.titleCap, height / 2)
-        MouseArea { anchors.fill: parent; onPressed: win.startSystemMove() }
+        MouseArea { anchors.fill: parent; onPressed: (m) => { win.titleMoveStarting(m.modifiers); win.startSystemMove() } }
         InkText {
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: (Theme.inset("title", "top") - Theme.inset("title", "bottom")) / 2

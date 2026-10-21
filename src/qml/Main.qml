@@ -1020,7 +1020,8 @@ Window {
     readonly property bool popupVideoMode: miniPopupVideo && PlayerState.videoSupported
     readonly property bool videoWanted: VideoWanted.wanted(PlayerState.view, root.miniPlayer,
         npLoader.item ? npLoader.item.showVideo : false,
-        root.miniVisWanted, root.miniQueueShown, root.popupVideoMode) || videoWin.open
+        root.miniVisWanted, root.miniQueueShown, root.popupVideoMode,
+        root.toggling && root.miniPlayer) || videoWin.open
     onVideoWantedChanged: PlayerState.videoWanted = videoWanted
     // A bar resize with the popup open widens its host to that side first; the popup
     // keeps to the bar's right edge through a drag from the left. Cleared once the
