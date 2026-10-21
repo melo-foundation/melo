@@ -49,8 +49,11 @@ Item {
     // read as empty and dip the bar.
     readonly property bool empty: (doc.cells || []).length === 0
     readonly property bool collapsed: empty && !(bar && bar.customising === true)
-    onCollapsedChanged: if (layout) layout.rowGen++
-    onUsedHChanged: if (layout) layout.rowGen++
+    // A row bumps the layout's sums once built, and once on completing: a bump while
+    // building lands inside the sum that is reading the row (a binding loop).
+    property bool built: false
+    onCollapsedChanged: if (layout && built) layout.rowGen++
+    onUsedHChanged: if (layout && built) layout.rowGen++
     Surface {
         anchors.fill: parent
         z: -1
@@ -63,7 +66,7 @@ Item {
     // LAID once every cell is ready and the row has laid them out: until
     // then a cell is not drawn, so nothing sits at the edge for a frame
     property bool laid: false
-    onLaidChanged: if (layout) layout.rowGen++
+    onLaidChanged: if (layout && built) layout.rowGen++
     // lay out once every cell is ready: the first time that makes the row
     // laid; after an insert it places the new cell, which was not drawn
     // until now
@@ -73,7 +76,11 @@ Item {
         relayout()
         laid = true
     }
-    Component.onCompleted: { syncModel(); if ((doc.cells || []).length === 0) laid = true }
+    Component.onCompleted: {
+        syncModel(); if ((doc.cells || []).length === 0) laid = true
+        built = true
+        if (layout) layout.rowGen++
+    }
     // The cells, keyed by identity, so a new document that moves a cell moves
     // the item, one that edits a cell changes it, and only one that inserts a
     // cell builds one — the rest keep their loaders, their images, their

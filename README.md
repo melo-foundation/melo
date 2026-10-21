@@ -109,6 +109,16 @@ To install it system-wide:
 sudo cmake --install build --prefix /usr/local
 ```
 
+## Roadmap
+
+```mermaid
+timeline
+    Next : Detachable windows : Video playback
+    Then : Enhanced theme creation : Channel pages : Subscriptions
+    After that : Windows port
+    Later : Charms
+```
+
 ## TODO
 
 - [ ] Subscriptions page

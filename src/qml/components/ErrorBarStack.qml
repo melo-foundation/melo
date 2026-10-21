@@ -3,8 +3,9 @@ import ".."
 
 // The non-blocking errors, as bars stacked upward from where the host puts
 // the stack's bottom (above the player bar). `notices`: [{ key, message,
-// actions, sticky }]; a sticky one stays until its condition clears, any other
-// is dismissed by a click on it. The newest sits nearest the player bar.
+// actions, sticky, alert }]; a sticky one stays until its condition clears, any
+// other is dismissed by a click on it; `alert: false` drops the alert glyph.
+// The newest sits nearest the player bar.
 Column {
     id: stack
     property var notices: []
@@ -25,6 +26,7 @@ Column {
             height: implicitHeight
             maxWidth: stack.maxWidth
             message: modelData.message
+            alert: modelData.alert !== false
             messageName: "noticeText_" + modelData.key
             namePrefix: "notice_" + modelData.key + "_"
             actions: modelData.actions

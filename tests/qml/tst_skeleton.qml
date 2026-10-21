@@ -11,6 +11,8 @@ Item {
     width: 300; height: 200
     Skeleton { id: sk; width: 160; height: 90 }
     Skeleton { id: plain; y: 100; width: 160; height: 40; shimmer: false }
+    // a site's skeleton, as a bar's artwork cell has one
+    Component { id: siteC; Skeleton { width: 48; height: 28; radius: 2; shimmer: wait; property bool wait: false } }
 
     TestCase {
         name: "Skeleton"
@@ -82,6 +84,26 @@ Item {
             verify(!sheen(sk))
             wait(300)
             verify(part(sk, "skeletonGround").opacity < 1, "the ground dims")
+        }
+        // A styled skeleton builds without a binding loop, at once or a slice at a
+        // time (the preview baker), and keeps its fill once shown
+        function test_a_styled_skeleton_builds_without_a_binding_loop_data() {
+            return [ { tag: "sync", mode: Qt.Synchronous }, { tag: "async", mode: Qt.Asynchronous } ]
+        }
+        function test_a_styled_skeleton_builds_without_a_binding_loop(data) {
+            failOnWarning(/Binding loop/)
+            Theme.p.skeleton = ({ colour: "#3873a8", source: "bevel" })
+            Theme.pChanged(); wait(20)
+            const inc = siteC.incubateObject(sk.parent, {}, data.mode)
+            tryVerify(() => inc.status === Component.Ready, 2000)
+            const s = inc.object
+            verify(s.everShown, "shown from the start latches")
+            verify(fill(s) !== null, "and builds its fill")
+            s.needed = false; wait(20)
+            verify(fill(s) !== null, "which the picture covering it keeps")
+            s.destroy()
+            delete Theme.p.skeleton
+            Theme.pChanged(); wait(20)
         }
         function test_still_is_still() {
             set("skeletonStyle", "still")

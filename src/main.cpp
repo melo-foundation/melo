@@ -85,6 +85,7 @@ static void onQuitSignal(int sig) {
 #include "PortalDialog.h"
 #include "LogFile.h"
 #include "UiActivity.h"
+#include "AppImageUpdater.h"
 #include <memory>
 #include <utility>
 #include <vector>
@@ -327,7 +328,10 @@ int main(int argc, char** argv) {
                      "Two melos on %s both write the library and the settings, and the last "
                      "save wins.\n", qPrintable(meloConfigDir()));
     }
-    if (!allowSecond && !instanceLock.tryLock(100)) {
+    // an update's restart starts the new melo before the old one has let go
+    const bool updateRelaunch = qEnvironmentVariableIsSet("MELO_UPDATE_RELAUNCH");
+    qunsetenv("MELO_UPDATE_RELAUNCH");
+    if (!allowSecond && !instanceLock.tryLock(updateRelaunch ? 30000 : 100)) {
         qint64 pid = 0; QString host, appName;
         instanceLock.getLockInfo(&pid, &host, &appName);
 
@@ -478,6 +482,7 @@ int main(int argc, char** argv) {
     QueueModel queueModel;
     SuggestionsModel suggestionsModel;
     SettingsStore settings(&sidecar);
+    AppImageUpdater updater(smoke ? QString() : AppImageUpdater::runningAppImage());
     ThemeStore themeStore(&settings);
     LibraryStore library(&sidecar, &settings);
     PlaybackCoordinator coordinator(&engine, &sidecar, &playerState,
@@ -605,6 +610,7 @@ int main(int argc, char** argv) {
     qml.rootContext()->setContextProperty("MELO_INK_DEBUG",
                                           qEnvironmentVariableIsSet("MELO_INK_DEBUG"));
     qml.rootContext()->setContextProperty("NodeSetup", &nodeSetup);
+    qml.rootContext()->setContextProperty("Updater", &updater);
     // non-empty on lite builds whose system GStreamer lacks pieces
     qml.rootContext()->setContextProperty("MELO_MISSING_GST", missingGst.join(", "));
     // distro-exact install hint for the missing-plugins error (lite builds
@@ -650,6 +656,13 @@ int main(int argc, char** argv) {
 #endif
     // Before the load, so the window is built once, in the saved theme.
     settings.loadLocal();
+    if (updater.supported()) {
+        auto syncUpdates = [&settings, &updater] {
+            updater.setEnabled(settings.uiGet(QStringLiteral("checkUpdates"), true).toBool());
+        };
+        syncUpdates();
+        QObject::connect(&settings, &SettingsStore::changed, &updater, syncUpdates);
+    }
     qml.load(QUrl::fromLocalFile(qmlDir + "/Main.qml"));
     // the splash goes with the first frame that shows the window's content
     if (auto* win = qobject_cast<QQuickWindow*>(qml.rootObjects().value(0))) {
@@ -1144,6 +1157,7 @@ int main(int argc, char** argv) {
         LogFile::stopTee();
         return n == 0 ? rc : 3;
     }
+    if (updater.relaunchPending()) updater.relaunch();
     LogFile::stopTee();
     return rc;
 

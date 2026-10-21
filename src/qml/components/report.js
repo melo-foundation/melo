@@ -19,6 +19,7 @@ const TITLES = {
     cookies: "Cookie import failed",
     tagging: "Tagging failed",
     metadata: "Metadata editor problem",
+    update: "Update failed",
 }
 
 // `sub`: a cause, a code or a plugin id; never free text

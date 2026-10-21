@@ -18,6 +18,16 @@ Item {
         namePrefix: "d_"
         actions: [{ id: "retry", label: "Retry" }, { id: "skip", label: "Skip" }, { id: "report", label: "Report…" }]
     }
+    // an update notice: no alert glyph, Release notes left of Update
+    ErrorPanel {
+        id: updateBar
+        y: 200
+        width: implicitWidth; height: implicitHeight; maxWidth: 480
+        message: "melo 0.5.0"
+        alert: false
+        namePrefix: "u_"
+        actions: [{ id: "update", label: "Update" }, { id: "notes", label: "Release notes" }]
+    }
     Rectangle { id: bar; anchors.bottom: parent.bottom; width: parent.width; height: 80 }
     ErrorBarStack {
         id: stack
@@ -64,6 +74,15 @@ Item {
             verify(b2 <= bar.y, "the stack ends above the player bar")
             const rep = findChild(stack, "notice_two_report"), main = findChild(stack, "notice_two_nightly")
             verify(rep.mapToItem(root, 0, 0).x < main.mapToItem(root, 0, 0).x)
+        }
+
+        function test_a_notice_goes_without_the_alert_glyph() {
+            waitForRendering(updateBar)
+            compare(updateBar.iconW, 0)
+            verify(dialogSize.iconW > 0)
+            const notes = findChild(updateBar, "u_notes"), upd = findChild(updateBar, "u_update")
+            verify(notes.mapToItem(updateBar, 0, 0).x < upd.mapToItem(updateBar, 0, 0).x)
+            verify(upd.accent && !notes.accent)
         }
 
         function test_buttons_answer_and_a_click_dismisses_the_transient_one() {

@@ -15,6 +15,8 @@ Surface {
     property var actions: []
     property string namePrefix: "error_"
     property string messageName: ""
+    // a notice that is not a failure goes without the alert glyph
+    property bool alert: true
     // the widest a bar grows to; it is as wide as its content below that
     property real maxWidth: 520
     signal triggered(string id)
@@ -34,13 +36,15 @@ Surface {
     borderRole: "border"
 
     implicitWidth: blocking ? maxWidth
-        : Math.min(maxWidth, padX * 2 + icon.width + Theme.gap(8) + line.implicitWidth + Theme.gap(12) + buttons.implicitWidth)
+        : Math.min(maxWidth, padX * 2 + iconW + line.implicitWidth + Theme.gap(12) + buttons.implicitWidth)
     implicitHeight: blocking
         ? padY * 2 + Math.max(icon.height, line.height) + Theme.gap(16) + Theme.btnH
         : padY * 2 + Math.max(Theme.btnH, line.height)
 
+    readonly property real iconW: alert ? icon.width + Theme.gap(8) : 0
     Icon {
         id: icon
+        visible: panel.alert
         x: panel.padX
         y: panel.blocking ? panel.padY + (line.lineH - height) / 2 : (panel.height - height) / 2
         name: "alert"
@@ -51,7 +55,7 @@ Surface {
         id: line
         objectName: panel.messageName
         readonly property real lineH: fontInfo.pixelSize * 1.3
-        x: icon.x + icon.width + Theme.gap(8)
+        x: panel.padX + panel.iconW
         y: panel.blocking ? panel.padY : (panel.height - height) / 2
         width: panel.blocking ? panel.width - x - panel.padX
                               : panel.width - x - Theme.gap(12) - buttons.width - panel.padX

@@ -35,13 +35,17 @@ Item {
         else appearTimer.restart()
     }
     onLoadingChanged: if (loading && needed) { appearTimer.stop(); shown = true }
-    onShownChanged: if (shown && visible) everShown = true
-    onVisibleChanged: if (visible && shown) everShown = true
+    // While building, the latch waits for Component.onCompleted: one set inside the
+    // fill Loader's first read of `shown` would be a binding loop on `active`.
+    property int latch: 0   // 0 building, 1 building and shown, 2 built
+    function seen() { if (latch === 2) everShown = true; else latch = 1 }
+    onShownChanged: if (shown && visible) seen()
+    onVisibleChanged: if (visible && shown) seen()
     // A skeleton shown from the start latches too: `visible` never changes on one
     // built visible, so its fill chain would be torn down when the picture arrives and
     // rebuilt on reuse, each teardown walking the window's connection list once per
     // `Window` attached property in the subtree. Latching: -16% cycles a card.
-    Component.onCompleted: if (visible && shown) everShown = true
+    Component.onCompleted: { if (latch === 1 || (visible && shown)) everShown = true; latch = 2 }
     property real radius: Theme.radiusSm   // theme-reactive: rounded/squared corner style
     property real bottomRadius: radius
     readonly property string style: Theme.skeletonStyle

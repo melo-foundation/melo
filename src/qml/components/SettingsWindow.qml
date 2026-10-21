@@ -165,6 +165,9 @@ Window {
 
     // local mirrors, loaded on open (writes go straight through)
     property bool cfOnSkip: false
+    property bool checkUpdates: true
+    // an AppImage that can update itself; packages update through their manager
+    readonly property bool updatable: typeof Updater !== "undefined" && Updater !== null && Updater.supported
     property int scrollSpeed: 3
     property real tileGrowth: 4
     // At a fractional scale a logical size is a fractional device size, Qt stretches
@@ -566,6 +569,7 @@ Window {
     function open(tab) {
         if (tab) win.tab = tab
         cfOnSkip = Settings.uiGet("crossfadeOnSkip", false) === true
+        checkUpdates = Settings.uiGet("checkUpdates", true) !== false
         simpleAppearance = String(Settings.uiGet("appearanceMode", "full")) === "simple"
         scrollSpeed = Number(Settings.uiGet("scrollSpeed", 3))
         tileGrowth = Number(Settings.uiGet("tileGrowth", 4))
@@ -1863,6 +1867,13 @@ Window {
                     name: "Discord Rich Presence"
                     SToggle { checked: Settings.discordStatus
                               onToggled: (v) => Settings.discordStatus = v }
+                }
+                SRow {
+                    objectName: "checkUpdatesRow"
+                    visible: win.updatable
+                    name: "Check for updates"
+                    SToggle { checked: win.checkUpdates
+                              onToggled: (v) => { win.checkUpdates = v; Settings.uiSet("checkUpdates", v) } }
                 }
                 SRow {
                     name: "Add to Library"

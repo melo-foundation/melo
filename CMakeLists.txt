@@ -195,6 +195,9 @@ qt_add_executable(melo
     src/core/MprisService.cpp
     src/core/PortalDialog.cpp
     src/core/UiActivity.cpp
+    src/core/Zsync.cpp
+    src/core/ZsyncJob.cpp
+    src/core/AppImageUpdater.cpp
     ${MELO_WINDOWCTL}
     src/core/WindowController.h
     src/core/PinMode.h
@@ -975,6 +978,28 @@ if(Qt6Test_FOUND)
     add_test(NAME accountreads COMMAND tst_accountreads)
     set_tests_properties(accountreads PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    # AppImage updates: zsync's control file and matching, the Range download, the decision
+    add_executable(tst_appimageupdate tests/cpp/tst_appimageupdate.cpp
+        src/core/Zsync.cpp src/core/ZsyncJob.cpp src/core/AppImageUpdater.cpp)
+    target_include_directories(tst_appimageupdate PRIVATE src/core)
+    target_compile_definitions(tst_appimageupdate PRIVATE
+        MELO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(tst_appimageupdate PRIVATE Qt6::Core Qt6::Network Qt6::Test)
+    add_test(NAME appimageupdate COMMAND tst_appimageupdate)
+
+    # the Check for updates rows exist only in an AppImage
+    add_executable(tst_updaterows tests/cpp/tst_updaterows.cpp)
+    target_compile_definitions(tst_updaterows PRIVATE
+        MELO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(tst_updaterows PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)
+    add_test(NAME updaterows COMMAND tst_updaterows)
+    set_tests_properties(updaterows PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    add_executable(tst_appdir tests/cpp/tst_appdir.cpp)
+    target_link_libraries(tst_appdir PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME appdir COMMAND tst_appdir)
 
     add_executable(tst_uiactivity tests/cpp/tst_uiactivity.cpp src/core/UiActivity.cpp)
     target_include_directories(tst_uiactivity PRIVATE src/core)

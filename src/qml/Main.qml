@@ -3249,9 +3249,34 @@ Window {
             return "Use browser cookies"
         return "Retry"
     }
+    // An AppImage's update: the release, its download, then Restart. A click
+    // hides the offer or a failure until the next one.
+    readonly property var updater: typeof Updater !== "undefined" ? Updater : null
+    property string updateHidden: ""
+    readonly property string updateKey: updater ? updater.state + ":" + updater.version + ":" + updater.errorKind : ""
+    function updateNotice() {
+        const u = root.updater
+        if (!u || u.state === "" || root.updateHidden === root.updateKey) return null
+        const notes = { id: "notes", label: "Release notes" }
+        const mb = 1024 * 1024
+        if (u.state === "available")
+            return { key: "update", message: u.version, alert: false,
+                     actions: u.canUpdate ? [{ id: "update", label: "Update" }, notes] : [notes] }
+        if (u.state === "downloading")
+            return { key: "update", message: "Downloading " + u.version + (u.total > 0
+                         ? "  " + (u.fetched / mb).toFixed(1) + " / " + (u.total / mb).toFixed(1) + " MB" : ""),
+                     alert: false, sticky: true, actions: [notes] }
+        if (u.state === "ready")
+            return { key: "update", message: u.version, alert: false, sticky: true,
+                     actions: [{ id: "restart", label: "Restart" }, notes] }
+        return { key: "update", message: u.error,
+                 actions: [{ id: "retry", label: "Retry" }, { id: "report", label: "Report…" }] }
+    }
     readonly property var notices: {
         const out = []
         const report = { id: "report", label: "Report…" }
+        const upd = root.updateNotice()
+        if (upd) out.push(upd)
         if (root.backendDown && !sidecar.ready)
             out.push({ key: "backend", message: "melo's backend is not running.", actions: [report], sticky: true })
         if (MELO_MISSING_GST.length > 0 && !root.gstDismissed)
@@ -3271,6 +3296,16 @@ Window {
         return out
     }
     function noticeAnswered(key, id) {
+        if (key === "update") {
+            const u = root.updater
+            if (id === "notes") Qt.openUrlExternally(u.notesUrl)
+            else if (id === "update") u.update()
+            else if (id === "restart") u.restart()
+            else if (id === "retry") u.retry()
+            else if (id === "report")
+                Report.send(Settings, "update", u.errorKind, { version: u.version, error: u.error, detail: u.errorDetail })
+            return
+        }
         if (key === "backend") { Report.send(Settings, "backend", "", { message: "melo's backend is not running." }); return }
         if (key === "gstreamer") {
             if (id === "report") Report.send(Settings, "gstreamer", "", { missing: MELO_MISSING_GST, hint: MELO_GST_HINT })
@@ -3298,7 +3333,10 @@ Window {
         // trackInfo is YouTube's numbers, not a track: replaying it cleared the queue
         if (id === "retry" && PlayerState.hasTrack) Player.answerFailure("retry")
     }
-    function noticeDismissed(key) { if (key === "error") PlayerState.error = "" }
+    function noticeDismissed(key) {
+        if (key === "error") PlayerState.error = ""
+        if (key === "update") root.updateHidden = root.updateKey
+    }
     ErrorBarStack {
         id: noticeStack
         objectName: "noticeStack"

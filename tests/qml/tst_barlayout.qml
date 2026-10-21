@@ -256,6 +256,27 @@ Item {
             compare(cell(lay, 0, 2).x, 270)
             lay.destroy()
         }
+        // the arriving renderer of a swap that neither rises nor drops: its own height
+        Component { id: ownHC; BarLayout { height: barHeight } }
+        // A layout built with an empty row sums its rows without a binding loop,
+        // built at once or a slice at a time (the preview baker), and collapses the row
+        function test_an_empty_row_builds_without_a_binding_loop_data() {
+            return [ { tag: "sync", mode: Qt.Synchronous }, { tag: "async", mode: Qt.Asynchronous } ]
+        }
+        function test_an_empty_row_builds_without_a_binding_loop(data) {
+            failOnWarning(/Binding loop/)
+            const doc = { height: 77, pad: 0, rows: [
+                { height: 24, cells: [ { type: "spacer", w: 10 } ] },
+                { height: 20, cells: [] },
+                { height: 28, cells: [ { type: "spacer", w: 10 } ] } ] }
+            const inc = ownHC.incubateObject(null, { width: 300, doc: doc }, data.mode)
+            tryVerify(() => inc.status === Component.Ready, 2000)
+            const lay = inc.object
+            settle()
+            compare(lay.collapsedH, lay.rowAt(1).rowH + lay.rowGap)
+            compare(lay.height, lay.barHeight)
+            lay.destroy()
+        }
         function test_rows_stack_and_centre() {
             const lay = flexC.createObject(null, { width: 300, height: 77, doc: {
                 height: 77, pad: 0, vcenter: true, vOffset: 2, rowGap: 4,

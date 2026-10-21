@@ -44,6 +44,8 @@ MeloWindow {
     property var regionList: []
     property int themeGen: 0   // bumped when a look pick lands, so the rows re-read what is on
     property bool cfOnSkip: false
+    property bool checkUpdates: true
+    readonly property bool updatable: typeof Updater !== "undefined" && Updater !== null && Updater.supported
     // the services are auto-tag's; with it off they are disabled, not rewritten
     readonly property bool autoTagOn: Settings.metadataAutoEnrich === "new"
 
@@ -57,6 +59,7 @@ MeloWindow {
     function setGestures(g) { gestures = g; Settings.uiSet("gestures", g) }
     function open() {
         cfOnSkip = Settings.uiGet("crossfadeOnSkip", false) === true
+        checkUpdates = Settings.uiGet("checkUpdates", true) !== false
         const rawG = Settings.uiGet("gestures", null), g = {}
         if (rawG) for (const k in rawG) if (rawG[k]) g[k] = rawG[k]
         gestures = g
@@ -508,6 +511,25 @@ MeloWindow {
                             anchors.verticalCenter: parent.verticalCenter
                             checked: Settings.discordStatus
                             onToggled: (v) => Settings.discordStatus = v
+                        }
+                    }
+
+                    Item {
+                        objectName: "obCheckUpdates"
+                        visible: obw.updatable
+                        width: parent.width
+                        height: obw.rowH
+                        InkText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Check for updates"
+                            ink: "text"
+                            font { pixelSize: Theme.fs(12); family: Theme.fontFamily }
+                        }
+                        MToggle {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            checked: obw.checkUpdates
+                            onToggled: (v) => { obw.checkUpdates = v; Settings.uiSet("checkUpdates", v) }
                         }
                     }
 
