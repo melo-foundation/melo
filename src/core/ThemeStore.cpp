@@ -1,4 +1,5 @@
 #include "ThemeStore.h"
+#include "../plugins/PluginJsGuard.h"
 #include "ThemeFormat.h"
 #include "jsvalue.h"
 using ThemeFormat::kThemeVersion;
@@ -1095,6 +1096,7 @@ void ThemeStore::setThemeSwatches(const QVariantList& list) {
 // to a built-in whose part is identical), "off" leaves it out. The new theme
 // becomes active and nothing is Custom any more.
 QString ThemeStore::saveThemeAs(const QString& name, const QVariantMap& choices) {
+    if (meloRefuseFromPlugin("ThemeBackend.saveThemeAs")) return {};
     if (choices.value(QStringLiteral("player"), QStringLiteral("own")).toString() == QLatin1String("own"))
         foldLayoutOverrides(QString(), name.isEmpty() ? activeName() + QStringLiteral(" Copy") : name);
     const QString id = QStringLiteral("custom-%1").arg(QDateTime::currentMSecsSinceEpoch());
@@ -1143,6 +1145,7 @@ static QString portalPath(const QString& p) {
 // is what was asked for. A part it lacks stays where it was, which is the
 // profile: it is not the theme's, and `dirty` never counted it either.
 bool ThemeStore::saveActive() {
+    if (meloRefuseFromPlugin("ThemeBackend.saveActive")) return false;
     const QString id = activeId_;
     QJsonObject t = findTheme(id);
     if (t.isEmpty() || t["builtIn"].toBool()) return false;
@@ -1172,6 +1175,7 @@ bool ThemeStore::saveActive() {
 }
 
 bool ThemeStore::exportTheme(const QString& id, const QString& path) {
+    if (meloRefuseFromPlugin("ThemeBackend.exportTheme")) return false;
     QJsonObject t = findTheme(id.isEmpty() ? activeId_ : id);
     if (t.isEmpty()) return false;
     t.remove(QStringLiteral("builtIn"));
@@ -1209,6 +1213,7 @@ bool ThemeStore::exportTheme(const QString& id, const QString& path) {
 // A file as a glyph entry, for the row that is about to write it into
 // `glyphs`. The parsing is in ThemeFormat so a test can hand it a string.
 QVariantMap ThemeStore::importGlyph(const QString& path) const {
+    if (meloRefuseFromPlugin("ThemeBackend.importGlyph")) return {};
     QFile f(portalPath(path));
     if (!f.open(QIODevice::ReadOnly))
         return QJsonObject{{"ok", false}, {"error", QStringLiteral("cannot read the file")}}.toVariantMap();
@@ -1216,6 +1221,7 @@ QVariantMap ThemeStore::importGlyph(const QString& path) const {
 }
 
 QString ThemeStore::importTheme(const QString& path) {
+    if (meloRefuseFromPlugin("ThemeBackend.importTheme")) return {};
     lastError_.clear();
     emit lastErrorChanged();
     QFile f(portalPath(path));
@@ -1310,6 +1316,7 @@ QString ThemeStore::importTheme(const QString& path) {
 }
 
 void ThemeStore::deleteTheme(const QString& id) {
+    if (meloRefuseFromPlugin("ThemeBackend.deleteTheme")) return;
     for (int i = 0; i < userThemes_.size(); ++i) {
         if (userThemes_[i]["id"].toString() == id) {
             userThemes_.removeAt(i);
@@ -1430,6 +1437,7 @@ QVariantList ThemeStore::presets(const QString& kind) const {
 }
 
 QString ThemeStore::savePreset(const QString& kind, const QString& name) {
+    if (meloRefuseFromPlugin("ThemeBackend.savePreset")) return {};
     const QJsonObject body = currentBody(kind);
     if (body.isEmpty()) return {};
     const QString id = kind + QStringLiteral("-%1").arg(QDateTime::currentMSecsSinceEpoch());
@@ -1510,6 +1518,7 @@ void ThemeStore::applyPreset(const QString& kind, const QString& id) {
 }
 
 void ThemeStore::deletePreset(const QString& kind, const QString& id) {
+    if (meloRefuseFromPlugin("ThemeBackend.deletePreset")) return;
     for (int i = 0; i < userPresets_.size(); ++i) {
         if (userPresets_[i]["kind"].toString() != kind) continue;
         if (userPresets_[i]["id"].toString() != id) continue;
@@ -1541,6 +1550,7 @@ QJsonObject ThemeStore::currentBody(const QString& kind) const {
 
 bool ThemeStore::exportCurrent(const QString& kind, const QString& name,
                                const QString& path) {
+    if (meloRefuseFromPlugin("ThemeBackend.exportCurrent")) return false;
     const QJsonObject body = currentBody(kind);
     if (body.isEmpty()) return false;
     const QJsonObject p{{"id", kind}, {"name", name.isEmpty() ? kind : name},
@@ -1619,6 +1629,7 @@ QString ThemeStore::matchingPreset(const QString& kind) const {
 }
 
 QString ThemeStore::importPreset(const QString& path) {
+    if (meloRefuseFromPlugin("ThemeBackend.importPreset")) return {};
     QFile f(portalPath(path));
     if (!f.open(QIODevice::ReadOnly)) return {};
     QJsonObject p = migratedPreset(QJsonDocument::fromJson(f.readAll()).object());
@@ -1657,6 +1668,7 @@ QVariantMap ThemeStore::layoutDoc(const QString& id) const {
 }
 
 QString ThemeStore::saveLayoutDoc(const QVariantMap& doc, const QString& name) {
+    if (meloRefuseFromPlugin("ThemeBackend.saveLayoutDoc")) return {};
     const QString id = QStringLiteral("layout-%1").arg(QDateTime::currentMSecsSinceEpoch());
     QJsonObject body = QJsonObject::fromVariantMap(unwrapJs(doc).toMap());
     body["id"] = id;
@@ -1669,6 +1681,7 @@ QString ThemeStore::saveLayoutDoc(const QVariantMap& doc, const QString& name) {
 }
 
 void ThemeStore::setLayoutDoc(const QString& id, const QVariantMap& doc) {
+    if (meloRefuseFromPlugin("ThemeBackend.setLayoutDoc")) return;
     for (auto& p : userPresets_) {
         if (p["kind"].toString() != QLatin1String("layout") || p["id"].toString() != id) continue;
         QJsonObject body = QJsonObject::fromVariantMap(unwrapJs(doc).toMap());
@@ -1749,11 +1762,13 @@ void ThemeStore::foldLayoutOverrides(const QString& ownerThemeId, const QString&
 }
 
 QString ThemeStore::forkLayout(const QString& id, const QString& name) {
+    if (meloRefuseFromPlugin("ThemeBackend.forkLayout")) return {};
     const QVariantMap doc = layoutDoc(id);
     return saveLayoutDoc(doc, name.isEmpty() ? doc.value("name").toString() + QStringLiteral(" Custom") : name);
 }
 
 void ThemeStore::renamePreset(const QString& kind, const QString& id, const QString& name) {
+    if (meloRefuseFromPlugin("ThemeBackend.renamePreset")) return;
     if (name.isEmpty()) return;
     for (auto& p : userPresets_) {
         if (p["kind"].toString() != kind || p["id"].toString() != id) continue;
@@ -1767,6 +1782,7 @@ void ThemeStore::renamePreset(const QString& kind, const QString& id, const QStr
 
 // Export what is on the bar, saved or not, as a layout file
 bool ThemeStore::exportLayoutDoc(const QVariantMap& doc, const QString& path) {
+    if (meloRefuseFromPlugin("ThemeBackend.exportLayoutDoc")) return false;
     QJsonObject body = QJsonObject::fromVariantMap(unwrapJs(doc).toMap());
     const QJsonObject p{{"id", body["id"].toString().isEmpty() ? QStringLiteral("layout") : body["id"].toString()},
                         {"name", body["name"].toString().isEmpty() ? QStringLiteral("Layout") : body["name"].toString()},

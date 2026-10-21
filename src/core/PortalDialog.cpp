@@ -1,4 +1,5 @@
 #include "PortalDialog.h"
+#include "../plugins/PluginJsGuard.h"
 
 #include <QDBusArgument>
 #include <QDBusConnection>
@@ -91,6 +92,7 @@ PortalDialog::PortalDialog(QObject* parent) : QObject(parent) {
 void PortalDialog::openFile(const QString& tag, const QString& title,
                             const QString& filterName, const QStringList& patterns,
                             bool multiple) {
+    if (meloRefuseFromPlugin("Portal.openFile")) return;
     QVariantMap options;
     options.insert(QStringLiteral("multiple"), multiple);
     if (!patterns.isEmpty()) {
@@ -122,6 +124,7 @@ void PortalDialog::openFile(const QString& tag, const QString& title,
 void PortalDialog::saveFile(const QString& tag, const QString& title,
                             const QString& suggestedName, const QString& filterName,
                             const QStringList& patterns) {
+    if (meloRefuseFromPlugin("Portal.saveFile")) return;
     QVariantMap options;
     if (!suggestedName.isEmpty())
         options.insert(QStringLiteral("current_name"), suggestedName);

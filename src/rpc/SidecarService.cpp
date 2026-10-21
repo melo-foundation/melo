@@ -2,6 +2,7 @@
 #include "SidecarProcess.h"
 #include "RpcClient.h"
 #include "paths.h"
+#include "../plugins/PluginJsGuard.h"
 
 #include <QCoreApplication>
 #include <QFileInfo>
@@ -120,7 +121,12 @@ void SidecarService::initialize() {
     });
 }
 
+// The QML entry points refuse a call chain that started in plugin JS: a
+// plugin can call melo's own QML functions, and those call these.
+static bool refusedForPlugin(const QString& method) { return meloRefusePluginCall(method); }
+
 void SidecarService::search(const QString& query, const QVariantMap& filters) {
+    if (refusedForPlugin(QStringLiteral("yt/search"))) return;
     QJsonObject params{{"query", query}};
     if (!filters.isEmpty()) params["filters"] = QJsonObject::fromVariantMap(filters);
     auto* c = rpc_->call("yt/search", params);
@@ -135,6 +141,7 @@ void SidecarService::search(const QString& query, const QVariantMap& filters) {
 }
 
 void SidecarService::searchMore(const QString& continuation) {
+    if (refusedForPlugin(QStringLiteral("yt/searchContinuation"))) return;
     auto* c = rpc_->call("yt/searchContinuation", {{"token", continuation}});
     connect(c, &RpcCall::finished, this, [this](const QJsonValue& r) {
         const QJsonObject o = r.toObject();
@@ -148,8 +155,18 @@ void SidecarService::searchMore(const QString& continuation) {
 
 void SidecarService::rpc(const QString& method, const QVariantMap& params,
                          const QJSValue& callback, int timeoutMs) {
-    auto* c = call(method, QJsonObject::fromVariantMap(params), timeoutMs);
     auto cb = std::make_shared<QJSValue>(callback);
+    if (refusedForPlugin(method)) {
+        // answered later, once the plugin's JS is off the stack
+        QMetaObject::invokeMethod(this, [this, cb] {
+            QJSEngine* e = qjsEngine(this);
+            if (!e || !cb->isCallable()) return;
+            cb->call({ e->toScriptValue(QVariantMap{
+                {"ok", false}, {"error", QStringLiteral("refused: called from plugin code")} }) });
+        }, Qt::QueuedConnection);
+        return;
+    }
+    auto* c = call(method, QJsonObject::fromVariantMap(params), timeoutMs);
     connect(c, &RpcCall::finished, this, [this, cb](const QJsonValue& r) {
         QJSEngine* e = qjsEngine(this);
         if (!e || !cb->isCallable()) return;
@@ -165,6 +182,7 @@ void SidecarService::rpc(const QString& method, const QVariantMap& params,
 }
 
 void SidecarService::listPlugins() {
+    if (refusedForPlugin(QStringLiteral("plugins/list"))) return;
     auto* c = call("plugins/list", {}, 10000);
     connect(c, &RpcCall::finished, this, [this](const QJsonValue& r) {
         emit pluginsChanged(r.toObject().value("plugins").toArray());
@@ -175,6 +193,7 @@ void SidecarService::listPlugins() {
 }
 
 void SidecarService::setPluginEnabled(const QString& id, bool on) {
+    if (refusedForPlugin(QStringLiteral("plugins/setEnabled"))) return;
     auto* c = call("plugins/setEnabled", QJsonObject{{"id", id}, {"on", on}}, 10000);
     connect(c, &RpcCall::finished, this, [this](const QJsonValue& r) {
         emit pluginsChanged(r.toObject().value("plugins").toArray());
@@ -185,6 +204,7 @@ void SidecarService::setPluginEnabled(const QString& id, bool on) {
 }
 
 void SidecarService::setPluginGrants(const QString& id, const QJsonObject& grants) {
+    if (refusedForPlugin(QStringLiteral("plugins/setGrants"))) return;
     auto* c = call("plugins/setGrants",
                    QJsonObject{{"id", id}, {"grants", grants}}, 10000);
     connect(c, &RpcCall::finished, this, [this](const QJsonValue& r) {
@@ -196,6 +216,7 @@ void SidecarService::setPluginGrants(const QString& id, const QJsonObject& grant
 }
 
 void SidecarService::rescanPlugins() {
+    if (refusedForPlugin(QStringLiteral("plugins/rescan"))) return;
     auto* c = call("plugins/rescan", QJsonObject{}, 10000);
     connect(c, &RpcCall::finished, this, [this](const QJsonValue& r) {
         emit pluginsChanged(r.toObject().value("plugins").toArray());
@@ -207,6 +228,7 @@ void SidecarService::rescanPlugins() {
 
 void SidecarService::pluginSearch(const QString& sourceId, const QString& query,
                                   const QString& continuation) {
+    if (refusedForPlugin(QStringLiteral("plugin/search"))) return;
     const bool append = !continuation.isEmpty();
     QJsonObject params{{"sourceId", sourceId}, {"query", query}};
     if (append) params["continuation"] = continuation;

@@ -41,7 +41,35 @@
 #include "MeloUiArchives.h"
 #include "PluginUiHost.h"
 #include "PluginImportDir.h"
+#include "PluginJsGuard.h"
 #include "SkinImageProvider.h"
+
+// Stands in for SidecarService::rpc, guard included: SidecarService itself
+// cannot be linked here (see setSettingsRefresher in PluginUiHost.h).
+class RpcRecorder : public QObject {
+    Q_OBJECT
+public:
+    QStringList attempted, passed;
+    Q_INVOKABLE void rpc(const QString& method, const QVariantMap&, const QJSValue&) {
+        attempted << method;
+        if (meloRefusePluginCall(method)) return;
+        passed << method;
+    }
+};
+
+// Stands in for a QML-facing store (SettingsStore::uiSet and its kin), guard included.
+class StoreRecorder : public QObject {
+    Q_OBJECT
+public:
+    QStringList attempted, passed;
+    Q_INVOKABLE void uiSet(const QString& key, const QVariant&) {
+        attempted << key;
+        if (meloRefuseFromPlugin("Settings.uiSet")) return;
+        passed << key;
+    }
+signals:
+    void changed();
+};
 
 // Registered from C++ solely to exercise the documented gap: qmlRegisterType
 // writes to a process-global registry that importPathList does not gate.
@@ -1244,6 +1272,110 @@ private slots:
     void importDirIsPresent() {
         QVERIFY2(!meloPluginImportDir().isEmpty(),
                  "curated import dir missing — plugin QML must refuse to load");
+    }
+
+    // A slot occupant walks its parent chain into melo's QML and calls a melo
+    // function that calls sidecar.rpc, as PlaylistView's `rpc` and Main.qml's
+    // listTracks do. The function runs in melo's engine; the guard still sees
+    // the plugin's JS on the stack and refuses cookies/*, but lets the reads
+    // melo makes when a plugin skips a track through.
+    void pluginCodeCannotReachTheSidecar() {
+#ifndef MELO_HAVE_QML_PRIVATE
+        QSKIP("built without Qt6::QmlPrivate: the guard is compiled out");
+#endif
+        QQmlEngine melo;
+        RpcRecorder sidecar;
+        melo.rootContext()->setContextProperty(QStringLiteral("sidecar"), &sidecar);
+        std::unique_ptr<QObject> meloRoot;
+        QQuickItem* shell = createItem(&melo,
+            "import QtQuick\n"
+            "Item { objectName: \"meloRoot\"\n"
+            "  function forge(m) { sidecar.rpc(m, ({}), null) }\n"
+            "  property var rpcFn: (m) => sidecar.rpc(m, ({}), null)\n"
+            "  Item { objectName: \"slotHolder\" } }",
+            "file:///melo-main.qml", meloRoot);
+        QVERIFY(shell);
+
+        // melo's own call, with no plugin JS running, goes through
+        QVERIFY(QMetaObject::invokeMethod(shell, "forge", Q_ARG(QVariant, QVariant(QStringLiteral("cookies/status")))));
+        QCOMPARE(sidecar.passed, QStringList{QStringLiteral("cookies/status")});
+        sidecar.passed.clear();
+
+        QTemporaryDir pluginDir;
+        QVERIFY(writeQml(pluginDir.filePath(QStringLiteral("Reach.qml")),
+            "import QtQuick\n"
+            "Item { id: me\n"
+            "  Timer { interval: 1; running: true; onTriggered: me.go() }\n"
+            "  function go() {\n"
+            "    let p = me.parent, hops = 0, reached = false\n"
+            "    while (p && hops < 12) {\n"
+            "      if (typeof p.forge === 'function') { reached = true;\n"
+            "        p.forge('cookies/delete'); p.forge('settings/set'); p.forge('lyrics/get') }\n"
+            "      if (typeof p.rpcFn === 'function') p.rpcFn('cookies/rename')\n"
+            "      p = p.parent; hops++\n"
+            "    }\n"
+            "    MeloUi.report('reached', reached); MeloUi.done()\n"
+            "  } }"));
+        Probe probe;
+        PluginUiHost host(QStringLiteral("reach"), pluginDir.path(), &probe);
+        QVERIFY2(host.engine() != nullptr, qPrintable(host.errorString()));
+        QQuickItem gate;
+        gate.setParentItem(shell->childItems().first());
+        QObject* content = host.createSlotContent(QStringLiteral("Reach.qml"), &gate);
+        QVERIFY2(content != nullptr, qPrintable(host.errorString()));
+        QTRY_VERIFY_WITH_TIMEOUT(probe.finished, 5000);
+
+        // the route exists: the plugin found melo's function and called it
+        QVERIFY2(probe.flag("reached"), "the plugin never reached melo's QML: this test tests nothing");
+        QVERIFY2(sidecar.attempted.contains(QStringLiteral("cookies/delete")),
+                 "melo's function never ran: the call was not made, so the guard was not tested");
+        QCOMPARE(sidecar.passed, QStringList{QStringLiteral("lyrics/get")});
+    }
+
+    // The same walk finds a Connections in melo's QML and its target, a C++
+    // store (Settings, Library). The store's writers refuse while plugin JS
+    // runs; melo's own calls go through.
+    void pluginCodeCannotWriteThroughAConnectionsTarget() {
+#ifndef MELO_HAVE_QML_PRIVATE
+        QSKIP("built without Qt6::QmlPrivate: the guard is compiled out");
+#endif
+        QQmlEngine melo;
+        StoreRecorder store;
+        melo.rootContext()->setContextProperty(QStringLiteral("Settings"), &store);
+        std::unique_ptr<QObject> meloRoot;
+        QQuickItem* shell = createItem(&melo,
+            "import QtQuick\n"
+            "Item { Connections { target: Settings; function onChanged() {} }\n"
+            "       Item { objectName: \"slotHolder\" } }",
+            "file:///melo-main.qml", meloRoot);
+        QVERIFY(shell);
+        QVERIFY(QMetaObject::invokeMethod(&store, "uiSet", Q_ARG(QString, QStringLiteral("own")), Q_ARG(QVariant, 1)));
+        QCOMPARE(store.passed, QStringList{QStringLiteral("own")});
+
+        QTemporaryDir pluginDir;
+        QVERIFY(writeQml(pluginDir.filePath(QStringLiteral("Reach.qml")),
+            "import QtQuick\n"
+            "Item { id: me\n"
+            "  Timer { interval: 1; running: true; onTriggered: me.go() }\n"
+            "  function go() {\n"
+            "    let p = me.parent, found = false\n"
+            "    for (let hops = 0; p && hops < 12; hops++, p = p.parent)\n"
+            "      for (const d of (p.data || []))\n"
+            "        if (d && d.target && typeof d.target.uiSet === 'function') {\n"
+            "          found = true; d.target.uiSet('cookieSource', 'browser') }\n"
+            "    MeloUi.report('found', found); MeloUi.done()\n"
+            "  } }"));
+        Probe probe;
+        PluginUiHost host(QStringLiteral("reach"), pluginDir.path(), &probe);
+        QVERIFY2(host.engine() != nullptr, qPrintable(host.errorString()));
+        QQuickItem gate;
+        gate.setParentItem(shell->childItems().first());
+        QVERIFY2(host.createSlotContent(QStringLiteral("Reach.qml"), &gate) != nullptr, qPrintable(host.errorString()));
+        QTRY_VERIFY_WITH_TIMEOUT(probe.finished, 5000);
+
+        QVERIFY2(probe.flag("found"), "the plugin never found the Connections target: this test tests nothing");
+        QVERIFY2(store.attempted.contains(QStringLiteral("cookieSource")), "the store was never called");
+        QCOMPARE(store.passed, QStringList{QStringLiteral("own")});
     }
 };
 

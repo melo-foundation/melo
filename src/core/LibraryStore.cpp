@@ -8,6 +8,7 @@
 #include "../rpc/SidecarService.h"
 #include "../rpc/RpcClient.h"
 #include "SettingsStore.h"
+#include "../plugins/PluginJsGuard.h"
 
 static const QStringList kTrackRoles = {
     "trackId", "title", "channel", "duration", "thumbnail",
@@ -254,6 +255,7 @@ void LibraryStore::rebuild() {
 }
 
 void LibraryStore::addTrack(const QVariantMap& track, bool download) {
+    if (meloRefuseFromPlugin("Library.addTrack")) return;
     const QString id = track["id"].toString();
     if (download && !id.isEmpty()) { downloading_.insert(id); }
     auto* c = sidecar_->call("library/addTrack",
@@ -264,10 +266,12 @@ void LibraryStore::addTrack(const QVariantMap& track, bool download) {
 }
 
 void LibraryStore::removeTrack(const QString& id, bool deleteFile) {
+    if (meloRefuseFromPlugin("Library.removeTrack")) return;
     sidecar_->call("library/removeTrack", {{"videoId", id}, {"deleteFile", deleteFile}});
 }
 
 void LibraryStore::download(const QString& id) {
+    if (meloRefuseFromPlugin("Library.download")) return;
     downloading_.insert(id);
     rebuild();
     auto* c = sidecar_->call("library/downloadTrack", {{"videoId", id}});
@@ -277,6 +281,7 @@ void LibraryStore::download(const QString& id) {
 }
 
 void LibraryStore::downloadAll(const QStringList& ids) {
+    if (meloRefuseFromPlugin("Library.downloadAll")) return;
     if (ids.isEmpty()) return;
     for (const QString& id : ids) downloading_.insert(id);
     rebuild();
@@ -311,25 +316,30 @@ bool LibraryStore::isDownloaded(const QString& id) const {
 }
 
 void LibraryStore::createPlaylist(const QString& title, const QString& trackId) {
+    if (meloRefuseFromPlugin("Library.createPlaylist")) return;
     QJsonObject p{{"title", title}};
     if (!trackId.isEmpty()) p["trackId"] = trackId;
     sidecar_->call("library/createPlaylist", p);
 }
 
 void LibraryStore::removePlaylist(const QString& playlistId) {
+    if (meloRefuseFromPlugin("Library.removePlaylist")) return;
     sidecar_->call("library/removePlaylist", {{"playlistId", playlistId}});
 }
 
 void LibraryStore::renamePlaylist(const QString& playlistId, const QString& title) {
+    if (meloRefuseFromPlugin("Library.renamePlaylist")) return;
     sidecar_->call("library/renamePlaylist", {{"playlistId", playlistId}, {"title", title}});
 }
 
 void LibraryStore::addTrackToPlaylist(const QString& playlistId, const QVariantMap& track) {
+    if (meloRefuseFromPlugin("Library.addTrackToPlaylist")) return;
     sidecar_->call("library/addTrackToPlaylist",
         {{"playlistId", playlistId}, {"track", QJsonObject::fromVariantMap(track)}});
 }
 
 void LibraryStore::removeTrackFromPlaylist(const QString& playlistId, const QString& trackId) {
+    if (meloRefuseFromPlugin("Library.removeTrackFromPlaylist")) return;
     sidecar_->call("library/removeTrackFromPlaylist",
         {{"playlistId", playlistId}, {"trackId", trackId}});
 }

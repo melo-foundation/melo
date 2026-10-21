@@ -1,4 +1,5 @@
 #include "AppImageUpdater.h"
+#include "../plugins/PluginJsGuard.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -188,6 +189,7 @@ void AppImageUpdater::checkFailed(const QString& why) {
 }
 
 void AppImageUpdater::checkNow() {
+    if (meloRefuseFromPlugin("Updater.checkNow")) return;
     if (checking_) { manual_ = true; return; }
     manual_ = true;
     check();
@@ -195,6 +197,7 @@ void AppImageUpdater::checkNow() {
 }
 
 void AppImageUpdater::skip() {
+    if (meloRefuseFromPlugin("Updater.skip")) return;
     if (state_ != QLatin1String("available") || tag_.isEmpty()) return;
     skipped_ = tag_;
     logLine(QStringLiteral("%1 skipped").arg(version_));
@@ -203,6 +206,7 @@ void AppImageUpdater::skip() {
 }
 
 void AppImageUpdater::later() {
+    if (meloRefuseFromPlugin("Updater.later")) return;
     if (state_ != QLatin1String("available")) return;
     // until the daily check after the one that found it
     laterUntilMs_ = (lastCheckMs_ ? lastCheckMs_ : QDateTime::currentMSecsSinceEpoch()) + kIntervalMs;
@@ -213,6 +217,7 @@ void AppImageUpdater::later() {
 }
 
 void AppImageUpdater::check() {
+    if (meloRefuseFromPlugin("Updater.check")) return;
     if (!supported() || checking_) return;
     // a download in flight or one waiting for Restart is not checked over
     if (state_ == QLatin1String("downloading") || state_ == QLatin1String("ready")) return;
@@ -383,6 +388,7 @@ void AppImageUpdater::failWith(const QString& kind, const QString& detail) {
 }
 
 void AppImageUpdater::update() {
+    if (meloRefuseFromPlugin("Updater.update")) return;
     if (!control_ || !canUpdate() || job_) return;
     if (state_ != QLatin1String("available") && !(state_ == QLatin1String("failed") && errorKind_ != QLatin1String("replace")))
         return;
@@ -456,6 +462,7 @@ void AppImageUpdater::update() {
 }
 
 void AppImageUpdater::restart() {
+    if (meloRefuseFromPlugin("Updater.restart")) return;
     if (!staged_ || relaunch_) return;
     if (!swapIn()) return;
     relaunch_ = true;
@@ -500,6 +507,7 @@ bool AppImageUpdater::swapIn() {
 }
 
 void AppImageUpdater::retry() {
+    if (meloRefuseFromPlugin("Updater.retry")) return;
     if (state_ != QLatin1String("failed")) return;
     if (errorKind_ == QLatin1String("replace")) { restart(); return; }
     update();

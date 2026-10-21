@@ -18,11 +18,10 @@
 //      and refuse itself.
 //   2. no context properties except the MeloUi bridge (and `Plugin`, the
 //      plugin's own entry root).
-//   3. melo's own objects are not named in this engine. This says nothing
-//      about reachability: the plugin root's `parent` is a shell-owned gate
-//      item (`parent.visible = true` re-shows a silenced window), and
-//      `Window.window.transientParent` reaches melo's main window. No route
-//      from there to melo's objects has been searched for.
+//   3. melo's own objects are not named in this engine. They are reachable:
+//      a slot occupant's `parent` chain and `Window.window` lead into melo's
+//      QML, whose functions a plugin can call. So melo's QML-facing sidecar
+//      calls refuse while plugin JS is on the stack (PluginJsGuard.h).
 //
 // The main engine cannot be reused: it needs the full import set, and a
 // shadowed context property is reachable through `parent` in zero hops.

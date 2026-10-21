@@ -1,4 +1,5 @@
 #include "NodeBootstrap.h"
+#include "../plugins/PluginJsGuard.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -21,6 +22,7 @@ QString NodeBootstrap::installedPath() {
 }
 
 void NodeBootstrap::download() {
+    if (meloRefuseFromPlugin("NodeSetup.download")) return;
 #ifdef Q_OS_WIN
     fail("bundled node.exe missing (reinstall melo)");   // Windows never downloads
 #else

@@ -1,4 +1,5 @@
 #include "WindowController.h"
+#include "../plugins/PluginJsGuard.h"
 #include "PinMode.h"
 #include "WindowMask.h"
 
@@ -400,6 +401,7 @@ void WindowController::copyToClipboard(const QString& text) {
 }
 
 void WindowController::showFile(const QString& path) {
+    if (meloRefuseFromPlugin("WindowCtl.showFile")) return;
     const QUrl folder = QUrl::fromLocalFile(QFileInfo(path).absolutePath());
     auto* bus = QDBusConnection::sessionBus().interface();
     const QString fm = QStringLiteral("org.freedesktop.FileManager1");

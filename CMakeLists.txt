@@ -24,6 +24,17 @@ if(NOT TARGET Qt6::QuickPrivate)
                     "child-window stacking fix; scrolling will be slower. "
                     "Install the Qt Quick private headers to enable it.")
 endif()
+# QmlPrivate lets melo's sidecar calls refuse plugin JS (PluginJsGuard.h).
+# Required for a release (static Qt) build.
+find_package(Qt6 COMPONENTS QmlPrivate QUIET)
+if(NOT TARGET Qt6::QmlPrivate AND MELO_STATIC_QT)
+    message(FATAL_ERROR "Qt6::QmlPrivate not found: a release build needs the plugin call guard "
+                        "(PluginJsGuard.h). Install the Qt QML private headers.")
+elseif(NOT TARGET Qt6::QmlPrivate)
+    message(WARNING "Qt6::QmlPrivate not found -- building without the plugin "
+                    "call guard; UI plugins can reach melo's sidecar calls. "
+                    "Install the Qt QML private headers to enable it.")
+endif()
 # The RHI (rhi/qrhi.h, video planes) and the per-window wl_surface (native
 # blur) need Qt6::GuiPrivate. Debian/Ubuntu ship its config in qt6-base-dev
 # and the headers in qt6-base-private-dev, so the target can name a missing
@@ -248,6 +259,15 @@ target_include_directories(melo PRIVATE src/audio src/vis src/rpc src/core src/p
 if(TARGET Qt6::QuickPrivate)
     target_compile_definitions(melo PRIVATE MELO_HAVE_QUICK_PRIVATE)
 endif()
+# One registry of plugin engines per binary: melo and every test link this.
+add_library(melo_pluginguard STATIC src/plugins/PluginJsGuard.cpp src/plugins/PluginJsGuard.h)
+target_link_libraries(melo_pluginguard PUBLIC Qt6::Qml)
+if(TARGET Qt6::QmlPrivate)
+    target_link_libraries(melo_pluginguard PRIVATE Qt6::QmlPrivate)
+    target_compile_definitions(melo_pluginguard PUBLIC MELO_HAVE_QML_PRIVATE)
+    message(STATUS "melo: plugin call guard ON")
+endif()
+target_link_libraries(melo PRIVATE melo_pluginguard)
 # The visualiser's presets. Fetched once when absent. Without them melo still
 # builds and runs, the visualiser has nothing to show, and tst_visualizer skips.
 if(UNIX AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vendor/presets")
@@ -1367,3 +1387,12 @@ if(Qt6Test_FOUND)
 endif()
 
 include(src/dev/dev.cmake OPTIONAL)
+
+# every test binary that compiles a QML-facing store gets the guard's registry
+get_property(_melo_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_t IN LISTS _melo_targets)
+    get_target_property(_type ${_t} TYPE)
+    if(_t MATCHES "^tst_" AND _type STREQUAL "EXECUTABLE")
+        target_link_libraries(${_t} PRIVATE melo_pluginguard)
+    endif()
+endforeach()

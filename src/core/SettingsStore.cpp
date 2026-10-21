@@ -6,6 +6,7 @@
 #include "jsvalue.h"
 #include "SidecarService.h"
 #include "RpcClient.h"
+#include "../plugins/PluginJsGuard.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -33,6 +34,7 @@ QString SettingsStore::dataDir() const {
 }
 
 QVariantMap SettingsStore::writeReport(const QString& kind, const QVariantMap& details) const {
+    if (meloRefuseFromPlugin("Settings.writeReport")) return {};
     const QDir dir(dataDir() + QStringLiteral("/reports"));
     if (!dir.mkpath(QStringLiteral("."))) return {};
     QString safe = kind;
@@ -99,6 +101,8 @@ void SettingsStore::refresh() {
 }
 
 void SettingsStore::patch(const QJsonObject& p, const QStringList& holdUi, const QStringList& removeUi) {
+    // every setter and uiSet lands here
+    if (meloRefuseFromPlugin("a Settings write")) return;
     // optimistic local apply, authoritative on reply
     for (auto it = p.begin(); it != p.end(); ++it) s_[it.key()] = it.value();
     // Held until this write's own reply. Any reply (this one's, another

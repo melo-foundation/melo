@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QMap>
 #include <QHash>
+#include "../plugins/PluginJsGuard.h"
 class QDir;
 
 class SidecarService;
@@ -62,7 +63,7 @@ public:
     QString homeSource() const { return s_["homeSource"].toString(); }
     QString cookieProfile() const { return s_["cookieProfile"].toString(); }
     QString browser() const { return s_["browser"].toString(); }
-    QString lastfmApiKey() const { return s_["lastfmApiKey"].toString(); }
+    QString lastfmApiKey() const { return meloPluginJsOnStack() ? QString() : s_["lastfmApiKey"].toString(); }
     QString metadataAutoEnrich() const { return s_["metadataAutoEnrich"].toString(); }
     bool tagYoutubeMusic() const { return s_["tagYoutubeMusic"].toBool(true); }
     bool tagLastfm() const { return s_["tagLastfm"].toBool(false); }

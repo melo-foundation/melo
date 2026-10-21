@@ -1,5 +1,6 @@
 #include "PluginUiHost.h"
 #include "PluginImportDir.h"
+#include "PluginJsGuard.h"
 #include <QMetaMethod>
 #include <QQmlComponent>
 #include <QQmlContext>
@@ -45,6 +46,7 @@ PluginUiHost::PluginUiHost(QString pluginId, QString pluginDir, QObject* bridge,
         return;
     }
     engine_ = std::make_unique<QQmlEngine>();
+    meloRegisterPluginEngine(engine_.get());
     // (1) the only import path, replacing the default list. C++-registered URIs
     // (`Melo 1.0`) still resolve: qmlRegisterType is process-global. Pinned by
     // tst_plugincontainment::knownGap_cppRegisteredTypesResolveInPluginEngines.
@@ -71,6 +73,7 @@ PluginUiHost::~PluginUiHost() {
     while (!children().isEmpty())
         delete children().first();
     root_.reset();
+    meloUnregisterPluginEngine(engine_.get());
 }
 
 bool PluginUiHost::load(const QString& entryQmlRel) {
