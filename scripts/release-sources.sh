@@ -20,8 +20,8 @@ S="$W/melo-sources"
 mkdir -p "$S/qt" "$S/projectm" "$S/ffmpeg" "$S/ubuntu"
 
 # --- Qt: the modules the static build compiles, and melo's patch ------------
-QT=6.11.2
-QTBASE="https://download.qt.io/archive/qt/6.11/$QT/submodules"
+QT=6.12.0
+QTBASE="https://download.qt.io/archive/qt/${QT%.*}/$QT/submodules"
 for m in qtbase qtshadertools qtdeclarative qtwayland qtimageformats qt5compat; do
     curl -fsSLo "$S/qt/$m-everywhere-src-$QT.tar.xz" "$QTBASE/$m-everywhere-src-$QT.tar.xz"
 done

@@ -81,7 +81,7 @@ void SidecarService::initialize() {
     // user-writable self-updating copy under the config dir, seeded from the
     // yt-dlp.exe bundled beside melo.exe (CI deploy)
     const QString ytdlp = meloConfigDir() + "/bin/yt-dlp.exe";
-    const QString ytdlpSeed = QCoreApplication::applicationDirPath() + "/yt-dlp.exe";
+    const QString ytdlpSeed = meloAppDir() + "/yt-dlp.exe";
 #else
     // Never seeded from PATH: a distro's yt-dlp can be months old and would
     // count as fresh for a day. The sidecar downloads the signed release.
@@ -91,7 +91,7 @@ void SidecarService::initialize() {
 
     // The silence scan's ffmpeg: beside the binary in an install or AppImage,
     // the vendored build in a dev tree, else empty and the sidecar uses PATH.
-    QString ffmpeg = QCoreApplication::applicationDirPath() + QStringLiteral("/ffmpeg");
+    QString ffmpeg = meloAppDir() + QStringLiteral("/ffmpeg");
 #ifdef MELO_DEV_FFMPEG
     if (!QFileInfo::exists(ffmpeg)) ffmpeg = QStringLiteral(MELO_DEV_FFMPEG);
 #endif

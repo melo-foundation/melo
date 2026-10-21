@@ -17,7 +17,7 @@ below carry their own terms. The LGPL texts are in `LICENSES/`.
 
 | Component | Licence | Linked |
 |---|---|---|
-| Qt 6.11.2 (qtbase, qtdeclarative, qtwayland, qtimageformats, qt5compat, qtshadertools), modified | LGPL-3.0-only | static |
+| Qt 6.12.0 (qtbase, qtdeclarative, qtwayland, qtimageformats, qt5compat, qtshadertools), modified | LGPL-3.0-only | static |
 | HarfBuzz, libpng, libjpeg, PCRE2, zlib and libwebp as built into Qt | their own licences, listed in Qt's third-party attributions | static |
 | ICU 73.2 | Unicode-DFS-2016 | static |
 | projectM 4.1.7, modified | LGPL-2.1-or-later | static |
@@ -105,13 +105,13 @@ The Linux packages link Qt and projectM statically, and both are modified. The
 lite AppImage's runtime links libfuse 3.15.0 statically, with the runtime's own
 `patches/libfuse/mount.c.diff`.
 
-- **Modifications.** Qt: `patches/qtdeclarative-6.11.2-stacking-walk.patch`,
+- **Modifications.** Qt: `patches/qtdeclarative-6.12.0-stacking-walk.patch`,
   written by Tomasz Kalisiak as Qt Gerrit change 736359 (QTBUG-134949, not
-  merged upstream), backported to Qt 6.11.2 by melo-foundation on 2026-09-17.
+  merged upstream), backported to Qt 6.12.0 by melo-foundation on 2026-10-08.
   projectM: `patches/projectm-caller-fbo.patch`, modified by melo-foundation
   for melo on 2026-09-02.
 - **Source.** Every Linux release has `melo-sources.tar` beside its builds: the
-  source of Qt 6.11.2, projectM 4.1.7 and FFmpeg 7.1.1 with melo's patches, the
+  source of Qt 6.12.0, projectM 4.1.7 and FFmpeg 7.1.1 with melo's patches, the
   type2-runtime 20251108 source with libfuse 3.15.0 and squashfuse 0.5.2, and
   the Ubuntu source package of every library the full AppImage bundles.
   `scripts/release-sources.sh` builds it.

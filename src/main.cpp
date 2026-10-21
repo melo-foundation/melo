@@ -225,7 +225,7 @@ static QString meloQmlDir() {
     if (!qmlDir.isEmpty()) return qmlDir;
     // "melo-qml": windeployqt fills appdir/qml with Qt's own QML modules, and
     // copying into it would nest melo's UI at qml/qml/
-    const QString local = QCoreApplication::applicationDirPath() + "/melo-qml";
+    const QString local = meloAppDir() + "/melo-qml";
     qmlDir = QFileInfo::exists(local + "/Main.qml") ? local
                                                     : QStringLiteral(MELO_DEV_QML_DIR);
     const QString appDir = qEnvironmentVariable("APPDIR");
@@ -413,10 +413,10 @@ int main(int argc, char** argv) {
     // whatever the system substitutes on any machine that does not.
     {
         QStringList dirs;
-        dirs << QCoreApplication::applicationDirPath() + QStringLiteral("/fonts")
+        dirs << meloAppDir() + QStringLiteral("/fonts")
              // ../share/melo/fonts: where `cmake --install` and a distro
              // package put them
-             << QCoreApplication::applicationDirPath() + QStringLiteral("/../share/melo/fonts")
+             << meloAppDir() + QStringLiteral("/../share/melo/fonts")
              << QStringLiteral(MELO_FONT_DIR)
              << meloConfigDir() + QStringLiteral("/fonts");
         int loaded = 0;

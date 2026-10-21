@@ -2,6 +2,7 @@
 #include <QString>
 #include <QFileInfo>
 #include <QCoreApplication>
+#include "../core/paths.h"
 
 // The only import path a plugin QML engine is given. Resolution order, as for
 // the main QML dir in main.cpp: env override, beside the executable, then the
@@ -32,7 +33,7 @@ inline QString meloPluginImportDir() {
 inline QString meloPluginImportDir() {
     const QString env = qEnvironmentVariable("MELO_PLUGIN_IMPORT_DIR");
     if (!env.isEmpty() && QFileInfo::exists(env + "/QtQuick/qmldir")) return env;
-    const QString local = QCoreApplication::applicationDirPath() + "/plugin-qml-imports";
+    const QString local = meloAppDir() + "/plugin-qml-imports";
     if (QFileInfo::exists(local + "/QtQuick/qmldir")) return local;
     const QString dev = QStringLiteral(MELO_DEV_PLUGIN_IMPORT_DIR);
     if (QFileInfo::exists(dev + "/QtQuick/qmldir")) return dev;

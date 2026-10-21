@@ -4,13 +4,13 @@ Written by Tomasz Kalisiak for Qt, Gerrit change 736359, which fixes
 QTBUG-134949 and is not merged upstream:
 https://codereview.qt-project.org/c/qt/qtdeclarative/+/736359
 
-Backported to Qt 6.11.2 for melo by melo-foundation on 2026-09-17.
+Backported to Qt 6.12.0 for melo by melo-foundation on 2026-10-08.
 
 diff --git a/src/quick/items/qquickwindow.cpp b/src/quick/items/qquickwindow.cpp
-index ce22a92..05cc3ee 100644
+index 7d19702..599de31 100644
 --- a/src/quick/items/qquickwindow.cpp
 +++ b/src/quick/items/qquickwindow.cpp
-@@ -884,8 +884,10 @@ void QQuickWindowPrivate::dirtyItem(QQuickItem *item)
+@@ -886,8 +886,10 @@ void QQuickWindowPrivate::dirtyItem(QQuickItem *item, bool maySkipUpdate)
      Q_Q(QQuickWindow);
  
      QQuickItemPrivate *itemPriv = QQuickItemPrivate::get(item);
@@ -20,9 +20,9 @@ index ce22a92..05cc3ee 100644
          needsChildWindowStackingOrderUpdate = true;
 +    }
  
-     q->maybeUpdate();
- }
-@@ -1768,32 +1770,92 @@ void QQuickWindowPrivate::maybeSynthesizeContextMenuEvent(QMouseEvent *event)
+     if (!maySkipUpdate
+         || (itemPriv->effectiveVisible || item->isTextureProvider()
+@@ -1789,32 +1791,92 @@ void QQuickWindowPrivate::maybeSynthesizeContextMenuEvent(QMouseEvent *event)
      QWindowPrivate::maybeSynthesizeContextMenuEvent(event);
  }
  
@@ -138,7 +138,7 @@ index ce22a92..05cc3ee 100644
  }
  
 diff --git a/src/quick/items/qquickwindow_p.h b/src/quick/items/qquickwindow_p.h
-index 48d4267..e869d6c 100644
+index 2bfe358..4d5bce4 100644
 --- a/src/quick/items/qquickwindow_p.h
 +++ b/src/quick/items/qquickwindow_p.h
 @@ -47,6 +47,7 @@ class QQuickDragGrabber;
@@ -162,7 +162,7 @@ index 48d4267..e869d6c 100644
      int multiViewCount();
      QRhiRenderTarget *activeCustomRhiRenderTarget();
 diff --git a/src/quick/items/qquickwindowcontainer.cpp b/src/quick/items/qquickwindowcontainer.cpp
-index 282abd4..bf364b5 100644
+index 0a0bef0..9262ee5 100644
 --- a/src/quick/items/qquickwindowcontainer.cpp
 +++ b/src/quick/items/qquickwindowcontainer.cpp
 @@ -8,9 +8,12 @@
@@ -218,20 +218,16 @@ index 282abd4..bf364b5 100644
      if (lcWindowContainer().isDebugEnabled()) {
          auto *debugRectangle = new QQuickRectangle(this);
          debugRectangle->setColor(QColor(255, 0, 255, 20));
-@@ -136,9 +161,11 @@ QQuickWindowContainer::QQuickWindowContainer(QQuickItem *parent, ContainerMode c
- 
- QQuickWindowContainer::~QQuickWindowContainer()
- {
--    Q_D(const QQuickWindowContainer);
-+    Q_D(QQuickWindowContainer);
+@@ -139,6 +164,8 @@ QQuickWindowContainer::~QQuickWindowContainer()
+     Q_D(QQuickWindowContainer);
      qCDebug(lcWindowContainer) << "Destructing window container" << this;
  
 +    d->setParentWindow(nullptr);
 +
-     disconnect(this);
-     if (d->window) {
-         auto ownership = QJSEngine::objectOwnership(d->window);
-@@ -557,6 +584,7 @@ void QQuickWindowContainer::parentWindowChanged(QQuickWindow *parentWindow)
+     disconnect(this, &QQuickItem::windowChanged,
+                this, &QQuickWindowContainer::parentWindowChanged);
+ 
+@@ -564,6 +591,7 @@ void QQuickWindowContainer::parentWindowChanged(QQuickWindow *parentWindow)
      qCDebug(lcWindowContainer) << this << "parent window changed to" << parentWindow;
  
      Q_D(QQuickWindowContainer);

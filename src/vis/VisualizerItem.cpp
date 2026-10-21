@@ -1,4 +1,5 @@
 #include "VisualizerItem.h"
+#include "../core/paths.h"
 #include "ProjectMWrapper.h"
 #include "PcmQueue.h"
 
@@ -74,7 +75,7 @@ namespace {
 // layout) -> dev vendor dir (compiled in) -> installed share dir.
 std::string resolvePresetDir() {
     if (const char* env = std::getenv("MELO_PRESETDIR")) return env;
-    const QString local = QCoreApplication::applicationDirPath() + "/presets";
+    const QString local = meloAppDir() + "/presets";
     if (QDir(local).exists()) return local.toStdString();
 #ifdef MELO_DEV_PRESET_DIR
     if (QDir(QStringLiteral(MELO_DEV_PRESET_DIR)).exists()) return MELO_DEV_PRESET_DIR;

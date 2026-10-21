@@ -13,7 +13,7 @@ endif()
 
 # 6.5 is the minimum: QtQuick.Effects (MultiEffect) and
 # QStyleHints::colorSchemeChanged both landed in 6.5 and have no fallback here.
-# CI and the release builds use 6.11.2.
+# CI and the release builds use 6.12.0.
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick OpenGL DBus Network)
 # QuickPrivate exposes needsChildWindowStackingOrderUpdate, which arms Qt's
 # whole-tree walk for QQuickWindowContainers (StackingWalkSuppressor, main.cpp):
