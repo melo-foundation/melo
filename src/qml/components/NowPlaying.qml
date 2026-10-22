@@ -1,5 +1,6 @@
 import QtQuick
 import "nowplaying"
+import "nowplaying/artsizes.js" as ArtSizes
 
 // Data host for the now-playing page. This file owns the track, the lyrics
 // fetch and the tab state; nowplaying/ owns the look and nothing else.
@@ -17,15 +18,9 @@ Item {
 
     readonly property var track: PlayerState.currentTrack
     readonly property string vid: track ? (track.id || "") : ""
-    // The page shows its art full width, so it asks YouTube for the 1280 version
-    // rather than the card's 360 one; the next size down when a video has none.
+    // the next size down when a video has none (artsizes.js)
     readonly property string thumb: track ? (track.thumbnail || "") : ""
-    readonly property var artSizes: {
-        const m = /ytimg\.com\/vi(?:_webp)?\/([^\/]+)\//.exec(thumb)
-        return m ? ["https://i.ytimg.com/vi/" + m[1] + "/maxresdefault.jpg",
-                    "https://i.ytimg.com/vi/" + m[1] + "/hq720.jpg", thumb]
-                 : [thumb]
-    }
+    readonly property var artSizes: ArtSizes.sizes(thumb)
     property int artTry: 0
     onArtSizesChanged: artTry = 0
     readonly property string art: artSizes[Math.min(artTry, artSizes.length - 1)]

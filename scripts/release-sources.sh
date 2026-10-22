@@ -106,6 +106,19 @@ if [ -n "$ARCH_LIST" ]; then
     # listed in anylinux/UNRESOLVED.txt.
     C="curl -fsSL --retry 5 --retry-all-errors --retry-delay 5"
     : > "$AL/UNRESOLVED.txt"
+    # Commits whose host is gone, kept on melo-foundation/build-inputs: commit, file, sha256.
+    # Software Heritage's vault can sit queued past the wait below for hours.
+    MIRRORED="68cd5aff1467638c086f1bedcc750e34917168e4 libasyncns-68cd5af/libasyncns-68cd5aff1467638c086f1bedcc750e34917168e4.tar.gz 69597d5a2791f857f1660888d60cf5bf59284c972a4f318bba064752b0641436"
+    mirrored() {   # mirrored <commit> <out.tar.gz>
+        local c f s
+        while read -r c f s; do
+            [ "$c" = "$1" ] || continue
+            $C -o "$2" "https://github.com/melo-foundation/build-inputs/releases/download/$f" || return 1
+            echo "$s  $2" | sha256sum -c --quiet || { rm -f "$2"; return 1; }
+            return 0
+        done <<< "$MIRRORED"
+        return 1
+    }
     swh() {   # swh <commit> <out.tar.gz>: the commit's tree from the archive's vault
         local api=https://archive.softwareheritage.org/api/1 dir st i
         dir=$($C "$api/revision/$1/" | sed -n 's/.*"directory":"\([0-9a-f]*\)".*/\1/p') || return 1
@@ -140,7 +153,7 @@ if [ -n "$ARCH_LIST" ]; then
                 if git -C "$g" fetch -q --depth 1 "$u" "$ref" 2>/dev/null \
                         || git -C "$g" fetch -q "$u" "$ref" 2>/dev/null; then
                     git -C "$g" archive --prefix="$n/" -o "$d/$n.tar.gz" FETCH_HEAD
-                elif ! { [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && swh "$ref" "$d/$n.tar.gz"; }; then
+                elif ! { [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && { mirrored "$ref" "$d/$n.tar.gz" || swh "$ref" "$d/$n.tar.gz"; }; }; then
                     echo "$base $ver $url" >> "$AL/UNRESOLVED.txt"
                 fi
                 rm -rf "$g" ;;

@@ -26,10 +26,12 @@ URUNTIME_SHA256=2153e68d63f570c7ebe3d1f38df0fa16814f34d839c5cce2ee42667e327708e8
 URUNTIME_LICENSE_SHA256=c4b670b0607ef626e670733093c9e4304b3bacc5076742de826d45f83e12e9d3
 # Mesa with llvmpipe: without LLVM a GPU-less machine gets softpipe, 300 ms a frame.
 # pkgforge-dev's LLVM keeps only the X86 and AMDGPU targets; Mesa must be the Arch
-# build made on that LLVM version. Upstream replaces the LLVM file in place.
+# build made on that LLVM version. Upstream replaces the LLVM file in place, so
+# melo-foundation/build-inputs keeps the pinned one (22.1.8-2).
 MESA_PKG="https://archive.archlinux.org/packages/m/mesa/mesa-1%3A26.2.3-1-x86_64.pkg.tar.zst"
 MESA_SHA256=8365cf2f7f8b55619b3deb52112f402e1db6204a48b60447795631955d832e6c
-LLVM_PKG=https://github.com/pkgforge-dev/archlinux-pkgs-debloated/releases/download/continuous/llvm-libs-nano-x86_64.pkg.tar.zst
+LLVM_PKG=https://github.com/melo-foundation/build-inputs/releases/download/llvm-libs-22.1.8-2/llvm-libs-nano-x86_64.pkg.tar.zst
+LLVM_UPSTREAM=https://github.com/pkgforge-dev/archlinux-pkgs-debloated/releases/download/continuous/llvm-libs-nano-x86_64.pkg.tar.zst
 LLVM_SHA256=f186b7d2f8367e3b53f0192a9ad60e69987188efa7a2c0770577fb3f03981170
 
 # the full AppImage's plugin set; videoconvert is videoconvertscale since GStreamer 1.22
@@ -65,7 +67,8 @@ chmod +x "$T/quick-sharun" "$T/uruntime"
 
 fetch "$MESA_PKG" "$T/mesa.pkg.tar.zst" "$MESA_SHA256"
 fetch "$LLVM_PKG" "$T/llvm-libs.pkg.tar.zst" "$LLVM_SHA256" \
-	|| { echo "llvm-libs-nano changed upstream: pin its new build and the Mesa built on that LLVM"; exit 1; }
+	|| fetch "$LLVM_UPSTREAM" "$T/llvm-libs.pkg.tar.zst" "$LLVM_SHA256" \
+	|| { echo "llvm-libs-nano: neither the mirror nor upstream has the pinned build"; exit 1; }
 pacman -U --noconfirm --ask 4 "$T/mesa.pkg.tar.zst" "$T/llvm-libs.pkg.tar.zst"
 pacman -Q mesa llvm-libs
 

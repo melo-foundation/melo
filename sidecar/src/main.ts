@@ -11,7 +11,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { setEnv, type SidecarEnv } from "./env";
 import { registerHandlers } from "./handlers";
-import { initLibrary } from "./library";
+import { initLibrary, backfillLargeArt } from "./library";
 import { loadSettings, saveSettings } from "./settings";
 import { migrateProfiles } from "./guest-cookies";
 import { ensureYtdlp, maybeUpdateYtdlp, downloadYtdlp } from "./ytdlp";
@@ -47,6 +47,8 @@ method("initialize", (params: SidecarEnv & { ytdlpSeedPath?: string }) => {
   else void downloadYtdlp();
   warmStreamSession();   // player fetch + decipher prep before the first click
   warmPoTokenSession();  // ~1.5s of BotGuard setup, off the first play's path
+  // off the start's path, after the warm-ups
+  setTimeout(() => { void backfillLargeArt(); }, 20000).unref();
 
   registerHandlers();
 

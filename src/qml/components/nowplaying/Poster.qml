@@ -102,8 +102,12 @@ Item {
     }
     property real videoClear: s.clearNow ? 1 : 0
     Behavior on videoClear { NumberAnimation { duration: 400 } }
-    readonly property bool hideCursor: s.visible && s.videoClear > 0.99 && videoHover.hovered
+    // the cursor follows the pointer's own stillness, as mpv's: a forced clear keeps
+    // the overlay hidden, not the cursor
+    readonly property bool hideCursor: s.visible && s.videoClear > 0.99 && videoHover.hovered && UiActivity.idle
     onHideCursorChanged: UiActivity.setWindowCursorHidden(s.Window.window, hideCursor)
+    // the window keeps a blank cursor past this page
+    Component.onDestruction: if (hideCursor) UiActivity.setWindowCursorHidden(s.Window.window, false)
     readonly property real pageX: GridUi.padLeft + 34    // the page's inset, in a poster's wider band
     readonly property real sleeveX: stacked ? (width - rigW) / 2 : pageX
     // the album sits on the middle of the page, with room kept below it for
@@ -564,6 +568,10 @@ Item {
     // One picture the whole way: full bleed, then the sleeve, then the cover
     // of the classic page, which is the same size as the sleeve, so it travels
     // there rather than dissolving into a second copy of itself.
+    // the art is in the ground as well, so adaptive words and halos read the page
+    // as it is wherever they stand: on the picture, beside it, or across its edge
+    GroundPicture {
+        anchors.fill: parent
     Rectangle {
         id: artBox
         x: s.lerp(0, s.sleeveX) + (classicPane.coverX - s.sleeveX) * s.q
@@ -594,6 +602,11 @@ Item {
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             opacity: status !== Image.Ready ? 0 : s.sleeveCover
+            // what Now Playing shows: the file, its decoded size, the box in device pixels
+            onStatusChanged: if (status === Image.Ready || status === Image.Error)
+                console.info("[np-art] poster", status === Image.Ready ? "ready" : "error", source,
+                             sourceSize.width + "x" + sourceSize.height, "box",
+                             Math.round(width * Screen.devicePixelRatio) + "x" + Math.round(height * Screen.devicePixelRatio))
         }
         // ---- sleeve chrome: only while it is a sleeve --------------------
         Item {
@@ -654,6 +667,7 @@ Item {
         // over-artwork ink's job (its halo, or an adaptive source), so the
         // picture is shown as it is.
     }
+    }
 
     // ---- the type travels with it ----------------------------------------
     // Three copies, each laid out once at its own size and scaled through the move.
@@ -694,14 +708,10 @@ Item {
         // centred to meet the classic page, without being centred at its own stop.
         property real subCentre: 0
         property bool showMeta: false
-        // The artwork is a backdrop only where the words stand on it. Off the
-        // poster stop it is a sleeve somewhere else and these words are on the
-        // page; reading it there maps them outside its texture, the shader
-        // clamps, and an adaptive ink or halo samples the poster's picture.
-        // The video is in the ground (GroundPicture).
-        property bool onArt: false
-        readonly property Item wordBackdrop: !onArt || s.videoIn > 0.5 ? Theme.backdrop
-                                             : artImg.status === Image.Ready ? artImg : Theme.backdrop
+        // The ground, with the video and the artwork in it (GroundPicture): the
+        // picture alone as a backdrop clamps at its edge, and words beside it or
+        // across it read its edge colour instead of the page.
+        readonly property Item wordBackdrop: Theme.backdrop
         readonly property real k: s.curPx / px
         // Where this block's TITLE sits, not where its box does. The copies
         // carry different things above the title (the poster has a meta line),
@@ -796,7 +806,6 @@ Item {
         id: poster
         px: s.bigPx
         subPx: 16
-        onArt: true
         // Wide mode: bounded by side.x, which moves with window height (via rigW,
         // sleeveW <= height * 0.44), or the column declared after this draws over it.
         // Both terms are constant in wide mode so boxW does not animate and rewrap.

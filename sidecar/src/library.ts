@@ -161,6 +161,8 @@ export function removeTrack(videoId: string, deleteFile: boolean): boolean {
   if (track.thumbnailFile) {
     try { unlinkSync(join(downloadPath, "thumbs", track.thumbnailFile)); } catch { /* ignore */ }
   }
+  if (isSafeIdForPath(track.id))
+    try { unlinkSync(join(downloadPath, "thumbs", `${track.id}-large.jpg`)); } catch { /* none kept */ }
 
   library.tracks.splice(idx, 1);
 
@@ -228,6 +230,7 @@ async function doDownload(videoId: string, cookieArgsFn: () => Promise<string[]>
       track.fileName = downloaded;
       track.downloaded = true;
       saveLibrary();
+      cacheLargeArt(videoId).catch(() => {});
       return true;
     }
     downloadErrors.set(videoId, "yt-dlp finished without a file");
@@ -443,6 +446,38 @@ export function replaceFile(id: string, path: string): { ok: boolean; error?: st
   t.downloaded = true;
   saveLibrary();
   return { ok: true };
+}
+
+// Now Playing's picture for a download, kept beside the card's thumbnail as
+// thumbs/<id>-large.jpg (nowplaying/artsizes.js reads it offline): YouTube's
+// 1280 version, else its 720. The card keeps the small one: decoding is the scroll cost.
+export const LARGE_ART_URLS = (id: string) => [
+  `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`, `https://i.ytimg.com/vi/${id}/hq720.jpg`];
+export async function cacheLargeArt(videoId: string, fetchFn: typeof fetch = fetch): Promise<boolean> {
+  if (!isSafeIdForPath(videoId) || !downloadPath) return false;
+  const dest = join(downloadPath, "thumbs", `${videoId}-large.jpg`);
+  if (existsSync(dest)) return true;
+  for (const url of LARGE_ART_URLS(videoId)) {
+    try {
+      const res = await fetchFn(url);
+      if (!res.ok) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) continue;   // a JPEG, not an error page
+      writeFileSync(`${dest}.part`, buf);
+      renameSync(`${dest}.part`, dest);
+      return true;
+    } catch { /* the next size */ }
+  }
+  return false;
+}
+
+// Downloads made before the large picture was kept get it once, one at a time.
+export async function backfillLargeArt(fetchFn: typeof fetch = fetch): Promise<number> {
+  let n = 0;
+  for (const t of library.tracks.filter((x) => x.downloaded && isSafeIdForPath(x.id)))
+    if (!existsSync(join(downloadPath, "thumbs", `${t.id}-large.jpg`)) && await cacheLargeArt(t.id, fetchFn)) n++;
+  if (n) console.error(`[library] kept the large picture for ${n} downloads`);
+  return n;
 }
 
 async function cacheThumbnail(videoId: string, thumbnailUrl: string): Promise<void> {

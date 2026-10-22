@@ -68,6 +68,10 @@ Item {
                 source: pane.np ? pane.np.art : ""
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
+                onStatusChanged: if (status === Image.Ready || status === Image.Error)
+                    console.info("[np-art] classic", status === Image.Ready ? "ready" : "error", source,
+                                 sourceSize.width + "x" + sourceSize.height, "box",
+                                 Math.round(width * Screen.devicePixelRatio) + "x" + Math.round(height * Screen.devicePixelRatio))
             }
         }
 
