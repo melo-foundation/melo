@@ -10,8 +10,8 @@
 
 // Pinned runtime — bump both together (sha from nodejs.org/dist/vX/SHASUMS256.txt,
 // linux-x64.tar.xz line)
-static const char* kNodeVersion = "22.23.2";
-static const char* kNodeSha256  = "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307";
+static const char* kNodeVersion = "22.23.4";
+static const char* kNodeSha256  = "1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce";
 
 QString NodeBootstrap::pinnedVersion() { return QString::fromLatin1(kNodeVersion); }
 

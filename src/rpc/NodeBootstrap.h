@@ -22,7 +22,7 @@ public:
     QString error() const { return error_; }
 
     static QString installedPath();
-    static QString pinnedVersion();   // "22.23.2"
+    static QString pinnedVersion();   // "22.23.4"
 
     Q_INVOKABLE void download();
 
