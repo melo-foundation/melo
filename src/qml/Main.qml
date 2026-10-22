@@ -3200,7 +3200,22 @@ Window {
         const fits = [["fill", "Fill"], ["fit", "Fit"], ["stretch", "Stretch"]]
         fits.forEach(([v, label], i) =>
             acts.push({ label: label, check: f === v, rule: i === 0, act: () => Settings.uiSet("videoFit", v) }))
+        if (PlayerState.hasVideo)
+            acts.push({ label: "Take snapshot", rule: true, act: () => {
+                const p = windowVideo.snapshot(PlayerState.currentTrack ? String(PlayerState.currentTrack.title || "") : "")
+                if (!p) return
+                root.snapshotPath = p
+                snapshotClear.restart()
+            } })
         return acts
+    }
+    // the saved snapshot's path, while its notice shows
+    property string snapshotPath: ""
+    Timer { id: snapshotClear; interval: 6000; onTriggered: root.snapshotPath = "" }
+    // a press anywhere but on the notice puts it away; on it, its own buttons answer
+    Connections {
+        target: root.snapshotPath.length ? UiActivity : null
+        function onWindowPressed(w) { if (!noticeHover.hovered) root.snapshotPath = "" }
     }
     function openVideoMenu(sx, sy, host) { contextMenu.open(sx, sy, videoActs(), host) }
 
@@ -3316,6 +3331,9 @@ Window {
         if (root.ytdlpStale.length && !PlayerState.failCause && Settings.ytdlpChannel !== "nightly")
             out.push({ key: "ytdlp", message: "yt-dlp is out of date.",
                        actions: [{ id: "nightly", label: "Use yt-dlp nightly" }, { id: "no", label: "Not now" }], sticky: true })
+        if (root.snapshotPath.length)
+            out.push({ key: "snapshot", message: "Snapshot saved", alert: false,
+                       actions: [{ id: "open", label: "Open" }, { id: "folder", label: "Show in folder" }] })
         const c = root.errorContext
         if (PlayerState.error.length && c && c.text === PlayerState.error)
             out.push({ key: "error", message: c.text,
@@ -3325,6 +3343,12 @@ Window {
         return out
     }
     function noticeAnswered(key, id) {
+        if (key === "snapshot") {
+            if (id === "open") WindowCtl.openFile(root.snapshotPath)
+            else if (id === "folder") WindowCtl.showFile(root.snapshotPath)
+            root.snapshotPath = ""
+            return
+        }
         if (key === "update") {
             const u = root.updater
             if (id === "update") u.update()
@@ -3359,6 +3383,7 @@ Window {
     }
     function noticeDismissed(key) {
         if (key === "error") PlayerState.error = ""
+        if (key === "snapshot") root.snapshotPath = ""
         if (key !== "update") return
         if (root.updater.state === "available") root.updater.later()
         else root.updateHidden = root.updateKey
@@ -3414,6 +3439,8 @@ Window {
                               + Theme.gap(10) + (ytdlpToast.visible ? ytdlpToast.height + Theme.gap(8) : 0)
         onTriggered: (key, id) => root.noticeAnswered(key, id)
         onDismissed: (key) => root.noticeDismissed(key)
+        // only while the snapshot notice shows: a HoverHandler here starves the ones beneath
+        HoverHandler { id: noticeHover; enabled: root.snapshotPath.length > 0 }
     }
     // the mini player's: a popup of its own above the bar, so it covers none of it
     Window {

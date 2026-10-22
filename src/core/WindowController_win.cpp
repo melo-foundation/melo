@@ -4,9 +4,11 @@
 #include "WindowController.h"
 #include "../plugins/PluginJsGuard.h"
 #include <QDir>
+#include <QDesktopServices>
 #include <QGuiApplication>
 #include <QProcess>
 #include <QQuickWindow>
+#include <QUrl>
 
 void WindowController::initFocusTracking() {
     appActive_ = QGuiApplication::focusWindow() != nullptr;
@@ -31,6 +33,11 @@ bool WindowController::blurAvailable() const { return false; }
 bool WindowController::contrastAvailable() const { return false; }
 void WindowController::setInputRegion(QQuickWindow*, int, int, int, int) {}
 bool WindowController::alignForCollapse(int) { return false; }
+void WindowController::openFile(const QString& path) {
+    if (meloRefuseFromPlugin("WindowCtl.openFile")) return;
+    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+}
+
 void WindowController::showFile(const QString& path) {
     if (meloRefuseFromPlugin("WindowCtl.showFile")) return;
     QProcess::startDetached(QStringLiteral("explorer"), {QStringLiteral("/select,"), QDir::toNativeSeparators(path)});

@@ -1,5 +1,7 @@
 #include "WindowController.h"
 #include "../plugins/PluginJsGuard.h"
+#include "HostEnv.h"
+#include <QProcess>
 #include "PinMode.h"
 #include "WindowMask.h"
 
@@ -398,6 +400,21 @@ void WindowController::logLine(const QString& text) {
 
 void WindowController::copyToClipboard(const QString& text) {
     if (auto* cb = QGuiApplication::clipboard()) cb->setText(text);
+}
+
+void WindowController::openFile(const QString& path) {
+    if (meloRefuseFromPlugin("WindowCtl.openFile")) return;
+    // the desktop's opener (Qt's, or the portal's) asks which app on Plasma; xdg-open
+    // opens the default one. melo's own libraries must not reach the app.
+    const QString xdg = QStandardPaths::findExecutable(QStringLiteral("xdg-open"));
+    if (!xdg.isEmpty()) {
+        QProcess p;
+        p.setProgram(xdg);
+        p.setArguments({path});
+        p.setProcessEnvironment(meloHostEnvironment());
+        if (p.startDetached()) return;
+    }
+    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
 
 void WindowController::showFile(const QString& path) {

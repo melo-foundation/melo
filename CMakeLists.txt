@@ -1027,6 +1027,10 @@ if(Qt6Test_FOUND)
     target_link_libraries(tst_appdir PRIVATE Qt6::Core Qt6::Test)
     add_test(NAME appdir COMMAND tst_appdir)
 
+    add_executable(tst_hostenv tests/cpp/tst_hostenv.cpp)
+    target_link_libraries(tst_hostenv PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME hostenv COMMAND tst_hostenv)
+
     add_executable(tst_uiactivity tests/cpp/tst_uiactivity.cpp src/core/UiActivity.cpp)
     target_include_directories(tst_uiactivity PRIVATE src/core)
     target_link_libraries(tst_uiactivity PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)

@@ -42,6 +42,9 @@ public:
     qreal fillMix() const { return fillMix_; }
     void setFillMix(qreal mix);
     QRectF contentRect() const { return contentRect_; }
+    // The playing frame at its own size, as a PNG in Pictures/melo named after
+    // `name` and its place; the file's path, or "" with no frame
+    Q_INVOKABLE QString snapshot(const QString& name) const;
 
 signals:
     void runningChanged();

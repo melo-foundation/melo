@@ -1,8 +1,12 @@
 #include "VideoSurface.h"
 #include <algorithm>
 #include <cstdio>
+#include <QDir>
+#include <QFileInfo>
 #include <QImage>
 #include <QQuickWindow>
+#include <QRegularExpression>
+#include <QStandardPaths>
 #include <QSGOpacityNode>
 #include <QSGSimpleTextureNode>
 #include <QSGTexture>
@@ -166,6 +170,31 @@ VideoSurface::VideoSurface() {
 }
 
 VideoSurface::~VideoSurface() { s_live.removeOne(this); }
+
+QString VideoSurface::snapshot(const QString& name) const {
+    if (!s_source) return {};
+    const auto frame = s_source->videoView().main;
+    const auto px = rgbaOf(frame);
+    if (!px || px->planes[0].data == nullptr || px->width <= 0 || px->height <= 0) return {};
+    const VideoPlane& p = px->planes[0];
+    const QImage img = QImage(p.data, p.width, p.height, p.stride, QImage::Format_RGBA8888)
+                           .convertToFormat(QImage::Format_RGB888);
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + QStringLiteral("/melo");
+    if (!QDir().mkpath(dir)) return {};
+    // a title can carry a path separator or a control character; neither names a file
+    QString base = name.trimmed();
+    base.replace(QRegularExpression(QStringLiteral("[/\\\\\\x00-\\x1f:*?\"<>|]")), QStringLiteral(" "));
+    base = base.simplified().left(120);
+    if (base.isEmpty()) base = QStringLiteral("melo");
+    const int at = std::max(0, int(frame->pts));   // the RGBA twin carries no place
+    base += QStringLiteral(" %1m%2s").arg(at / 60).arg(at % 60, 2, 10, QLatin1Char('0'));
+    QString path = dir + QLatin1Char('/') + base + QStringLiteral(".png");
+    for (int n = 2; QFileInfo::exists(path); ++n)
+        path = dir + QLatin1Char('/') + base + QStringLiteral(" (%1).png").arg(n);
+    if (!img.save(path, "PNG")) return {};
+    std::fprintf(stderr, "[video] snapshot %dx%d: %s\n", img.width(), img.height(), qPrintable(path));
+    return path;
+}
 
 // A frozen surface has no tick: the source's change is its one fetch.
 void VideoSurface::notifyTrackChange() {

@@ -1,5 +1,6 @@
 #include "AppImageUpdater.h"
 #include "../plugins/PluginJsGuard.h"
+#include "HostEnv.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -514,18 +515,10 @@ void AppImageUpdater::retry() {
 }
 
 bool AppImageUpdater::relaunch() const {
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    // the old mount's paths: the new AppImage's runtime and AppRun set their own
-    // A list such as PATH keeps its other entries: the anylinux AppRun puts the mount first.
-    const QString mount = env.value(QStringLiteral("APPDIR"));
-    for (const QString& k : env.keys()) {
-        if (mount.isEmpty() || !env.value(k).contains(mount)) continue;
-        QStringList keep = env.value(k).split(u':');
-        keep.removeIf([&mount](const QString& e) { return e.contains(mount); });
-        if (keep.isEmpty()) env.remove(k); else env.insert(k, keep.join(u':'));
-    }
+    // the old mount's paths go: the new AppImage's runtime and AppRun set their own
+    QProcessEnvironment env = meloHostEnvironment();
     const QString owd = env.value(QStringLiteral("OWD"));
-    for (const char* k : { "APPDIR", "APPIMAGE", "ARGV0", "OWD" }) env.remove(QString::fromLatin1(k));
+    env.remove(QStringLiteral("OWD"));
     env.insert(QStringLiteral("MELO_UPDATE_RELAUNCH"), QStringLiteral("1"));
     QProcess p;
     p.setProgram(appImage_);

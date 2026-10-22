@@ -269,6 +269,33 @@ private slots:
         surf_->setProperty("frozen", false);
         QTRY_COMPARE_WITH_TIMEOUT(pixelAt(32, 32), QColor(Qt::darkRed), 2000);
     }
+    // the frame at its own size, from a planar frame's twin, named after the
+    // track and its place; a slash in the title names no folder
+    void snapshotSavesTheFrameAtItsOwnSize() {
+        QTemporaryDir home;
+        QVERIFY(home.isValid());
+        QFile dirs(home.filePath("user-dirs.dirs"));
+        QVERIFY(dirs.open(QIODevice::WriteOnly));
+        dirs.write(QStringLiteral("XDG_PICTURES_DIR=\"%1/pics\"\n").arg(home.path()).toUtf8());
+        dirs.close();
+        qputenv("XDG_CONFIG_HOME", home.path().toUtf8());
+        auto px = planarWithTwin(40, 30, Qt::green);
+        px->pts = 83.4;
+        src_.v = {px, nullptr, 0, QString()};
+        QString path;
+        QMetaObject::invokeMethod(surf_, "snapshot", Q_RETURN_ARG(QString, path), Q_ARG(QString, "AC/DC: Live"));
+        QCOMPARE(path, home.filePath("pics/melo/AC DC Live 1m23s.png"));
+        const QImage img(path);
+        QCOMPARE(img.size(), QSize(40, 30));
+        QCOMPARE(img.pixelColor(20, 15), QColor(Qt::green));
+        QString again;
+        QMetaObject::invokeMethod(surf_, "snapshot", Q_RETURN_ARG(QString, again), Q_ARG(QString, "AC/DC: Live"));
+        QCOMPARE(again, home.filePath("pics/melo/AC DC Live 1m23s (2).png"));
+        src_.v = {};
+        QMetaObject::invokeMethod(surf_, "snapshot", Q_RETURN_ARG(QString, again), Q_ARG(QString, "x"));
+        QCOMPARE(again, QString());
+        qunsetenv("XDG_CONFIG_HOME");
+    }
 };
 
 QTEST_MAIN(TstVideoSurface)
