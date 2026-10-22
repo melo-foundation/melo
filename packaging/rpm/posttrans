@@ -1,0 +1,44 @@
+#!/bin/sh
+# Adds melo's zypper or dnf repository unless a melo repository is already
+# configured. A file this package wrote starts with $MARK; any other is the user's.
+# posttrans: Alpha 3 owned melo.repo as a config file, and the old package's
+# removal runs after %post.
+
+MARK="# Added by the melo package and removed with it."
+SHARE=/usr/lib/melo/share/melo/repo
+# by os-release, not by directory: Alpha 3 left /etc/zypp/repos.d on Fedora
+. /etc/os-release 2>/dev/null
+case " $ID $ID_LIKE " in
+    *suse*) SUSE=1 ;;
+    *) command -v zypper >/dev/null 2>&1 && ! command -v dnf >/dev/null 2>&1 && SUSE=1 ;;
+esac
+if [ -n "$SUSE" ]; then
+    DIR=/etc/zypp/repos.d; TEMPLATE=$SHARE/melo-zypp.repo
+    mkdir -p "$DIR"
+elif [ -d /etc/yum.repos.d ]; then
+    DIR=/etc/yum.repos.d; TEMPLATE=$SHARE/melo-dnf.repo
+else
+    exit 0
+fi
+FILE=$DIR/melo.repo
+[ -r "$TEMPLATE" ] || exit 0
+URL=$(sed -n 's/^baseurl=//p' "$TEMPLATE" | head -n 1)
+[ -n "$URL" ] || exit 0
+
+ours() { [ -f "$FILE" ] && [ "$(head -n 1 "$FILE")" = "$MARK" ]; }
+
+others() {
+    for f in "$DIR"/*.repo; do
+        [ -f "$f" ] || continue
+        [ "$f" = "$FILE" ] && ours && continue
+        grep -Eq "^[[:space:]]*(#[[:space:]]*)?baseurl[[:space:]]*=[[:space:]]*$URL/?[[:space:]]*\$" "$f" && return 0
+    done
+    return 1
+}
+
+if ours || { [ ! -e "$FILE" ] && ! others; }; then
+    { echo "$MARK"; cat "$TEMPLATE"; } > "$FILE.melo-tmp" &&
+        chmod 644 "$FILE.melo-tmp" && mv "$FILE.melo-tmp" "$FILE"
+fi
+
+exit 0

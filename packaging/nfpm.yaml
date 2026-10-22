@@ -45,30 +45,31 @@ contents:
   - src: ./pkgnode/share/
     dst: /usr/lib/melo/share/melo/
     packager: rpm
-# shared libraries the binary needs, per distro
   # The package repository, written by the release workflow (pkgrepo/): each
   # release carries the address, so a later move reaches everyone who updates.
+  # The maintainer scripts copy the one the system reads into /etc.
   - src: ./pkgrepo/melo.sources
-    dst: /etc/apt/sources.list.d/melo.sources
-    type: config
+    dst: /usr/lib/melo/share/melo/repo/melo.sources
     packager: deb
   - src: ./pkgrepo/melo-archive-keyring.pgp
     dst: /usr/share/keyrings/melo-archive-keyring.pgp
     packager: deb
   - src: ./pkgrepo/melo-dnf.repo
-    dst: /etc/yum.repos.d/melo.repo
-    type: config
+    dst: /usr/lib/melo/share/melo/repo/melo-dnf.repo
     packager: rpm
   - src: ./pkgrepo/melo-zypp.repo
-    dst: /etc/zypp/repos.d/melo.repo
-    type: config
+    dst: /usr/lib/melo/share/melo/repo/melo-zypp.repo
     packager: rpm
   - src: ./pkgrepo/melo.asc
     dst: /etc/pki/rpm-gpg/RPM-GPG-KEY-melo
     packager: rpm
 
+# shared libraries the binary needs, per distro
 overrides:
   deb:
+    scripts:
+      postinstall: ./packaging/deb/postinst
+      postremove: ./packaging/deb/postrm
     depends:
       - libgstreamer1.0-0
       - gstreamer1.0-plugins-base
@@ -100,6 +101,8 @@ overrides:
       - libsm6
       - libice6
   rpm:
+    scripts:
+      postremove: ./packaging/rpm/postun
     # Libraries by soname, which every rpm distribution's packages provide whatever
     # they are named; GStreamer plugins are listed by Fedora's or openSUSE's package name.
     # From the NEEDED entries of melo, node and ffmpeg.
@@ -175,6 +178,8 @@ deb:
   compression: xz
 rpm:
   compression: xz
+  scripts:
+    posttrans: ./packaging/rpm/posttrans
   # signed when the release workflow provides the key; unsigned otherwise
   signature:
     key_file: ${MELO_SIGNING_KEY_FILE}

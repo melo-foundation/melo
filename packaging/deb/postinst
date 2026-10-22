@@ -1,0 +1,39 @@
+#!/bin/sh
+# Adds melo's apt repository unless a melo source is already configured.
+# A source this package wrote starts with $MARK; any other file is the user's.
+set -e
+
+TEMPLATE=/usr/lib/melo/share/melo/repo/melo.sources
+DIR=/etc/apt/sources.list.d
+FILE=$DIR/melo.sources
+MARK="# Added by the melo package and removed with it."
+
+[ "$1" = configure ] || exit 0
+[ -r "$TEMPLATE" ] || exit 0
+URL=$(sed -n 's/^URIs:[[:space:]]*//p' "$TEMPLATE" | head -n 1)
+[ -n "$URL" ] || exit 0
+
+ours() { [ -f "$FILE" ] && [ "$(head -n 1 "$FILE")" = "$MARK" ]; }
+
+# Alpha 3 shipped the same file as a conffile: unedited, it is ours
+if [ -f "$FILE" ] && ! ours && cmp -s "$FILE" "$TEMPLATE"; then
+    rm -f "$FILE"
+fi
+
+# a source of the user's, one-line or deb822, enabled or not, anywhere apt reads
+others() {
+    for f in /etc/apt/sources.list "$DIR"/*.list "$DIR"/*.sources; do
+        [ -f "$f" ] || continue
+        [ "$f" = "$FILE" ] && ours && continue
+        grep -Eq "^[[:space:]]*(#[[:space:]]*)?(deb[[:space:]].*|URIs:[[:space:]]*)$URL/?([[:space:]]|\$)" "$f" && return 0
+    done
+    return 1
+}
+
+if ours || { [ ! -e "$FILE" ] && ! others; }; then
+    mkdir -p "$DIR"
+    { echo "$MARK"; cat "$TEMPLATE"; } > "$FILE.melo-tmp"
+    chmod 644 "$FILE.melo-tmp"
+    mv "$FILE.melo-tmp" "$FILE"
+fi
+exit 0

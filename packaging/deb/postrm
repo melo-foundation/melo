@@ -1,0 +1,15 @@
+#!/bin/sh
+# Removes the apt source postinst wrote; the keyring it names goes with the package.
+set -e
+
+FILE=/etc/apt/sources.list.d/melo.sources
+MARK="# Added by the melo package and removed with it."
+
+case "$1" in
+    remove|purge)
+        if [ -f "$FILE" ] && [ "$(head -n 1 "$FILE")" = "$MARK" ]; then
+            rm -f "$FILE"
+        fi
+        ;;
+esac
+exit 0

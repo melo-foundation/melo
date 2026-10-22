@@ -1,0 +1,10 @@
+#!/bin/sh
+# Removes the repository posttrans wrote, on erase only ($1 is 0).
+[ "$1" = 0 ] || exit 0
+MARK="# Added by the melo package and removed with it."
+for f in /etc/zypp/repos.d/melo.repo /etc/yum.repos.d/melo.repo; do
+    if [ -f "$f" ] && [ "$(head -n 1 "$f")" = "$MARK" ]; then
+        rm -f "$f"
+    fi
+done
+exit 0
