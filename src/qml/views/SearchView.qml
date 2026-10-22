@@ -163,7 +163,7 @@ Item {
         // model corrections must animate, not pop: excess placeholders fade
         // out, appended pages fade in, shifted rows slide
         remove: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 150 } }
-        add: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
+        add: AddFade {}
 
         readonly property bool compact: view.layout === "compact"
 
@@ -359,7 +359,7 @@ Item {
         reuseItems: true
         cacheBuffer: 400
         remove: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 150 } }
-        add: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
+        add: AddFade {}
 
         // scaled fixed-design text block — see HomeView's recGrid
         cellHeight: GridUi.cellHFor(cellWidth)

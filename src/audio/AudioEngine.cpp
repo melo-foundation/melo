@@ -128,6 +128,16 @@ void AudioEngine::buildPipeline() {
         return;
     }
     mixer_    = gst_bin_get_by_name(GST_BIN(pipeline_), "mix");
+    // The output stream never ends: a track's EOS still in the 40 ms audio queue
+    // reaches the sink after the next track's data and stops the sink and the mixer.
+    if (GstPad* mixSrc = gst_element_get_static_pad(mixer_, "src")) {
+        gst_pad_add_probe(mixSrc, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+            [](GstPad*, GstPadProbeInfo* info, gpointer) {
+                GstEvent* ev = GST_PAD_PROBE_INFO_EVENT(info);
+                return ev && GST_EVENT_TYPE(ev) == GST_EVENT_EOS ? GST_PAD_PROBE_DROP : GST_PAD_PROBE_OK;
+            }, nullptr, nullptr);
+        gst_object_unref(mixSrc);
+    }
     preampEl_ = gst_bin_get_by_name(GST_BIN(pipeline_), "preamp");
     eq_       = gst_bin_get_by_name(GST_BIN(pipeline_), "eq");
     pan_      = gst_bin_get_by_name(GST_BIN(pipeline_), "pan");
@@ -587,7 +597,10 @@ void AudioEngine::dropVideoDecksIfUnwanted() {
 }
 
 void AudioEngine::attachVideo(const QString& url, bool incoming, const QString& trackId) {
-    if (!videoWanted_) return;
+    if (!videoWanted_) {
+        std::fprintf(stderr, "[%9.1f] [video] engine ignores %s: not wanted\n", meloLogMs(), qPrintable(trackId));
+        return;
+    }
     if (incoming) {
         logOutputLeadOnce();
         videoPending_ = makeVideoDeck(url);          // prerolls; bound at the next deck switch

@@ -79,6 +79,15 @@ Item {
             verify(sk.sheenPos !== p0, "the sheen moves")
             compare(part(sk, "skeletonGround").opacity, 1)
         }
+        function test_a_late_placeholder_sweeps_in_step_with_the_rest() {
+            compare(Theme.skeletonStyle, "shimmer")
+            wait(400)   // the first is part-way through its sweep
+            const late = createTemporaryObject(siteC, sk.parent, { y: 150, wait: true })
+            wait(20)
+            compare(late.sheenPos, sk.sheenPos, "one sweep for every placeholder")
+            wait(300)
+            compare(late.sheenPos, sk.sheenPos)
+        }
         function test_pulse_breathes_the_ground_and_sweeps_nothing() {
             set("skeletonStyle", "pulse")
             verify(!sheen(sk))

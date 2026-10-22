@@ -2693,7 +2693,9 @@ Window {
                                     anchors.verticalCenterOffset: Theme.pressShift(rsMa.pressed)
                                     width: Theme.ctl(24); height: Theme.ctl(14)
                                     entry: roleRow.entry
-                                    fallback: Theme[roleRow.key]
+                                    // a theme's own colour has no Theme property
+                                    fallback: Theme[roleRow.key] !== undefined ? Theme[roleRow.key]
+                                                                               : Theme.roleColour(roleRow.key)
                                 }
                                 MouseArea {
                                     id: rsMa; anchors.fill: parent; hoverEnabled: true

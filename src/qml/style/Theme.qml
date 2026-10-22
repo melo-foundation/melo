@@ -77,6 +77,17 @@ QtObject {
         if (fillCacheComp.status !== Component.Ready) return null
         return fillCacheComp.createObject(win.contentItem)
     }
+    // A texture in `win` for a ShaderEffect sampler with nothing to read: Qt warns
+    // "Texture tN is not assigned a valid texture provider" for a null one.
+    readonly property var blankMemo: ({ win: null, item: null })
+    function blankFor(win) {
+        if (!win) return null
+        if (blankMemo.win === win && blankMemo.item) return blankMemo.item
+        const c = fillCache(win)
+        blankMemo.win = win
+        blankMemo.item = c ? c.blank : null
+        return blankMemo.item
+    }
     // Adaptive readers on screen. `anyAdaptive` is about the palette; a role used
     // only by a menu would otherwise run the offscreen pass every frame. HueLum is the
     // only backdrop sampler, so it holds while ready and visible.

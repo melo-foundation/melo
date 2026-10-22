@@ -1,4 +1,5 @@
 import QtQuick
+import ".."
 
 // One coverage mask and one edge field per shape, per window, shared by every
 // surface of that shape; unshared, each card in a grid builds three identical
@@ -15,6 +16,10 @@ Item {
     // key -> { item, refs, idle }. A plain object: the keys are strings and
     // nothing iterates it per frame.
     property var entries: ({})
+
+    // what an idle sampler binds in this window: a null one warns on every sync
+    readonly property Item blank: blankImg
+    Image { id: blankImg; source: Theme.blankTex }
 
     Component {
         id: maskComp

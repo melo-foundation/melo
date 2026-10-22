@@ -45,7 +45,7 @@ Item {
     // built visible, so its fill chain would be torn down when the picture arrives and
     // rebuilt on reuse, each teardown walking the window's connection list once per
     // `Window` attached property in the subtree. Latching: -16% cycles a card.
-    Component.onCompleted: { if (latch === 1 || (visible && shown)) everShown = true; latch = 2 }
+    Component.onCompleted: { if (latch === 1 || (visible && shown)) everShown = true; latch = 2; recount() }
     property real radius: Theme.radiusSm   // theme-reactive: rounded/squared corner style
     property real bottomRadius: radius
     readonly property string style: Theme.skeletonStyle
@@ -62,7 +62,7 @@ Item {
     // only a role that would blend gets a Surface built; `plain` never builds one
     property bool plain: false
     readonly property bool styled: !plain && Theme.skeletonStyled
-    property real sheenPos: -0.3
+    readonly property real sheenPos: moving ? SkeletonClock.sheen : -0.3
     function cl(p) { return Math.max(0, Math.min(1, p)) }
 
     // children declared at usage sites land in contentItem and get masked
@@ -77,7 +77,7 @@ Item {
         topRightRadius: skel.radius
         bottomLeftRadius: skel.bottomRadius
         bottomRightRadius: skel.bottomRadius
-        opacity: 1
+        opacity: skel.breathing ? SkeletonClock.breath : 1
         gradient: skel.sweeping ? sheenGrad : null
         Gradient {
             id: sheenGrad
@@ -106,21 +106,23 @@ Item {
                 bottomRightRadius: skel.bottomRadius
             }
         }
-        SequentialAnimation on opacity {
-            running: skel.visible && skel.pulsing && skel.opacity > 0
-            loops: Animation.Infinite
-            NumberAnimation { from: 1; to: 0.45; duration: 700; easing.type: Easing.InOutQuad }
-            NumberAnimation { from: 0.45; to: 1; duration: 700; easing.type: Easing.InOutQuad }
-            // a pulse that stops mid-breath leaves the ground dim
-            onRunningChanged: if (!running) ground.opacity = 1
-        }
     }
-    NumberAnimation on sheenPos {
-        running: skel.visible && skel.sweeping && skel.opacity > 0
-        loops: Animation.Infinite
-        from: -0.3; to: 1.3
-        duration: 1500
-        easing.type: Easing.InOutQuad
+    // The sweep and the breath are SkeletonClock's, one for every placeholder, so a
+    // row that appears late moves in step with the rest. Each counts itself in while
+    // it shows one, and the clock runs while any does.
+    readonly property bool moving: visible && sweeping && opacity > 0
+    readonly property bool breathing: visible && pulsing && opacity > 0
+    property bool countedSweep: false
+    property bool countedBreath: false
+    function recount() {
+        if (moving !== countedSweep) { SkeletonClock.sweepers += moving ? 1 : -1; countedSweep = moving }
+        if (breathing !== countedBreath) { SkeletonClock.pulsers += breathing ? 1 : -1; countedBreath = breathing }
+    }
+    onMovingChanged: recount()
+    onBreathingChanged: recount()
+    Component.onDestruction: {
+        if (countedSweep) SkeletonClock.sweepers -= 1
+        if (countedBreath) SkeletonClock.pulsers -= 1
     }
 
     Item {

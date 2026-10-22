@@ -647,7 +647,7 @@ Item {
         reuseItems: true
         cacheBuffer: 400
         remove: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 150 } }
-        add: Transition { enabled: view.loadedOnce; NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
+        add: AddFade { enabled: view.loadedOnce }
 
         readonly property bool compact: view.layout === "compact"
 
@@ -827,7 +827,7 @@ Item {
         reuseItems: true
         cacheBuffer: 400
         remove: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 150 } }
-        add: Transition { enabled: view.loadedOnce; NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
+        add: AddFade { enabled: view.loadedOnce }
 
         // text block is a fixed 144px design transform-scaled with the tile
         // (see tscale in the delegate) — reserve its SCALED height

@@ -138,6 +138,13 @@ if [ -n "$ARCH_LIST" ]; then
         d="$AL/arch/$base-$tag"
         P="https://gitlab.archlinux.org/archlinux/packaging/packages/$base/-"
         mkdir -p "$d"
+        # MELO_SRC_CACHE: a package and version fetched whole before is copied, not fetched again
+        c=${MELO_SRC_CACHE:+$MELO_SRC_CACHE/arch/$base-$tag}
+        if [ -n "$c" ] && [ -f "$c/.whole" ]; then
+            cp -a "$c/." "$d/"; rm -f "$d/.whole"
+            continue
+        fi
+        unresolvedBefore=$(wc -l < "$AL/UNRESOLVED.txt")
         $C -o "$d/packaging.tar.gz" "$P/archive/$tag/$base-$tag.tar.gz"
         $C "$P/raw/$tag/.SRCINFO" | sed -n 's/^\tsource\(_x86_64\)\{0,1\} = //p' > "$W/srcinfo"
         while read -r s; do
@@ -161,6 +168,10 @@ if [ -n "$ARCH_LIST" ]; then
                 $C -o "$d/${name:-${url##*/}}" "$url" || echo "$base $ver $url" >> "$AL/UNRESOLVED.txt" ;;
             esac   # anything else is a file in the packaging tarball
         done < "$W/srcinfo"
+        # cached only whole: a source that failed is fetched again next time
+        if [ -n "$c" ] && [ "$(wc -l < "$AL/UNRESOLVED.txt")" = "$unresolvedBefore" ]; then
+            mkdir -p "$c"; cp -a "$d/." "$c/"; touch "$c/.whole"
+        fi
     done < "$ARCH_LIST"
     cp "$ARCH_LIST" "$AL/arch/PACKAGES.txt"
 fi

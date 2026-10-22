@@ -410,7 +410,7 @@ Item {
         cacheBuffer: 400
         onAtYEndChanged: if (atYEnd && count > 0) view.loadMore()
         remove: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 150 } }
-        add: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
+        add: AddFade {}
 
         readonly property bool compact: view.layout === "compact"
 
@@ -626,7 +626,7 @@ Item {
         cacheBuffer: 400
         onAtYEndChanged: if (atYEnd && count > 0) view.loadMore()
         remove: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 150 } }
-        add: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
+        add: AddFade {}
 
         // scaled fixed-design text block — see HomeView's recGrid
         cellHeight: GridUi.cellHFor(cellWidth)

@@ -123,8 +123,10 @@ Item {
         }
         return null
     }
-    Component.onCompleted: { scroller = findScroller(); ensureLayer(); updateRect(); recount() }
-    Window.onWindowChanged: { scroller = findScroller(); updateRect() }
+    Component.onCompleted: { scroller = findScroller(); blank = Theme.blankFor(Window.window); ensureLayer(); updateRect(); recount() }
+    Window.onWindowChanged: { scroller = findScroller(); blank = Theme.blankFor(Window.window); updateRect() }
+    // set, not bound: finding it can build the window's FillCache, a binding loop
+    property Item blank: null
     Connections {
         target: Theme
         enabled: root.ready && root.visible
@@ -137,16 +139,18 @@ Item {
     }
 
     ShaderEffect {
+        id: fx
         anchors.fill: parent
         visible: root.direct
         fragmentShader: Qt.resolvedUrl("huelum.frag.qsb")
         blending: true
-        property variant source: root.direct ? root.src : null
+        // hidden, it still syncs: the window's blank, never null
+        property variant source: root.direct ? root.src : root.blank
         property rect srcRect: root.srcRect
         // Every declared sampler must be bound, so the unmasked case binds the backdrop
         // twice, but only when `direct` says it is in this window: bound across windows,
         // Qt refuses it and that window's backdrop readers stop drawing until restart.
-        property variant mask: root.mask ? root.mask : (root.direct ? root.src : null)
+        property variant mask: root.mask ? root.mask : fx.source
         property real hasMask: root.mask ? 1 : 0
         property real hue: root.hue
         property real lum: root.lum

@@ -542,12 +542,32 @@ jobs:
           du -m melo-x86_64.AppImage melo-anylinux-x86_64.AppImage melo-lite-x86_64.AppImage melo-*.rpm melo_*.deb melo-x86_64.pkg.tar.zst
           rm -rf "$RUNNER_TEMP/signing.asc" "$RUNNER_TEMP/gnupg"
 
+      # the sources go with a release; a nightly is not one. The Arch packages' sources
+      # are pinned versions, fetched once and kept: the fetch alone is 40 minutes
+      - name: Restore the Arch sources
+        if: env.KIND == 'alpha'
+        uses: actions/cache/restore@v4
+        with:
+          path: src-cache
+          key: arch-sources-${{ hashFiles('anylinux/arch-sources.txt') }}
+          restore-keys: arch-sources-
+
       - name: Sources
+        if: env.KIND == 'alpha'
+        env:
+          MELO_SRC_CACHE: ${{ github.workspace }}/src-cache
         run: |
           sed -n 's/^deb /deb-src /p' /etc/apt/sources.list | sudo tee /etc/apt/sources.list.d/melo-src.list >/dev/null
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends ubuntu-dev-tools   # pull-lp-source
           scripts/release-sources.sh AppDir melo-sources.tar anylinux/arch-sources.txt
+
+      - name: Keep the Arch sources
+        if: env.KIND == 'alpha'
+        uses: actions/cache/save@v4
+        with:
+          path: src-cache
+          key: arch-sources-${{ hashFiles('anylinux/arch-sources.txt') }}
 
       - name: Publish
         env:
@@ -556,7 +576,7 @@ jobs:
           files="melo-x86_64.AppImage melo-x86_64.AppImage.zsync
                  melo-anylinux-x86_64.AppImage melo-anylinux-x86_64.AppImage.zsync
                  melo-lite-x86_64.AppImage melo-lite-x86_64.AppImage.zsync
-                 $(echo melo-*.rpm melo_*.deb) melo-x86_64.pkg.tar.zst melo-sources.tar"
+                 $(echo melo-*.rpm melo_*.deb) melo-x86_64.pkg.tar.zst $(ls melo-sources.tar 2>/dev/null || true)"
           if [ "$KIND" = alpha ]; then
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
               --title "Alpha ${GITHUB_REF_NAME#alpha-}" --notes "" $files
@@ -569,7 +589,7 @@ jobs:
               gh release create nightly --prerelease --verify-tag --title "Nightly" --notes "$notes"
             fi
             # each nightly's deb and rpm have new names: upload, then remove the previous ones
-            old=$(gh release view nightly --json assets -q '.assets[].name' | grep -E '\.(deb|rpm)$' || true)
+            old=$(gh release view nightly --json assets -q '.assets[].name' | grep -E '\.(deb|rpm)$|^melo-sources\.tar$' || true)
             gh release upload nightly $files --clobber
             for a in $old; do
               case " $(echo $files) " in *" $a "*) ;; *) gh release delete-asset nightly "$a" -y ;; esac

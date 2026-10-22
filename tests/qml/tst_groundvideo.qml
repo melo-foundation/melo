@@ -105,6 +105,8 @@ Rectangle {
             failOnWarning(/Binding loop/)
             Theme.backdrop = ground
         }
+        // per test function: a failOnWarning lasts for the function it is called in
+        function init() { failOnWarning(/is not assigned a valid texture provider/) }
         function cleanupTestCase() { second.visible = false }
         function gpu() { return scene.GraphicsInfo.api !== GraphicsInfo.Software }
         function grey(c) { return Math.round(c.r * 255) }
@@ -259,6 +261,21 @@ Rectangle {
         function test_fit_letterbox_reads_the_ground_above_and_below_the_picture() {
             if (!gpu()) skip("ShaderEffect needs an RHI backend; use the command above")
             fitCase(Qt.rect(0, 30, 200, 60))
+        }
+
+        // An idle reader is hidden, and a hidden ShaderEffect still syncs its samplers
+        function test_an_idle_reader_binds_the_blank_not_null() {
+            const blank = Theme.blankFor(scene.Window.window)
+            verify(blank !== null)
+            scene.anyAdaptive = false
+            verify(!reader.direct)
+            compare(reader.children[0].source, blank, "the reader's backdrop sampler")
+            compare(groundRead.children[0].children[0].source, blank, "the ground copy's sampler")
+            waitForRendering(scene)
+            scene.anyAdaptive = true
+            tryCompare(reader, "direct", true)
+            compare(reader.children[0].source, groundRead.texture)
+            waitForRendering(scene)
         }
 
         function test_a_window_without_a_ground_cannot_read() {

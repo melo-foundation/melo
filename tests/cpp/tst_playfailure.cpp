@@ -346,6 +346,36 @@ private slots:
         QCOMPARE(streamRequests("unavailable3").size(), 1);
         QCOMPARE(state_.failCause(), QString("guestWall"));   // the playing track's, untouched
     }
+
+    // A plays with video wanted and A's next is prefetched, video goes off (Now Playing
+    // left), a new queue B starts, video comes back on: A's next is not asked for as B's.
+    void videoForTheNextTrackFollowsTheQueueNowPlaying() {
+        freshPlayer();
+        state_.setVideoSupported(true);
+        state_.setVideoWanted(true);
+        coord_->playQueue(QJsonArray{track("short1"), track("short2")}, 0);
+        QTRY_COMPARE_WITH_TIMEOUT(state_.currentTrack().id, QString("short1"), 5000);
+        for (int i = 0; i < 6; ++i) {   // near the end: the next track is prefetched
+            QVERIFY(QMetaObject::invokeMethod(engine_.get(), "positionTick",
+                                              Q_ARG(double, 90.0 + i), Q_ARG(double, 100.0)));
+            QTest::qWait(60);
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(!streamRequests("short2").isEmpty(), 3000);
+        state_.setVideoWanted(false);
+        QTest::qWait(100);
+        const qsizetype before = requests().size();
+        coord_->playQueue(QJsonArray{track("short3"), track("short4")}, 0);
+        QTRY_COMPARE_WITH_TIMEOUT(state_.currentTrack().id, QString("short3"), 5000);
+        state_.setVideoWanted(true);
+        QTest::qWait(300);
+        QStringList asked;
+        const auto all = requests();
+        for (qsizetype i = before; i < all.size(); ++i)
+            if (all[i]["m"].toString() == QLatin1String("yt/getVideoStream")) asked << all[i]["p"].toObject()["videoId"].toString();
+        qInfo() << "video asked after the new queue:" << asked;
+        QVERIFY2(!asked.contains("short2"), qPrintable("the old queue's next was asked: " + asked.join(",")));
+        QVERIFY(asked.contains("short3"));
+    }
 };
 
 QTEST_MAIN(TestPlayFailure)

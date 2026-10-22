@@ -22,6 +22,10 @@ Item {
     }
     width: 0; height: 0
     clip: true
+    // set, not bound: finding it can build the window's FillCache, a binding loop
+    property Item blank: null
+    Component.onCompleted: blank = Theme.blankFor(Window.window)
+    Window.onWindowChanged: blank = Theme.blankFor(Window.window)
     Item {
         id: tex
         width: host.base.width; height: host.base.height
@@ -29,7 +33,8 @@ Item {
         ShaderEffect {
             anchors.fill: parent
             visible: host.active
-            property variant source: host.active ? host.base : null
+            // hidden, it still syncs: the window's blank, never null
+            property variant source: host.active ? host.base : host.blank
         }
         Repeater {
             model: host.active ? Theme.groundPictures : []
@@ -40,7 +45,7 @@ Item {
                 readonly property bool mine: modelData !== null && modelData.Window.window === host.Window.window
                                              && modelData.layer.enabled
                 visible: mine
-                property variant source: mine ? modelData : null
+                property variant source: mine ? modelData : host.blank
                 opacity: mine ? modelData.opacity : 0
                 function place() {
                     if (!mine) return

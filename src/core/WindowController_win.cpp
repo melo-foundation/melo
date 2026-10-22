@@ -2,13 +2,8 @@
 // safe no-op; kwinAvailable() is false,
 // so QML uses its non-KWin fallbacks (client-side opacity swap, no blur).
 #include "WindowController.h"
-#include "../plugins/PluginJsGuard.h"
-#include <QDir>
-#include <QDesktopServices>
 #include <QGuiApplication>
-#include <QProcess>
 #include <QQuickWindow>
-#include <QUrl>
 
 void WindowController::initFocusTracking() {
     appActive_ = QGuiApplication::focusWindow() != nullptr;
@@ -33,34 +28,7 @@ bool WindowController::blurAvailable() const { return false; }
 bool WindowController::contrastAvailable() const { return false; }
 void WindowController::setInputRegion(QQuickWindow*, int, int, int, int) {}
 bool WindowController::alignForCollapse(int) { return false; }
-void WindowController::openFile(const QString& path) {
-    if (meloRefuseFromPlugin("WindowCtl.openFile")) return;
-    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
-}
-
-void WindowController::showFile(const QString& path) {
-    if (meloRefuseFromPlugin("WindowCtl.showFile")) return;
-    QProcess::startDetached(QStringLiteral("explorer"), {QStringLiteral("/select,"), QDir::toNativeSeparators(path)});
-}
-bool WindowController::alignForExpand(int, int, int) { return false; }
-bool WindowController::fitPopupHost(const QString&) { return false; }
-void WindowController::restackBelow(QQuickWindow*, QQuickWindow*) {}
-QString WindowController::stackOrder(QQuickWindow*, QQuickWindow*) { return QString(); }
-void WindowController::keepBufferInStep(QQuickWindow*) {}
-void WindowController::startSystemMove(QQuickWindow* win, QQuickWindow*) { if (win) win->startSystemMove(); }
-void WindowController::startSystemResize(QQuickWindow* win, int edges, QQuickWindow*) {
-    if (win) win->startSystemResize(Qt::Edges(edges));
-}
-bool WindowController::setWindowKeepAbove(QQuickWindow* win, bool on) {
-    if (!win) return false;
-    win->setFlag(Qt::WindowStaysOnTopHint, on);
-    return true;
-}
-bool WindowController::placePopupWindowOverMain(const QString&, int, int) { return false; }
-bool WindowController::watchPopupWindows(bool, bool) { return false; }
-bool WindowController::placePopupWindowBeside(const QString&) { return false; }
-bool WindowController::raisePopupWindow(const QString&) { return false; }
-bool WindowController::swapPopupWindows(const QString&, const QString&) { return false; }
+bool WindowController::alignForExpand(int, int) { return false; }
 bool WindowController::setWindowOpacities(const QVariantList&) { return false; }
 // false: the caller's own QWindow::setPosition already performed the move on
 // this platform (only Wayland needs the compositor to do it).
@@ -79,6 +47,5 @@ bool WindowController::watchWindowGeometry(const QStringList&) { return false; }
 // false: callers fall back to the client-side position, which IS authoritative
 // on this platform (only Wayland hides a window's position from its client).
 bool WindowController::reportMainGeometry() { return false; }
-bool WindowController::applyMainPosition(int, int, bool) { return false; }
-bool WindowController::applyMiniGeometry(int, int, int, int) { return false; }
+bool WindowController::applyMainPosition(int, int) { return false; }
 bool WindowController::applyMainGeometry(int, int, int, int) { return false; }
