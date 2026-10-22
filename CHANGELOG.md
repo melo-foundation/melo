@@ -1,5 +1,9 @@
 # Changelog
 
+## Alpha 3.2
+
+- Updated Node.js to 22.23.4, the October 2026 security release
+
 ## Alpha 3.1
 
 - Fixed blurry artwork in Now Playing
