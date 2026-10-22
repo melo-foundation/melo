@@ -35,7 +35,10 @@ vi.mock("./stream-relay", () => ({ relayUrl: async (raw: string) => raw }));
 import { fetchStreamUrl, setSessionBuilderForTest, fetchVideoStreamUrl, needsStreamRelay, ytdlpReason, streamIdentity, resolveIdentities, isBotWall } from "./streams";
 import type { SettingsV2 } from "./settings";
 import { invalidateStreamCache, invalidateVideoCache, primeVideoCacheForTest, primeStreamCacheForTest, videoCacheHas, streamCacheHas } from "./streams";
-import { WALL_MESSAGES, forgetWalls, setBrowserSignedInForTest, videoFormatSelector } from "./streams";
+import { WALL_MESSAGES, forgetWalls, setBrowserSignedInForTest, videoFormatSelector, setSleepForTest, REFUSED_STREAM, pickAudioFormat,
+         setPremiumForTest } from "./streams";
+import { withAdPlaybackContext } from "./streams";
+import { AUDIO_FORMAT } from "./ytdlp-proc";
 
 describe("needsStreamRelay", () => {
   it("is true for googlevideo CDN hosts", () => {
@@ -138,7 +141,7 @@ describe("fetchVideoStreamUrl", () => {
 
 // The ytdlp stand-in answers per identity (which cookie flag it got) and per
 // client (player_client, "default" when none is named).
-type Answer = { url: string } | { err: string };
+type Answer = { url: string; available_at?: number; format_id?: string } | { err: string };
 function ytdlpAnswers(table: (identity: string, client: string) => Answer) {
   h.ytdlp.mockImplementation(async (args: string[]) => {
     const identity = args.includes("--cookies-from-browser") ? "browser"
@@ -147,7 +150,7 @@ function ytdlpAnswers(table: (identity: string, client: string) => Answer) {
     const client = ex ? /player_client=([^;]+)/.exec(ex)![1] : "default";
     const a = table(identity, client);
     if ("err" in a) throw Object.assign(new Error("yt-dlp failed"), { stderr: `ERROR: [youtube] x: ${a.err}` });
-    return { stdout: JSON.stringify({ url: a.url, title: "t", channel: "c", duration: 1, thumbnail: "" }) };
+    return { stdout: JSON.stringify({ ...a, title: "t", channel: "c", duration: 1, thumbnail: "" }) };
   });
 }
 const WALL = "Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication.";
@@ -163,6 +166,7 @@ describe("fetchStreamUrl identities", () => {
     h.mergeGuestCookies.mockReset();
     h.poTokenSession.mockResolvedValue(null);   // innertube declines at once
     h.settings = { ...guestThenBrowser };
+    setPremiumForTest(async () => null);   // never a real account lookup
     vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
       status: String(url).includes("walled") ? 403 : 206,
       body: { cancel: () => {} },
@@ -282,6 +286,126 @@ describe("fetchStreamUrl identities", () => {
     expect((await fetchStreamUrl("idB")).ok).toBe(true);
   });
 
+  it("calls a refused URL refused, not the unavailable a later client says, and asks again next time", async () => {
+    h.settings = { ...guestThenBrowser, streamCookieSource: "same" };
+    ytdlpAnswers((_id, client) => client === "default" ? { url: WALLED } : { err: "This video is unavailable" });
+    expect(await fetchStreamUrl("idB2")).toEqual({ ok: false, error: REFUSED_STREAM });
+    expect(h.ytdlp).toHaveBeenCalledTimes(3);
+    expect(await fetchStreamUrl("idB2")).toEqual({ ok: false, error: REFUSED_STREAM });
+    expect(h.ytdlp).toHaveBeenCalledTimes(6);   // not remembered
+  });
+
+  it("keeps a refused URL's reason when the browser then finds the video unavailable", async () => {
+    ytdlpAnswers((id, client) => id === "guest" && client === "default" ? { url: WALLED } : { err: "Video unavailable" });
+    expect(await fetchStreamUrl("idB3")).toEqual({ ok: false, error: REFUSED_STREAM });
+  });
+
+  describe("available_at", () => {
+    let slept: number[];
+    let open: boolean;
+    const GATED = "https://rr1.googlevideo.com/videoplayback?expire=9999999999&clen=10&c=TVHTML5&gated";
+    beforeEach(() => {
+      slept = [];
+      open = false;
+      setSleepForTest(async (ms) => { slept.push(ms); open = true; });
+      vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
+        status: String(url).includes("gated") && !open ? 403 : 206,
+        body: { cancel: () => {} }, text: async () => "",
+      })));
+    });
+    afterEach(() => setSleepForTest(null));
+
+    it("waits until a second past it before probing the tail", async () => {
+      ytdlpAnswers(() => ({ url: GATED, available_at: Math.floor(Date.now() / 1000) + 3, format_id: "251" }));
+      expect((await fetchStreamUrl("idT1")).ok).toBe(true);
+      expect(slept).toHaveLength(1);
+      expect(slept[0]).toBeGreaterThan(2900);
+      expect(slept[0]).toBeLessThanOrEqual(4000);
+      expect(h.ytdlp).toHaveBeenCalledTimes(1);
+    });
+
+    it("waits at most 10 s", async () => {
+      ytdlpAnswers(() => ({ url: GATED, available_at: Math.floor(Date.now() / 1000) + 600 }));
+      expect((await fetchStreamUrl("idT2")).ok).toBe(true);
+      expect(slept).toEqual([10000]);
+    });
+
+    it("does not wait for a format already available", async () => {
+      ytdlpAnswers(() => ({ url: GOOD, available_at: Math.floor(Date.now() / 1000) - 5 }));
+      expect((await fetchStreamUrl("idT3")).ok).toBe(true);
+      expect(slept).toEqual([]);
+    });
+
+    it("logs the client that supplied the URL and the wait", async () => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        ytdlpAnswers(() => ({ url: GATED, available_at: Math.floor(Date.now() / 1000) + 3, format_id: "251" }));
+        expect((await fetchStreamUrl("idT4")).ok).toBe(true);
+        const lines = log.mock.calls.map((c) => String(c[0]));
+        expect(lines.some((l) => /yt-dlp resolved idT4 .*default c=TVHTML5 itag 251, waited \d\.\ds/.test(l))).toBe(true);
+        expect(lines.some((l) => l.includes(GATED))).toBe(false);
+      } finally { log.mockRestore(); }
+    });
+  });
+
+  it("asks web_music for the ad-free player response, except with the browser's cookies", async () => {
+    setPremiumForTest(async () => null);
+    ytdlpAnswers((id, client) => client === "web_music" && id === "guest" ? { url: GOOD } : { err: "Video unavailable" });
+    expect((await fetchStreamUrl("idP1")).ok).toBe(true);
+    const ex = (call: unknown[]) => (call[0] as string[]).find((a) => a.startsWith("youtube:")) ?? "";
+    expect(ex(h.ytdlp.mock.calls[1])).toMatch(/player_client=web_music;.*use_ad_playback_context=true/);
+    expect(ex(h.ytdlp.mock.calls[0])).not.toMatch(/use_ad_playback_context/);   // default client
+
+    h.ytdlp.mockReset();
+    h.settings = { ...guestThenBrowser, cookieSource: "browser" };
+    ytdlpAnswers((_id, client) => client === "web_music" ? { url: GOOD } : { err: "Video unavailable" });
+    expect((await fetchStreamUrl("idP2")).ok).toBe(true);
+    expect(ex(h.ytdlp.mock.calls[1])).not.toMatch(/use_ad_playback_context/);   // not known: not asked
+    setPremiumForTest(null);
+  });
+
+  it("gives the browser's cookies the ad-free response only once the account is known not Premium", async () => {
+    const ex = (call: unknown[]) => (call[0] as string[]).find((a) => a.startsWith("youtube:")) ?? "";
+    h.settings = { ...guestThenBrowser, cookieSource: "browser" };
+    try {
+      for (const [premium, id, asked] of [[false, "idP3", true], [true, "idP4", false]] as const) {
+        h.ytdlp.mockReset();
+        setPremiumForTest(async () => premium);
+        ytdlpAnswers((_id, client) => client === "web_music" ? { url: GOOD } : { err: "Video unavailable" });
+        expect((await fetchStreamUrl(id)).ok).toBe(true);
+        expect(/use_ad_playback_context=true/.test(ex(h.ytdlp.mock.calls[1]))).toBe(asked);
+      }
+    } finally { setPremiumForTest(null); }
+  });
+
+  it("asks for stereo opus, then AAC, never plain bestaudio first", async () => {
+    ytdlpAnswers(() => ({ url: GOOD }));
+    expect((await fetchStreamUrl("idF1")).ok).toBe(true);
+    const args: string[] = h.ytdlp.mock.calls[0][0];
+    expect(args[args.indexOf("-f") + 1]).toBe(AUDIO_FORMAT);
+    // ranked by yt-dlp, so a Premium account's higher-quality stereo formats come first
+    expect(AUDIO_FORMAT.split("/")).toEqual(["bestaudio[acodec=opus][audio_channels<=2]",
+      "bestaudio[ext=m4a][audio_channels<=2]", "bestaudio[audio_channels<=2]", "bestaudio", "best"]);
+  });
+
+  it("picks the in-process stream as yt-dlp would: best stereo opus, Premium's first", () => {
+    const f = (itag: number, mime: string, q: string, bitrate: number, extra: object = {}) =>
+      ({ itag, mime_type: mime, audio_quality: q, bitrate, audio_channels: 2, ...extra });
+    const standard = [
+      f(140, 'audio/mp4; codecs="mp4a.40.2"', "AUDIO_QUALITY_MEDIUM", 130000),
+      f(251, 'audio/webm; codecs="opus"', "AUDIO_QUALITY_MEDIUM", 135000, { is_drc: true }),
+      f(251, 'audio/webm; codecs="opus"', "AUDIO_QUALITY_MEDIUM", 130000),
+      f(250, 'audio/webm; codecs="opus"', "AUDIO_QUALITY_LOW", 70000),
+      f(258, 'audio/mp4; codecs="mp4a.40.2"', "AUDIO_QUALITY_HIGH", 390000, { audio_channels: 6 }),
+    ];
+    const plain = pickAudioFormat(standard);
+    expect(plain?.itag).toBe(251);
+    expect((plain as { is_drc?: boolean }).is_drc).toBeFalsy();   // not the DRC copy
+    const premium = [...standard, f(774, 'audio/webm; codecs="opus"', "AUDIO_QUALITY_HIGH", 260000)];
+    expect(pickAudioFormat(premium)?.itag).toBe(774);
+    expect(pickAudioFormat(standard.filter((x) => !/opus/.test(x.mime_type)))?.itag).toBe(140);
+  });
+
   it("never asks the browser when the guest resolves", async () => {
     ytdlpAnswers((id) => id === "guest" ? { url: GOOD } : { err: "should not be asked" });
     expect((await fetchStreamUrl("idK")).ok).toBe(true);
@@ -353,8 +477,31 @@ describe("fetchStreamUrl identities", () => {
           : { playability_status: { status: "UNPLAYABLE", reason: "Video unavailable" } };
       },
     }) as never);
-    expect((await fetchStreamUrl("idH")).ok).toBe(true);
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect((await fetchStreamUrl("idH")).ok).toBe(true);
+      expect(log.mock.calls.some((c) => /innertube resolved idH .*; MWEB itag 251\)/.test(String(c[0])))).toBe(true);
+    } finally { log.mockRestore(); }
     expect(asked).toEqual(["YTMUSIC", "MWEB"]);
+  });
+});
+
+describe("withAdPlaybackContext", () => {
+  it("adds the ad playback context to MWEB and YT Music player requests only", async () => {
+    const seen: [string, any][] = [];
+    const actions = { execute: async (endpoint: string, args?: any) => { seen.push([endpoint, args]); return {}; } };
+    withAdPlaybackContext(actions);
+    const ctx = { contentPlaybackContext: { signatureTimestamp: 1 } };
+    await actions.execute("/player", { client: "MWEB", playbackContext: ctx, parse: true });
+    await actions.execute("player", { client: "YTMUSIC", playbackContext: ctx });   // as getBasicInfo calls it
+    await actions.execute("/player", { client: "WEB", playbackContext: ctx });
+    await actions.execute("/next", { client: "MWEB" });
+    expect(seen[0][1]).toEqual({ client: "MWEB", parse: true,
+      playbackContext: { contentPlaybackContext: { signatureTimestamp: 1 }, adPlaybackContext: { pyv: true } } });
+    expect(seen[1][1].playbackContext.adPlaybackContext).toEqual({ pyv: true });
+    expect(seen[2][1].playbackContext.adPlaybackContext).toBeUndefined();
+    expect(seen[3][1]).toEqual({ client: "MWEB" });
+    expect(ctx).toEqual({ contentPlaybackContext: { signatureTimestamp: 1 } });
   });
 });
 
@@ -371,7 +518,7 @@ describe("videoFormatSelector", () => {
 
 // A format list per identity and client, and a selector evaluated against it the
 // way yt-dlp does: the first alternative with a match wins.
-type Fmt = { vcodec: string; acodec: string; height: number; protocol: string; url: string };
+type Fmt = { vcodec: string; acodec: string; height: number; protocol: string; url: string; available_at?: number };
 function pick(selector: string, formats: Fmt[]): Fmt | null {
   for (const alt of selector.split("/")) {
     const m = /^(bv|b)((?:\[[^\]]+\])*)$/.exec(alt);
@@ -408,7 +555,8 @@ describe("fetchVideoStreamUrl identities", () => {
       if ("err" in t) throw fail(t.err);
       const f = pick(args[args.indexOf("-f") + 1], t);
       if (!f) throw fail("Requested format is not available. Use --list-formats for a list of available formats");
-      return { stdout: JSON.stringify({ url: f.url, height: f.height, width: f.height * 16 / 9, tbr: 2500 }) };
+      return { stdout: JSON.stringify({ url: f.url, height: f.height, width: f.height * 16 / 9, tbr: 2500,
+                                        available_at: f.available_at }) };
     });
   }
   beforeEach(() => {
@@ -442,6 +590,21 @@ describe("fetchVideoStreamUrl identities", () => {
     formatsBy(userCase([]));
     const r = await fetchVideoStreamUrl("vidU3", 720, ["av1"]);
     expect(r).toEqual({ ok: false, error: expect.stringMatching(/^Requested format is not available/) });
+  });
+
+  it("waits out a gated picture's available_at before probing it", async () => {
+    const slept: number[] = [];
+    setSleepForTest(async (ms) => { slept.push(ms); });
+    try {
+      const gated = { ...DASH_720, url: DASH_720.url + "&gatedv", available_at: Math.floor(Date.now() / 1000) + 2 };
+      formatsBy(() => [gated]);
+      vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
+        status: String(url).includes("gatedv") && !slept.length ? 403 : 206,
+        body: { cancel: () => {} }, text: async () => "" })));
+      const r = await fetchVideoStreamUrl("vidG1", 720, ["vp9"]);
+      expect(r).toMatchObject({ ok: true, url: gated.url });
+      expect(slept).toHaveLength(1);
+    } finally { setSleepForTest(null); }
   });
 
   it("names the browser when every client under it met the wall", async () => {

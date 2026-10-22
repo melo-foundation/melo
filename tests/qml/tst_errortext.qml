@@ -81,6 +81,16 @@ TestCase {
         verify(ErrorText.rpc("plugins/rescan").report)
     }
 
+    // a refused stream is YouTube's refusal, never the network wall or "unavailable"
+    function test_a_refused_stream_is_its_own_failure() {
+        const t = ErrorText.play("other", "YouTube refused the stream", false, false)
+        compare(t.text, "YouTube refused this track's stream. Try again.")
+        compare(t.fix, "retry")
+        verify(!t.report)
+        verify(t.text.indexOf("network") < 0)
+        compare(ErrorText.download("ERROR: Unable to download webpage: HTTP Error 403: Forbidden").text, "The download failed.")
+    }
+
     // the yt-dlp download failing reads the same in the dialog and the download bar
     function test_one_cause_one_wording() {
         const raw = "yt-dlp could not be downloaded; check the connection and try again"

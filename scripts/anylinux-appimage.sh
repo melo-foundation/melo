@@ -35,7 +35,7 @@ LLVM_SHA256=f186b7d2f8367e3b53f0192a9ad60e69987188efa7a2c0770577fb3f03981170
 # the full AppImage's plugin set; videoconvert is videoconvertscale since GStreamer 1.22
 PLUGINS="coreelements app playback typefindfunctions audioconvert audioresample volume
 autodetect audiomixer equalizer audioparsers ogg vorbis opus opusparse faad mpg123 flac
-wavparse isomp4 matroska id3demux soup pulseaudio alsa vpx videoconvertscale videoparsersbad"
+wavparse isomp4 matroska id3demux soup pulseaudio alsa vpx videoconvertscale videoparsersbad audiofx"
 
 pacman -Syu --noconfirm --needed \
 	patchelf strace binutils wget file findutils xorg-server-xvfb xorg-xauth \

@@ -12,10 +12,13 @@ const UNAVAILABLE = /video unavailable|this video is (private|unavailable|no lon
 const YTDLP_MISSING = /yt-dlp could not be downloaded/i
 const DISK_FULL = /No space left|ENOSPC|disk (is )?full|quota/i
 const NO_WRITE = /Permission denied|EACCES|EPERM|read-only file system|EROFS/i
+// a URL came back and googlevideo refused it (streams.ts REFUSED_STREAM)
+const REFUSED = /refused the stream/i
 
 function classOf(raw) {
     const s = String(raw || "")
     if (YTDLP_MISSING.test(s)) return "ytdlp"
+    if (REFUSED.test(s)) return "refused"
     if (UNAVAILABLE.test(s)) return "unavailable"
     if (DISK_FULL.test(s)) return "disk"
     if (NO_WRITE.test(s)) return "nowrite"
@@ -32,6 +35,7 @@ const NO_ANSWER = "YouTube didn't answer. " + CONNECTION
 const YTDLP_TEXT = "yt-dlp didn't download. " + CONNECTION
 const STALE_TEXT = "yt-dlp is out of date."
 const UNAVAILABLE_TEXT = "YouTube says this video is unavailable."
+const REFUSED_TEXT = "YouTube refused this track's stream. Try again."
 const DISK_TEXT = "The disk is full. Free some space."
 const NO_WRITE_TEXT = "melo can't write to the download folder. Pick another one in Settings."
 
@@ -59,6 +63,7 @@ function playText(cause, reason, stale) {
     switch (classOf(reason)) {
     case "ytdlp": return out(YTDLP_TEXT, "retry")
     case "unavailable": return out(UNAVAILABLE_TEXT, "skip")
+    case "refused": return out(REFUSED_TEXT, "retry")
     case "server": return out(SERVER_TEXT, "retry")
     case "network": return out(NO_ANSWER, "retry")
     }

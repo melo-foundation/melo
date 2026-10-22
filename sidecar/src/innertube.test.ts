@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseNextResponse, hasAuthCookie, cookiesForHost, parseAccountMenu, authCookie, signedInFrom } from "./innertube";
+import { parseNextResponse, hasAuthCookie, cookiesForHost, parseAccountMenu, parsePremium, authCookie, signedInFrom } from "./innertube";
 
 // Shape taken from a live /next response: the related list ends in a
 // continuation item, and the numbers live in the primary/secondary renderers.
@@ -191,6 +191,27 @@ describe("parseAccountMenu", () => {
   it("is null for a signed-out response, which carries no account header", () => {
     expect(parseAccountMenu({ actions: [{ openPopupAction: { popup: {} } }] })).toBeNull();
     expect(parseAccountMenu({})).toBeNull();
+  });
+});
+
+// Premium, as yt-dlp's _is_premium_subscriber reads it: the top bar's logo.
+// Signed-out shape from a live browse response (2026-10-22).
+describe("parsePremium", () => {
+  const bar = (iconType: string, tip: string) => ({ topbar: { desktopTopbarRenderer: { logo: { topbarLogoRenderer: {
+    iconImage: { iconType }, tooltipText: { runs: [{ text: tip }] } } } } } });
+
+  it("is true for the Premium logo or a tooltip naming Premium", () => {
+    expect(parsePremium(bar("YOUTUBE_PREMIUM_LOGO", "YouTube Home"))).toBe(true);
+    expect(parsePremium(bar("YOUTUBE_LOGO", "YouTube Premium Home"))).toBe(true);
+  });
+
+  it("is false for the plain logo", () => {
+    expect(parsePremium(bar("YOUTUBE_LOGO", "YouTube Home"))).toBe(false);
+  });
+
+  it("is null when the response has no logo to read", () => {
+    expect(parsePremium({})).toBeNull();
+    expect(parsePremium({ topbar: {} })).toBeNull();
   });
 });
 

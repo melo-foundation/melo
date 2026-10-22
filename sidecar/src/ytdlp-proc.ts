@@ -123,6 +123,11 @@ function stopTree(child: ChildProcess, grace = true): void {
 export interface RunOptions { timeout?: number; maxBuffer?: number }
 export interface RunResult { stdout: string; stderr: string }
 
+// The best stereo opus, then AAC: Premium's 774/141 where the account has them,
+// else 251/140. Plain bestaudio picks TV itag 258, 6-channel AAC at ~3x the bytes.
+export const AUDIO_FORMAT =
+  "bestaudio[acodec=opus][audio_channels<=2]/bestaudio[ext=m4a][audio_channels<=2]/bestaudio[audio_channels<=2]/bestaudio/best";
+
 // A full disk shows up as PyInstaller failing to unpack a module.
 export const UNPACK_FAILED = /Failed to extract|No space left on device|Disk quota exceeded/;
 export const unpackFailedMessage = (): string => `yt-dlp could not unpack into ${privateTmp()}: the disk is full`;

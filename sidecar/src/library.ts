@@ -7,6 +7,7 @@ import { isSafeIdForPath } from "./trackid";
 import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import { ytdlp } from "./ytdlp";
+import { AUDIO_FORMAT } from "./ytdlp-proc";
 import { type TrackMetadata } from "./metadata";
 
 
@@ -211,7 +212,7 @@ async function doDownload(videoId: string, cookieArgsFn: () => Promise<string[]>
     const outputTemplate = join(downloadPath, `${videoId}.%(ext)s`);
     await ytdlp([
         ...cArgs,
-        "-f", "bestaudio/best",
+        "-f", AUDIO_FORMAT,
         "-o", outputTemplate,
         "--no-warnings",
         "--no-playlist",

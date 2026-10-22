@@ -55,6 +55,7 @@ interface SearchPlaylistResult {
 const browserCookies = new Map<string, Cookie[]>();
 // who each identity is, keyed like identityKey(); cleared with the cookies
 const accountCache = new Map<string, AccountInfo | null>();
+const premiumCache = new Map<string, boolean>();   // by browser
 let cachedVisitorData: string | null = null;
 
 // Reads in flight, so callers asking at once share one read (and one prompt).
@@ -206,6 +207,14 @@ export function parseAccountMenu(data: any): AccountInfo | null {
   };
 }
 
+// Premium from the top bar's logo, as yt-dlp's _is_premium_subscriber reads it;
+// null when the response carries no logo
+export function parsePremium(data: any): boolean | null {
+  const logo = findKey(data?.topbar, "topbarLogoRenderer");
+  if (!logo) return null;
+  return logo.iconImage?.iconType === "YOUTUBE_PREMIUM_LOGO" || /premium/i.test(textOf(logo.tooltipText));
+}
+
 function identityKey(source: CookieSource, browser: string, profile: string): string {
   return source === "browser" ? `browser:${browser}` : source === "guest" ? `guest:${profile}` : "none";
 }
@@ -217,6 +226,36 @@ function identityKey(source: CookieSource, browser: string, profile: string): st
 export function forgetBrowser(browser: string): void {
   browserCookies.delete(browser);
   accountCache.delete(identityKey("browser", browser, ""));
+  premiumCache.delete(browser);
+}
+
+// Whether the browser's account is Premium, from the home page's top bar: one
+// request per browser, kept like the account. null: not known (no answer).
+export async function fetchBrowserPremium(browser: string): Promise<boolean | null> {
+  const hit = premiumCache.get(browser);
+  if (hit !== undefined) return hit;
+  const origin = "https://www.youtube.com";
+  try {
+    const headers = await buildHeaders(origin, "browser", browser, "");
+    // signed out: nobody to be Premium
+    if (!headers["Authorization"]) { premiumCache.set(browser, false); return false; }
+    headers["User-Agent"] = USER_AGENT;
+    const res = await fetch(`${origin}/youtubei/v1/browse?prettyPrint=false`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ browseId: "FEwhat_to_watch", context: { client: {
+        clientName: "WEB", clientVersion: "2.20260301.00.00", hl: localePref().hl, gl: localePref().gl,
+      } } }),
+    });
+    if (!res.ok) { console.error(`[account] ${browser}: Premium unknown (browse ${res.status})`); return null; }
+    const premium = parsePremium(await res.json());
+    console.error(`[account] ${browser}: Premium ${premium === null ? "unknown (no logo)" : premium ? "yes" : "no"}`);
+    if (premium !== null) premiumCache.set(browser, premium);
+    return premium;
+  } catch (e) {
+    console.error(`[account] ${browser}: Premium unknown (${String(e).split("\n")[0]})`);
+    return null;
+  }
 }
 
 // Signed in means YouTube names an account: during a sign-out the auth cookie

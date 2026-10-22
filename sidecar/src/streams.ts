@@ -17,10 +17,10 @@ import {
 } from "./guest-cookies";
 import { getDownloadedUrl, getTrackMetadata } from "./library";
 import {
-  browserUnread, cookiesForHost, fetchMusicAlbum, fetchMusicRadio, forgetBrowser, hasAuthCookie, noteKeyringFailure,
-  resolveCookies,
+  browserUnread, cookiesForHost, fetchBrowserPremium, fetchMusicAlbum, fetchMusicRadio, forgetBrowser, hasAuthCookie,
+  noteKeyringFailure, resolveCookies,
 } from "./innertube";
-import { UNPACK_FAILED, unpackFailedMessage } from "./ytdlp-proc";
+import { AUDIO_FORMAT, UNPACK_FAILED, unpackFailedMessage } from "./ytdlp-proc";
 import { relayUrl } from "./stream-relay";
 import { looksStale, ytdlp, ytdlpChannel } from "./ytdlp";
 import { notify, RpcError } from "./rpc";
@@ -142,14 +142,41 @@ function buildSession([source, browser, profile]: Identity): Promise<Innertube> 
     // picks its own default, so a track's title could differ between the
     // list it was browsed in and the stream that played it.
     const { hl, gl } = localePref();
-    return Innertube.create({
+    const yt = await Innertube.create({
       cache: new UniversalCache(true, join(dataDir(), "yjs-cache")),
       cookie,
       lang: hl,
       location: gl,
       ...(pot ? { po_token: await pot.mint(pot.visitorData), visitor_data: pot.visitorData } : {}),
     });
+    const ads = await adContextFor(source, browser);
+    if (ads) withAdPlaybackContext(yt.session.actions as never);
+    console.error(`[streams] session ready (${source}; ad context ${ads ? "on" : "off"})`);
+    return yt;
   })();
+}
+
+// The ad playback context YouTube's MWEB and YT Music players send (yt-dlp's
+// use_ad_playback_context). Without it a pre-roll ad placement walls the tail of
+// some formats: iTHtXgnhqfM's opus 251 403s past 94.8%. A Premium account loses
+// its formats with it, so the browser's cookies get it only once known not Premium.
+const AD_CONTEXT_CLIENTS = new Set(["MWEB", "YTMUSIC"]);
+
+let premiumOf: (browser: string) => Promise<boolean | null> = fetchBrowserPremium;
+export function setPremiumForTest(f: ((browser: string) => Promise<boolean | null>) | null): void {
+  premiumOf = f ?? fetchBrowserPremium;
+}
+async function adContextFor(source: CookieSource, browser: string): Promise<boolean> {
+  return source !== "browser" || (await premiumOf(browser)) === false;
+}
+
+type Execute = (endpoint: string, args?: any) => Promise<unknown>;
+export function withAdPlaybackContext(actions: { execute: Execute }): void {
+  const execute = actions.execute.bind(actions);
+  actions.execute = (endpoint, args) => execute(endpoint,
+    /(^|\/)player$/.test(endpoint) && AD_CONTEXT_CLIENTS.has(args?.client)
+      ? { ...args, playbackContext: { ...args.playbackContext, adPlaybackContext: { pyv: true } } }
+      : args);
 }
 
 function getSessionFor(id: Identity): Promise<Innertube> {
@@ -184,7 +211,7 @@ const FAST_CLIENTS = ["YTMUSIC", "MWEB"] as const;
 
 async function playableInfo(
   yt: Innertube, videoId: string, tag: string,
-): Promise<{ info: Awaited<ReturnType<Innertube["getBasicInfo"]>> } | { why: string }> {
+): Promise<{ info: Awaited<ReturnType<Innertube["getBasicInfo"]>>; client: string } | { why: string }> {
   const why: string[] = [];
   for (const client of FAST_CLIENTS) {
     try {
@@ -192,7 +219,7 @@ async function playableInfo(
       const st = info.playability_status;
       if (st?.status === "OK") {
         if (why.length) console.error(`[${tag}] innertube ${why.join(", ")} for ${videoId}; ${client} answered`);
-        return { info };
+        return { info, client };
       }
       why.push(`${client} ${st?.status ?? "unknown"}${st?.reason ? ` (${st.reason})` : ""}`);
     } catch (e) {
@@ -206,6 +233,17 @@ async function playableInfo(
 function withVideoPot(url: string, token: string): string {
   const stripped = url.replace(/([?&])pot=[^&]*/, "$1");
   return `${stripped}${stripped.includes("?") ? "&" : "?"}pot=${token}`;
+}
+
+// AUDIO_FORMAT's order for the in-process path: the best stereo opus, then AAC,
+// a DRC copy after its plain twin; Premium's high quality ranks above medium
+const AUDIO_QUALITY: Record<string, number> = { AUDIO_QUALITY_LOW: 0, AUDIO_QUALITY_MEDIUM: 1, AUDIO_QUALITY_HIGH: 2 };
+export function pickAudioFormat<F extends { mime_type?: string; audio_channels?: number; is_drc?: boolean;
+                                            audio_quality?: string; bitrate?: number }>(fmts: F[]): F | undefined {
+  const rank = (f: F) => (AUDIO_QUALITY[f.audio_quality ?? ""] ?? 0) * 1e7 + (f.bitrate ?? 0) - (f.is_drc ? 5e6 : 0);
+  const stereo = fmts.filter((f) => (f.audio_channels ?? 2) <= 2);
+  const best = (re: RegExp) => stereo.filter((f) => re.test(f.mime_type ?? "")).sort((a, b) => rank(b) - rank(a))[0];
+  return best(/opus/) ?? best(/mp4a/) ?? stereo[0] ?? fmts[0];
 }
 
 async function innertubeStream(
@@ -226,8 +264,7 @@ async function innertubeStream(
   const info = played.info;
   const fmts = (info.streaming_data?.adaptive_formats ?? [])
     .filter((f: any) => f.has_audio && !f.has_video);
-  const pick = fmts.find((f: any) => f.itag === 251)
-    ?? fmts.find((f: any) => f.itag === 140) ?? fmts[0];
+  const pick = pickAudioFormat(fmts);
   if (!pick) return decline("no audio-only format");
   const deciphered = await pick.decipher(yt.session.player);
   if (typeof deciphered !== "string" || !deciphered.startsWith("http"))
@@ -256,6 +293,7 @@ async function innertubeStream(
     duration: b.duration ?? 0,
     thumbnail: b.thumbnail?.[0]?.url ?? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
     expiresAt: cacheExpiryMs(url),
+    source: `${played.client} itag ${pick.itag}`,
   };
 }
 
@@ -680,7 +718,7 @@ async function guestVisitorData(): Promise<string> {
 }
 
 async function streamClientArgs(
-  client: string | null, haveIdentity: boolean, pot: PoToken | null,
+  client: string | null, haveIdentity: boolean, pot: PoToken | null, id: Identity,
 ): Promise<string[]> {
   // Default client: let yt-dlp choose, and do not name a po_token client
   // (the token is keyed by client name, which we do not know here). It works
@@ -691,6 +729,8 @@ async function streamClientArgs(
     return vd ? ["--extractor-args", `youtube:visitor_data=${vd}`] : [];
   }
   const parts = [`player_client=${client}`];
+  // the ad-free player response skips the ad gate
+  if (client === "web_music" && await adContextFor(id[0], id[1])) parts.push("use_ad_playback_context=true");
   if (pot) {
     // The token is bound to the identity it was minted against, so that same
     // visitor_data has to ride along or googlevideo rejects the pairing.
@@ -847,6 +887,10 @@ interface CachedStream {
   headers?: Record<string, string>;
   title: string; channel: string; duration: number; thumbnail: string;
   expiresAt: number;
+  /** ms; googlevideo 403s every byte before it */
+  availableAt?: number;
+  /** who supplied the URL, for the log */
+  source?: string;
 }
 const streamCache = new Map<string, CachedStream>();
 const EXPIRY_MARGIN_MS = 5 * 60 * 1000;
@@ -919,15 +963,44 @@ async function toVideoResult(c: CachedVideo): Promise<VideoStreamResult> {
   };
 }
 
+// yt-dlp's available_at: a pre-roll ad gates the URL until then. Wait a second
+// past it, as yt-dlp's own downloader does, at most 10 s.
+const GATE_MAX_WAIT_MS = 10_000;
+
+function availableAtMs(data: { available_at?: unknown }): number {
+  const t = Number(data.available_at);
+  return Number.isFinite(t) && t > 0 ? t * 1000 + 1000 : 0;
+}
+
+let sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** @internal test seam; null restores the real timer. */
+export function setSleepForTest(f: ((ms: number) => Promise<void>) | null): void {
+  sleep = f ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
+}
+
+/** Waits out the gate; returns the ms waited. */
+async function waitUntilAvailable(at: number | undefined): Promise<number> {
+  const ms = Math.min((at ?? 0) - Date.now(), GATE_MAX_WAIT_MS);
+  if (ms <= 0) return 0;
+  await sleep(ms);
+  return ms;
+}
+
+/** The URL's client (`c=`) and itag, never the URL. */
+function urlSource(client: string | null, raw: string, formatId: unknown): string {
+  const c = /[?&]c=([^&]+)/.exec(raw)?.[1] ?? "?";
+  return `${client ?? "default"} c=${c} itag ${typeof formatId === "string" && formatId ? formatId : "?"}`;
+}
+
 async function resolveWithClient(
   videoId: string, client: string | null, cookies: string[], haveIdentity: boolean,
-  pot: PoToken | null,
+  pot: PoToken | null, id: Identity,
 ): Promise<CachedStream> {
   // Only the fields read below: the whole `-j` record of a long video with many
   // caption tracks passes the 10 MB maxBuffer, and the run is killed.
-  const { stdout, stderr } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
-     ...YTDLP_COMMON, "-f", "bestaudio/best",
-     "-O", "%(.{url,http_headers,title,channel,uploader,duration,thumbnail})j",
+  const { stdout, stderr } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot, id)),
+     ...YTDLP_COMMON, "-f", AUDIO_FORMAT,
+     "-O", "%(.{url,http_headers,title,channel,uploader,duration,thumbnail,available_at,format_id})j",
      `https://www.youtube.com/watch?v=${videoId}`],
     { timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
   );
@@ -943,6 +1016,8 @@ async function resolveWithClient(
     duration: data.duration,
     thumbnail: data.thumbnail,
     expiresAt: cacheExpiryMs(raw),
+    availableAt: availableAtMs(data),
+    source: urlSource(client, raw, data.format_id),
   };
 }
 
@@ -980,6 +1055,10 @@ function failsWithIdentity(id: Identity, reason: string): boolean {
   return identitySensitive(reason) || (id[0] === "browser" && !isTerminal(reason));
 }
 
+/** A URL came back and googlevideo refused it after its gate: not a bot wall,
+ *  and never remembered as one. */
+export const REFUSED_STREAM = "YouTube refused the stream";
+
 /** Every client failed. `identity`: another identity could pass. */
 export class ResolveFailed extends Error {
   constructor(message: string, readonly stderr: string, readonly identity: boolean) {
@@ -1004,13 +1083,17 @@ export async function runYtdlpStream(videoId: string, id: Identity): Promise<Str
   // to a URL delivering 0 bytes, so it must never beat web_music.
   let lastRaw = "";
   let wallReason = "";
+  let refused = false;
   let identity = false;
   for (const client of STREAM_CLIENTS) {
     try {
-      const resolved = await resolveWithClient(videoId, client, cookies, haveIdentity, pot);
+      const resolved = await resolveWithClient(videoId, client, cookies, haveIdentity, pot, id);
+      const waited = await waitUntilAvailable(resolved.availableAt);
+      resolved.source += `, waited ${(waited / 1000).toFixed(1)}s`;
       if (needsStreamRelay(resolved.raw) && !(await tailIsReadable(resolved.raw, resolved.headers))) {
-        console.error(`[streams] ${client ?? "default"} returned a walled URL for ${videoId} — trying next`);
+        console.error(`[streams] ${resolved.source}: URL refused for ${videoId} — trying next`);
         lastRaw = `${client ?? "default"} URL is not fully readable`;
+        refused = true;
         identity = true;
         continue;
       }
@@ -1027,6 +1110,8 @@ export async function runYtdlpStream(videoId: string, id: Identity): Promise<Str
     }
   }
   if (wallReason) throw botWallError(wallReason, id[0]);
+  // a URL at all: the video exists, so a later client's "unavailable" is only that client's
+  if (refused) throw new ResolveFailed(REFUSED_STREAM, lastRaw, true);
   throw new ResolveFailed(ytdlpReason(lastRaw), lastRaw, identity);
 }
 
@@ -1102,6 +1187,7 @@ async function resolveStream(videoId: string): Promise<StreamResult | StreamErro
   const rawOf = (e: any) => String(e?.stderr || e);
   let wall: RpcError | null = null;
   let lastMsg = "";
+  let refused = false;
   // what the browser's cookies did, when they were tried
   let browser: { name: string; outcome: BrowserOutcome; reason: string } | null = null;
   for (const id of resolveIdentities(loadSettings())) {
@@ -1119,7 +1205,7 @@ async function resolveStream(videoId: string): Promise<StreamResult | StreamErro
           const fast = await innertubeStream(videoId, id, declined);
           if (fast) {
             streamCache.set(videoId, fast);
-            console.error(`[streams] innertube resolved ${videoId} in ${Date.now() - tf}ms (${id[0]})`);
+            console.error(`[streams] innertube resolved ${videoId} in ${Date.now() - tf}ms (${id[0]}; ${fast.source})`);
             return toStreamResult(fast);
           }
         } catch (e) {
@@ -1129,7 +1215,8 @@ async function resolveStream(videoId: string): Promise<StreamResult | StreamErro
       }
       const t0 = Date.now();
       const res = await runYtdlpStream(videoId, id);
-      console.error(`[streams] yt-dlp resolved ${videoId} in ${Date.now() - t0}ms (${id[0]})`);
+      const source = streamCache.get(videoId)?.source;
+      console.error(`[streams] yt-dlp resolved ${videoId} in ${Date.now() - t0}ms (${id[0]}${source ? `; ${source}` : ""})`);
       return res;
     } catch (err: any) {
       let e = err;
@@ -1144,6 +1231,7 @@ async function resolveStream(videoId: string): Promise<StreamResult | StreamErro
         }
       }
       if (e instanceof RpcError) { noteWall(e); continue; }
+      if (e instanceof ResolveFailed && e.message === REFUSED_STREAM) refused = true;
       lastMsg = rawOf(e);
       if (id[0] === "browser") {
         const reason = ytdlpReason(lastMsg);
@@ -1157,6 +1245,7 @@ async function resolveStream(videoId: string): Promise<StreamResult | StreamErro
   }
   // a thrown RpcError reaches the player with its code
   if (wall) return wallOutcome(videoId, wall, browser);
+  if (refused) return { ok: false, error: REFUSED_STREAM };
   maybeReportStale(lastMsg);
   return { ok: false, error: ytdlpReason(lastMsg) || "Failed to get stream" };
 }
@@ -1229,10 +1318,10 @@ async function ytdlpVideo(
   const format = videoFormatSelector(maxHeight, codecs);
   for (const client of STREAM_CLIENTS) {
     try {
-      const { stdout, stderr } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot)),
+      const { stdout, stderr } = await ytdlp([...cookies, ...(await streamClientArgs(client, haveIdentity, pot, id)),
         ...YTDLP_COMMON,
         "-f", format,
-        "-O", "%(.{url,http_headers,width,height,vbr,tbr})j",
+        "-O", "%(.{url,http_headers,width,height,vbr,tbr,available_at,format_id})j",
         `https://www.youtube.com/watch?v=${videoId}`],
         { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
       noteKeyringFrom(cookies, stderr);
@@ -1240,9 +1329,15 @@ async function ytdlpVideo(
       const raw = typeof data.url === "string" ? data.url : "";
       if (!raw) continue;
       const headers = ytdlpHttpHeaders(data);
-      if (!(await tailIsReadable(raw, headers))) { last.identity = true; continue; }
+      const waited = await waitUntilAvailable(availableAtMs(data));
+      const source = `${urlSource(client, raw, data.format_id)}, waited ${(waited / 1000).toFixed(1)}s`;
+      if (!(await tailIsReadable(raw, headers))) {
+        console.error(`[video] ${source}: URL refused for ${videoId} — trying next`);
+        last.identity = true;
+        continue;
+      }
       const kbps = Number(data.vbr ?? data.tbr ?? 0);
-      console.error(`[video] yt-dlp ${client ?? "default"} resolved ${videoId} at ${data.height ?? "?"}p (${id[0]})`);
+      console.error(`[video] yt-dlp resolved ${videoId} at ${data.height ?? "?"}p (${id[0]}; ${source})`);
       return {
         videoId, raw, headers,
         still: isStillFormat({ width: data.width, height: data.height, bitrate: kbps * 1000 }),
