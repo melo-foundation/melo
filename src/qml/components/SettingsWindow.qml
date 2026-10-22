@@ -1098,8 +1098,16 @@ Window {
                 property real reserve: 176
                 default property alias control: slot.data
                 width: col.width
-                height: Math.max(nameCol.implicitHeight, slot.childrenRect.height) + Theme.inset("settings", "top") + Theme.inset("settings", "bottom")
+                height: head.height + (errRow.visible ? Theme.gap(6) + errRow.height : 0)
+                        + Theme.inset("settings", "top") + Theme.inset("settings", "bottom")
                 role: ""
+                // the label and the control centre on each other; an error runs under both
+                Item {
+                    id: head
+                    y: Theme.inset("settings", "top")
+                    width: parent.width
+                    height: Math.max(nameCol.implicitHeight, slot.childrenRect.height)
+                }
                 // The hover fill is its own surface, inset from the row's edge
                 // by the theme; the label and the control stay where they are
                 Surface {
@@ -1113,10 +1121,7 @@ Window {
                             acceptedButtons: Qt.NoButton }
                 Column {
                     id: nameCol
-                    anchors.verticalCenter: parent.verticalCenter
-                    // An uneven pair leans the row's content: the row grows by
-                    // top + bottom, and centring alone would ignore the difference
-                    anchors.verticalCenterOffset: (Theme.inset("settings", "top") - Theme.inset("settings", "bottom")) / 2
+                    anchors.verticalCenter: head.verticalCenter
                     anchors.left: parent.left; anchors.leftMargin: Theme.inset("settings", "left")
                     width: parent.width - anchors.leftMargin - parent.reserve
                     spacing: Theme.gap(2)
@@ -1127,19 +1132,6 @@ Window {
                            elide: Text.ElideRight
                            text: parent.parent.name; ink: "text"
                            font { pixelSize: Theme.fs(13); family: Theme.fontFamily } }
-                    // the error look, as ErrorPanel draws it: the alert glyph, then the line
-                    Row {
-                        visible: sRow.error.length > 0
-                        width: parent.width
-                        spacing: Theme.gap(6)
-                        Icon { id: errGlyph; name: "alert"; size: Theme.glyph(12); color: ErrorUi.glyphOn(Theme.danger, Theme.roleColour("page"))
-                               anchors.verticalCenter: errLine.lineCount > 1 ? undefined : parent.verticalCenter }
-                        InkText { id: errLine; objectName: "rowError"
-                               width: parent.width - errGlyph.width - parent.spacing
-                               text: sRow.error; ink: "text"
-                               wrapMode: Text.Wrap
-                               font { pixelSize: Theme.fs(11); family: Theme.fontFamily } }
-                    }
                     InkText { width: parent.width; text: parent.parent.desc; ink: "textFaint"
                            visible: text.length > 0
                            wrapMode: Text.Wrap
@@ -1149,9 +1141,27 @@ Window {
                     id: slot
                     anchors.right: parent.right
                     anchors.rightMargin: Theme.inset("settings", "right")
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.verticalCenterOffset: nameCol.anchors.verticalCenterOffset
+                    anchors.verticalCenter: head.verticalCenter
                     width: Theme.sp(150); height: Theme.sp(24)
+                }
+                // the error look, as InlineError draws it: the alert glyph on the
+                // first line's capitals, then the line, across the row's width
+                Item {
+                    id: errRow
+                    visible: sRow.error.length > 0
+                    x: Theme.inset("settings", "left")
+                    anchors.top: head.bottom; anchors.topMargin: Theme.gap(6)
+                    width: parent.width - x - Theme.inset("settings", "right")
+                    height: errLine.height
+                    TextMetrics { id: errCap; font: errLine.font; text: "H" }
+                    Icon { id: errGlyph; name: "alert"; size: Theme.glyph(12); color: ErrorUi.glyphOn(Theme.danger, Theme.roleColour("page"))
+                           y: errLine.baselineOffset - errCap.tightBoundingRect.height / 2 - height / 2 }
+                    InkText { id: errLine; objectName: "rowError"
+                           x: errGlyph.width + Theme.gap(6)
+                           width: parent.width - x
+                           text: sRow.error; ink: "text"
+                           wrapMode: Text.Wrap
+                           font { pixelSize: Theme.fs(11); family: Theme.fontFamily } }
                 }
             }
 

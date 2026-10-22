@@ -245,7 +245,7 @@ private slots:
         QVERIFY(o);
         QMetaObject::invokeMethod(o.get(), "open");
         QTest::qWait(50);
-        QCOMPARE(o->property("heading").toString(), QString("Alpha 5"));
+        QCOMPARE(o->property("heading").toString(), QString("Update"));
         QStringList heads;
         for (int i = 0; i < 3; ++i) {
             QObject* h = findIn(o.get(), QStringLiteral("notesHeading_%1").arg(i));

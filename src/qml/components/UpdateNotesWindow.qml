@@ -10,7 +10,7 @@ import "errorui.js" as ErrorUi
 // loads nothing; a link opens in the browser.
 MeloWindow {
     id: unw
-    heading: upd ? upd.version : ""
+    heading: "Update"
     title: "melo update"
     flags: Qt.Dialog | Qt.FramelessWindowHint
     resizable: true

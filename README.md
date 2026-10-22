@@ -111,26 +111,7 @@ sudo cmake --install build --prefix /usr/local
 
 ## Roadmap
 
-```mermaid
-timeline
-    Next : Detachable windows : Video playback
-    Then : Enhanced theme creation : Channel pages : Subscriptions
-    After that : Windows port
-    Later : Charms
-```
-
-## TODO
-
-- [ ] Subscriptions page
-- [ ] Channel pages
-- [ ] Reworked theme creation and appearance settings
-- [ ] Improved and extended layout editor
-- [ ] Plugin and theme store
-- [ ] Improved auto-tagging
-- [ ] Accessibility: screen reader support and keyboard navigation
-- [ ] Translations
-- [ ] Windows and macOS releases
-- [ ] Video playback in Now Playing
+See the [roadmap board](https://github.com/users/melo-foundation/projects/1).
 
 ## Reporting bugs and requesting features
 
