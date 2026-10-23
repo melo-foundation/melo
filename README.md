@@ -25,7 +25,7 @@
 > melo is in alpha.
 
 <p align="center">
-  <img src=".github/screenshots/demo.webp" alt="Searching, playing, Now playing, the visualiser and the mini player">
+  <img src=".github/screenshots/demo.avif" alt="Searching, playing, video in Now playing, the visualiser, the mini player, and the visualiser, queue and video in their own windows">
 </p>
 <p align="center">
   <img src=".github/screenshots/row.webp" alt="Home in the Royale theme, the library, search, and a classic theme">
@@ -33,20 +33,38 @@
 
 ## Features
 
-- YouTube and YouTube Music search, home feed, mixes and radio
-- Switch between the YouTube accounts in your browsers and any number of guest profiles, each with its own recommendations
-- Crossfade, gapless playback and silence skipping
-- Library and playlists, with offline downloads and local file import
-- Automatic tagging from YouTube Music, MusicBrainz, Deezer and Last.fm
-- Time-synced lyrics that follow the song line by line
-- 10-band equaliser and MilkDrop visualiser
-- 16 built-in themes and a theme editor that restyles every control, layers dozens of effects and reshapes the window
-- Fully customisable player bar layout
-- Mini player: a compact window with its own layout, and a pop-out queue and visualiser
-- Custom keyboard shortcuts
-- Media keys and MPRIS support
-- Discord Rich Presence
-- Extensive plugin system for new music sources, player bar buttons, custom windows and more
+<table>
+<tr>
+<td valign="top">
+<ul>
+<li>YouTube and YouTube Music search, home feed, mixes and radio</li>
+<li>Your browsers' YouTube accounts and guest profiles</li>
+<li>Crossfade, gapless playback and silence skipping</li>
+<li>Library and playlists</li>
+<li>Offline downloads</li>
+<li>Local file import</li>
+<li>Automatic tagging</li>
+<li>Time-synced lyrics</li>
+<li>10-band equaliser</li>
+<li>MilkDrop visualiser</li>
+</ul>
+</td>
+<td valign="top">
+<ul>
+<li>16 built-in themes</li>
+<li>Theme editor</li>
+<li>Customisable player bar</li>
+<li>Mini player</li>
+<li>Video playback</li>
+<li>Detachable queue, visualiser and video windows</li>
+<li>Custom keyboard shortcuts</li>
+<li>Media keys and MPRIS</li>
+<li>Discord Rich Presence</li>
+<li>Plugins</li>
+</ul>
+</td>
+</tr>
+</table>
 
 ## Download
 
