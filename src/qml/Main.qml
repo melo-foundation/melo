@@ -1576,6 +1576,7 @@ Window {
             visible: root.queueInWindow ? queueWin.open : !root.miniVisWanted
             fullWidth: true
             miniHost: true
+            grounded: !root.queueInWindow   // the queue window draws its own
             contextMenu: contextMenu   // main-window overlays work in mini mode
             menuHost: root.queueInWindow ? queueWin : null
             menuTail: root.queueInWindow ? () => root.windowActs(queueWin) : root.popupActs

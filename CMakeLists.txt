@@ -759,6 +759,12 @@ if(Qt6Test_FOUND)
             # offscreen: these run in CI and over ssh, where there is no display
             set_tests_properties(${qt_name} PROPERTIES
                 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+            # a suite that loads Main.qml marks itself, and gets stand-ins for melo's C++ types
+            file(STRINGS ${qt_file} _melo_stubs REGEX "^// ctest: melo stubs$")
+            if(_melo_stubs)
+                set_tests_properties(${qt_name} PROPERTIES ENVIRONMENT
+                    "QT_QPA_PLATFORM=offscreen;QML_IMPORT_PATH=${CMAKE_CURRENT_SOURCE_DIR}/tests/qml/stubs")
+            endif()
         endforeach()
         # an SVG picture's reported size depends on the device pixel ratio
         add_test(NAME tst_imagefills_dpr-scaled

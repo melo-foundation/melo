@@ -1,0 +1,9 @@
+module Melo
+DepthPlane 1.0 DepthPlane.qml
+QuietTexture 1.0 QuietTexture.qml
+WindowShape 1.0 WindowShape.qml
+VideoSurface 1.0 VideoSurface.qml
+Visualizer 1.0 Visualizer.qml
+BackgroundItem 1.0 BackgroundItem.qml
+ParticlesItem 1.0 ParticlesItem.qml
+BlendRect 1.0 BlendRect.qml

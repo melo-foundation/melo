@@ -22,9 +22,11 @@ Rectangle {
 
     // The panel's ground as a role, so a theme can blend or adapt it like any
     // other surface rather than only colour it.
-    // in the popup or its own window it is the window's ground, glass and all;
+    // in the popup it is the window's ground, glass and all;
     // over the main window's page it is a panel, which the master leaves solid
-    Surface { anchors.fill: parent; z: -1; role: panel.miniHost ? "window" : "panel" }
+    // false: the window it sits in draws that ground; a second one over it doubles its opacity
+    property bool grounded: true
+    Surface { anchors.fill: parent; z: -1; role: panel.miniHost ? "window" : "panel"; visible: panel.grounded }
     clip: true
     // no corners or outline of its own: the popup and the queue window draw the
     // theme's corners and frame round it
