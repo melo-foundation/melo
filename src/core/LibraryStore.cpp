@@ -94,8 +94,11 @@ void LibraryStore::applyLibrary(const QJsonObject& o) {
     rawPlaylists_ = o["playlists"].toArray();
     trackIndex_.clear();
     trackIndex_.reserve(rawTracks_.size());
-    for (int i = 0; i < rawTracks_.size(); ++i)
-        trackIndex_.tryEmplace(rawTracks_[i].toObject()["id"].toString(), i);   // first wins
+    // first wins; QHash::tryEmplace would need Qt 6.9
+    for (int i = 0; i < rawTracks_.size(); ++i) {
+        const QString id = rawTracks_[i].toObject()["id"].toString();
+        if (!trackIndex_.contains(id)) trackIndex_.insert(id, i);
+    }
     emit countsChanged();
     rebuild();
 }

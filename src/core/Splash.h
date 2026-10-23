@@ -166,7 +166,12 @@ public:
         const QImage img(reinterpret_cast<const uchar*>(result.data.constData()),
                          result.pixelSize.width(), result.pixelSize.height(),
                          QImage::Format_RGBA8888_Premultiplied);
-        return control_.rhi()->isYUpInFramebuffer() ? img.flipped() : img.copy();
+        if (!control_.rhi()->isYUpInFramebuffer()) return img.copy();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+        return img.flipped();
+#else
+        return img.mirrored(false, true);   // flipped() is Qt 6.9's name for it
+#endif
     }
 
 private:

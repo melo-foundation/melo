@@ -76,7 +76,7 @@
 
 ## Build from source
 
-Requires Qt 6.5 or newer with Qt Shader Tools, GStreamer 1.0 with the base,
+Requires Qt 6.8 or newer with Qt Shader Tools, GStreamer 1.0 with the base,
 good and bad plugins, GLEW, Wayland client headers, fontconfig, curl, git,
 Node.js and pnpm.
 
@@ -104,6 +104,7 @@ sudo apt install qt6-base-dev qt6-base-private-dev qt6-declarative-dev \
   libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
   gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
   libglew-dev libwayland-dev libfontconfig-dev libgl1-mesa-dev \
+  libxcb1-dev libxcb-shape0-dev libxcb-present-dev libxcb-sync-dev \
   cmake g++ git curl nodejs npm
 sudo npm install -g pnpm
 ```
