@@ -43,7 +43,8 @@ esac`);
     chmodSync(fake, 0o755);
   });
   afterAll(() => {
-    process.env.XDG_CACHE_HOME = oldCache;
+    if (oldCache === undefined) delete process.env.XDG_CACHE_HOME;
+    else process.env.XDG_CACHE_HOME = oldCache;
     rmSync(root, { recursive: true, force: true });
   });
 

@@ -178,8 +178,8 @@ private slots:
         QVERIFY(sidecar_.browsersAsked().contains("browser:chrome"));
     }
 
-    // Browser mode: setup and Settings re-read no
-    // store; the browser in use answers from the sidecar's one read
+    // Browser mode: setup and Settings re-read no store; the browser in use
+    // answers from the sidecar's one read
     void browserModeReReadsOnlyFromTheAccountMenu() {
         const QtMessageHandler prev = qInstallMessageHandler([](QtMsgType t, const QMessageLogContext&, const QString& m) {
             if (t != QtWarningMsg) std::fprintf(stderr, "%s\n", qPrintable(m));

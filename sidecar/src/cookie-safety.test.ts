@@ -168,7 +168,8 @@ exit 1
     setEnv({ dataDir: root, musicDir: root, ytdlpPath: fake, osPrefersDark: false, appVersion: "t" } as any);
   });
   afterAll(() => {
-    process.env.XDG_CACHE_HOME = oldCache;
+    if (oldCache === undefined) delete process.env.XDG_CACHE_HOME;
+    else process.env.XDG_CACHE_HOME = oldCache;
     delete process.env.MELO_FAKE_LOG;
     rmSync(root, { recursive: true, force: true });
   });
@@ -268,7 +269,8 @@ new net.Socket({ fd: 3, readable: true, writable: false }).on("data", (d) => {
       chmodSync(fake, 0o755);
     });
     afterAll(() => {
-      process.env.XDG_CACHE_HOME = oldCache;
+      if (oldCache === undefined) delete process.env.XDG_CACHE_HOME;
+      else process.env.XDG_CACHE_HOME = oldCache;
       rmSync(root, { recursive: true, force: true });
     });
 

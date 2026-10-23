@@ -336,8 +336,8 @@ void PlaybackCoordinator::failPlay(const Track& t, int code, const QString& reas
     crossfadeHandling_ = false;
     crossfadeTriggered_ = false;
     // A crossfade keeps the outgoing track playing until the new one has
-    // audio; left running, it played on under this track's title and then
-    // auto-advanced past the failure.
+    // audio; left running, it plays on under this track's title and then
+    // auto-advances past the failure.
     flushWatchtime();
     engine_->stop();
     state_->setIsPlaying(false);
@@ -1061,7 +1061,7 @@ void PlaybackCoordinator::requestPrefetch() {
     else next = suggestions_->autoplayTrack();
     // guards
     // A failed prefetch is not repeated: with prefetchPercent 0 every tick
-    // asked again, a resolve every ~9 s against a walled address.
+    // would ask again, a resolve every ~9 s against a walled address.
     if (!next.isValid() || next.id == currentTrackId_ || prefetching_ ||
         prefetched_["videoId"].toString() == next.id || prefetchFailedId_ == next.id) return;
 

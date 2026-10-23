@@ -437,7 +437,7 @@ GstPadProbeReturn SourceDeck::eosProbe(GstPad*, GstPadProbeInfo* info, gpointer 
     GstEvent* ev = GST_PAD_PROBE_INFO_EVENT(info);
     if (ev && GST_EVENT_TYPE(ev) == GST_EVENT_EOS) {
         std::fprintf(stderr, "[%9.1f] [%s] EOS\n", meloLogMs(), self->name_.c_str());
-        if (self->eosCb_) self->eosCb_();   // NB: GStreamer streaming thread — marshal in the receiver
+        if (self->eosCb_) self->eosCb_();   // on GStreamer's streaming thread: the receiver marshals
     }
     return GST_PAD_PROBE_OK;
 }

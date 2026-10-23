@@ -131,7 +131,7 @@ static QList<QJsonObject> builtInThemes() {
     const QJsonObject defs = defaultSettingsJson();
     // A built-in carries every part, melo's defaults under its own scheme,
     // so picking one is a whole reset.
-    // the see-through ones' visualizer follows the master, as it always has
+    // the see-through ones' visualizer follows the master
     const QJsonObject masterVis{{"visualizerOpacityMode", "master"}};
     const QJsonObject glassy = merged(merged(defs, schemeGlass()), masterVis);
     const QJsonObject solid = merged(defs, schemeSolid());

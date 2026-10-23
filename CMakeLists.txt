@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(melo VERSION 0.3.1 LANGUAGES C CXX)   # C: generated wayland protocol code
+project(melo VERSION 0.4.0 LANGUAGES C CXX)   # C: generated wayland protocol code
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -640,7 +640,7 @@ if(Qt6Test_FOUND)
     set_tests_properties(themeswatches PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-    # the Discord plugin against a fake Discord socket; plugins/ is not in public melo
+    # the Discord plugin against a fake Discord socket; skipped where plugins/ is absent
     find_program(MELO_NODE node)
     if(MELO_NODE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/plugins/discord-presence.test.mjs")
         add_test(NAME discordpresence COMMAND ${MELO_NODE} --test
@@ -988,7 +988,6 @@ if(Qt6Test_FOUND)
     target_link_libraries(tst_videowanted PRIVATE Qt6::Core Qt6::Test)
     add_test(NAME videowanted COMMAND tst_videowanted)
 
-    # The app-wide idle clock: silence is idle, any input wakes it.
     # the log file: rotation, redaction, the stderr tee and handler chaining
     add_executable(tst_logfile tests/cpp/tst_logfile.cpp src/core/LogFile.cpp)
     target_include_directories(tst_logfile PRIVATE src/core)
@@ -1031,6 +1030,7 @@ if(Qt6Test_FOUND)
     target_link_libraries(tst_hostenv PRIVATE Qt6::Core Qt6::Test)
     add_test(NAME hostenv COMMAND tst_hostenv)
 
+    # The app-wide idle clock: silence is idle, any input wakes it.
     add_executable(tst_uiactivity tests/cpp/tst_uiactivity.cpp src/core/UiActivity.cpp)
     target_include_directories(tst_uiactivity PRIVATE src/core)
     target_link_libraries(tst_uiactivity PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)

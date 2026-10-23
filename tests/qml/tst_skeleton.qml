@@ -95,7 +95,7 @@ Item {
             verify(part(sk, "skeletonGround").opacity < 1, "the ground dims")
         }
         // A styled skeleton builds without a binding loop, at once or a slice at a
-        // time (the preview baker), and keeps its fill once shown
+        // time (an asynchronous Loader), and keeps its fill once shown
         function test_a_styled_skeleton_builds_without_a_binding_loop_data() {
             return [ { tag: "sync", mode: Qt.Synchronous }, { tag: "async", mode: Qt.Asynchronous } ]
         }

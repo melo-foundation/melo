@@ -392,8 +392,8 @@ bool AudioEngine::pipelinePlaying() const {
 void AudioEngine::setSinkMuted(bool muted) {
     sinkMuted_ = muted;
     if (sinkVol_) g_object_set(sinkVol_, "mute", muted ? TRUE : FALSE, nullptr);
-    // pulsesink drops an unmute that lands while its stream is still being created
-    // (EndeavourOS: silent until pause and play); sent again 300 ms and 1.5 s later
+    // pulsesink drops an unmute that lands while its stream is still being created:
+    // it is sent again 300 ms and 1.5 s later
     if (muted) { unmuteAgain_.stop(); return; }
     unmuteAgain_.setProperty("tries", 2);
     unmuteAgain_.start(300);

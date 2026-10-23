@@ -124,7 +124,7 @@ private:
     GstElement* vizVol_   = nullptr;   // viz-branch volume (visualizer parity)
     GstElement* sinkVol_  = nullptr;   // GstStreamVolume sink (audible, instant)
     // An unmute sent while pulsesink is still creating its server stream is lost and
-    // the stream stays muted; the unmute is sent again once the stream exists.
+    // the stream stays muted; setSinkMuted sends it again 300 ms and 1.5 s later.
     bool sinkMuted_ = false;
     QTimer unmuteAgain_;
     GstElement* appsink_  = nullptr;

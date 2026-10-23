@@ -1071,7 +1071,8 @@ Window {
         interval: 150
         onTriggered: if (root.revealPending) root.finishReveal()
     }
-    // expanding on X11: the bar stays up until main has drawn at its full-size place
+    // expanding on X11 or with the popup attached: the bar stays up until main has
+    // drawn at its full-size place
     property bool expandReveal: false
     function finishReveal() {
         revealPending = false
@@ -1586,7 +1587,6 @@ Window {
             role: "window"
             // The card's corners and frame are the popup's (popupShape); what it holds
             // sits inset by the radius, clear of a cut or rounded corner.
-            // the skeleton shows only before there is video, so it can sit over the picture
             GroundPicture {
                 anchors.fill: parent
                 anchors.margins: Theme.windowRadius
@@ -1620,6 +1620,7 @@ Window {
                     }
                 }
             }
+            // the skeleton shows only before there is video, so it can sit over the picture
             Skeleton {
                 anchors.fill: parent
                 anchors.margins: Theme.windowRadius
@@ -3256,8 +3257,6 @@ Window {
         }
     }
 
-    // A popup rather than a band across the top, so a stream failure also
-    // shows in the compact window.
     // ---------- the error bars ----------
     // Every non-blocking error: the last failure melo raised (8 s, or a click),
     // the backend being down (a state: it stays), missing GStreamer elements,
@@ -3734,7 +3733,7 @@ Window {
         }
     }
     // Singles get their length from their album pages once they show; a one-track
-    // single becomes its song, and that song's repeat further down goes
+    // single becomes its song, and any later row of that song is removed
     function fillSingles(browseIds) {
         if (!browseIds.length) return
         sidecar.rpc("yt/singles", { browseIds: browseIds }, (r) => {

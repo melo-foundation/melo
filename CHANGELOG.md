@@ -1,5 +1,99 @@
 # Changelog
 
+## Alpha 4
+
+### Playback Updates and Fixes
+
+- Use the higher-quality audio of YouTube Premium accounts
+- Fix tracks that start behind a YouTube ad failing to play
+- Fix some tracks stopping just before the end
+- Fix playback freezing when a stream stops sending
+- Fix Try again freezing after a dropped stream
+- Fix Retry starting the track again from the beginning
+- Fix Play doing nothing after the queue ends
+- Fix no sound at the first start until pause and play
+- Fix media controls showing melo as playing after Stop
+
+### Video Updates and Fixes
+
+- Add video to Now Playing and the mini player
+- Add a video quality setting
+- Add a video fit setting
+- Add video and visualizer transparency
+- Add video snapshots
+- Fix the cursor staying hidden over a video when it moves
+
+### YouTube Music Updates
+
+- Add YouTube Music search results
+- Add YouTube Music suggestions and song radio
+- Add YouTube Music albums and singles
+- Add tagging from YouTube Music
+
+### Account and Cookie Updates
+
+- Allow playing and downloading with the browser's YouTube account
+- Keep only YouTube's cookies from the browser
+- Keep browser cookies off disk
+- Read browsers only when the account menu opens
+
+### Window and Mini Player Updates and Fixes
+
+- Add queue, visualizer and video windows
+- Allow resizing the mini player with the queue or visualizer open
+- Restore windows at startup
+- Add click-through mode
+- Fix windows wobbling during resize on X11
+- Fix black windows at launch
+- Fix windows opening behind melo or showing on the taskbar
+- Fix the mini player's popup jumping or vanishing during resize on X11
+- Fix the layout shifting as melo starts
+- Fix loading rows overlapping when melo opens maximised
+
+### Interface Updates and Fixes
+
+- Add picture glyphs
+- Add a checkbox toggle style
+- Add insets for view tabs, page tabs and the mini player
+- Fix low-resolution art in Now Playing for saved tracks
+- Fix menus cutting off their labels
+- Fix menus staying open after a click outside them
+- Fix the seek and slider knobs shimmering as they move
+- Fix importing an exported built-in theme
+- Remove the Paste URL action setting
+
+### Error Reporting Updates
+
+- Make errors say what to do
+- Add Report… to every error
+- Add a log file
+- Add a Discord link to the bug form
+
+### Plugin Updates
+
+- Prevent plugins from changing settings, the library, themes or files
+
+### Integration Updates
+
+- Add Discord Rich Presence
+- Turn Last.fm tagging off for new installs
+
+### AppImage and Update Improvements
+
+- Add AppImage updates
+- Add an AppImage for musl, older distributions and systems without FUSE
+- Add AV1 video to the full AppImage
+- Fix balance doing nothing in the full AppImage
+
+### Build and Packaging Improvements
+
+- Update to Qt 6.12.0
+- Set up melo's package repository when the deb or rpm installs
+
+## Alpha 3.2
+
+- Updated Node.js to 22.23.4, the October 2026 security release
+
 ## Alpha 3.1
 
 - Fixed blurry artwork in Now Playing

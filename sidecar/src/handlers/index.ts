@@ -188,9 +188,9 @@ export function registerHandlers(): void {
   });
   method("metadata/suggest", ({ title, channel }) => meta.suggestMetadata(title, channel));
   method("metadata/cacheAlbumArt", ({ videoId, artUrl }) => lib.cacheAlbumArt(videoId, artUrl).then((path) => ({ path })));
-  // Tag every non-manual track; "heuristic"
-  // = local cleanup only, "api+heuristic" = YouTube Music/Last.fm/MusicBrainz/Deezer chain
-  // with heuristic fallback. Skips manually-edited tracks.
+  // Tags every track not edited by hand. "heuristic" = local cleanup only,
+  // "api+heuristic" = the YouTube Music/Last.fm/MusicBrainz/Deezer chain with
+  // the heuristic as fallback.
   method("metadata/batchEnrich", async ({ mode }) => {
     const data = lib.getLibrary();
     const s = loadSettings();

@@ -702,14 +702,13 @@ QString WindowController::stackOrder(QQuickWindow* a, QQuickWindow* b) {
 }
 
 // Qt 6.12's Wayland EGL context resizes the EGL window inside makeCurrent, after
-// eglMakeCurrent: on NVIDIA the frame being drawn keeps the old size's back buffer and
-// is committed with the new size's ack and viewport, so KWin scales the old picture into
-// the new place and the far edge deforms through a drag (37 of 51 commits one size
-// behind). A window-sized offscreen pass (main's layers, projectM's FBO) makes the window
-// current a second time, which hides it. When the size has changed since the last frame,
-// make it current once more before drawing, which takes the new buffer. X11 (Mesa) draws
-// the first frame after a resize in the old buffer too, and GLX skips a bind to what is
-// already current: it unbinds first.
+// eglMakeCurrent: on NVIDIA a frame keeps the old size's back buffer but commits with
+// the new size's ack and viewport, so the far edge deforms through a drag (37 of 51
+// commits one size behind). A window-sized offscreen pass (main's layers, projectM's
+// FBO) makes the window current a second time, which hides it. On a size change this
+// makes the window current once more before drawing. X11 (Mesa) also draws the first
+// frame after a resize in the old buffer, and GLX skips a bind to what is already
+// current, so it unbinds first.
 // MELO_X11_REBIND=0 leaves X11 to the present sync alone.
 void WindowController::keepBufferInStep(QQuickWindow* win) {
     if (!win) return;

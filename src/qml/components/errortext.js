@@ -182,8 +182,8 @@ function lookup(raw) {
     return "No match found."
 }
 
-// a plugin's state (sidecar plugins); Report only for the plugins in melo's
-// repository (plugins/): any other goes to its own author
+// a plugin's state (sidecar plugins); Report only for melo's own plugins
+// (MELO_PLUGINS): any other goes to its own author
 const MELO_PLUGINS = ["soundcloud", "discord-presence"]
 function plugin(p) {
     if (!p || (p.state !== "error" && p.state !== "crashed")) return null

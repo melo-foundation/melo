@@ -195,7 +195,7 @@ describe("parseAccountMenu", () => {
 });
 
 // Premium, as yt-dlp's _is_premium_subscriber reads it: the top bar's logo.
-// Signed-out shape from a live browse response (2026-10-22).
+// Signed-out shape from a live browse response.
 describe("parsePremium", () => {
   const bar = (iconType: string, tip: string) => ({ topbar: { desktopTopbarRenderer: { logo: { topbarLogoRenderer: {
     iconImage: { iconType }, tooltipText: { runs: [{ text: tip }] } } } } } });

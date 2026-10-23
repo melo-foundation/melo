@@ -567,8 +567,8 @@ describe("fetchVideoStreamUrl identities", () => {
   });
   afterEach(() => { vi.unstubAllGlobals(); setBrowserSignedInForTest(null); });
 
-  // The user's log: guest walled; under the browser the default client found no
-  // video-only format, web_music met the wall, web_embedded said unavailable.
+  // Guest is walled; under the browser the default client finds no video-only
+  // format, web_music meets the wall and web_embedded says unavailable.
   const userCase = (muxed: Fmt[]) => (id: string, client: string) =>
     id === "guest" ? { err: WALL }
     : client === "default" ? muxed

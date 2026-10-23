@@ -259,7 +259,7 @@ Item {
         // the arriving renderer of a swap that neither rises nor drops: its own height
         Component { id: ownHC; BarLayout { height: barHeight } }
         // A layout built with an empty row sums its rows without a binding loop,
-        // built at once or a slice at a time (the preview baker), and collapses the row
+        // built at once or a slice at a time (an asynchronous Loader), and collapses the row
         function test_an_empty_row_builds_without_a_binding_loop_data() {
             return [ { tag: "sync", mode: Qt.Synchronous }, { tag: "async", mode: Qt.Asynchronous } ]
         }

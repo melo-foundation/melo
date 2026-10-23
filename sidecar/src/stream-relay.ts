@@ -108,7 +108,7 @@ function startChunk(entry: Entry, from: number, to: number): Pending {
     headers: { Range: `bytes=${from}-${to}`, ...(entry.headers || {}) },
     signal: p.ctrl.signal,
   }).finally(() => clearTimeout(timer));
-  p.res.catch(() => {});   // abandoned on break/close — don't reject unhandled
+  p.res.catch(() => {});   // abandoned on break or close: no unhandled rejection
   return p;
 }
 
@@ -170,9 +170,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
           ending = "upstream error";
           break;
         }
-        // a 200 means the server IGNORED the Range — its body starts at byte 0.
-        // Piping it as if it were bytes pos.. serves the wrong audio at the
-        // wrong position (seeks landing "further into the song").
+        // a 200 means the server ignored the Range and its body starts at byte 0;
+        // piping it as bytes pos.. would play the wrong audio after a seek
         if (upstream.status === 200 && pos > 0) {
           console.error(`[relay] ${t} upstream ignored Range at byte ${pos}`);
           if (!res.headersSent) res.writeHead(502);
@@ -180,9 +179,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
           break;
         }
         if (total < 0) {   // first chunk: learn size, answer the client
-          // content-range total -> the URL's clen= param -> content-length.
-          // NEVER a made-up huge number: gst maps time<->bytes with it, and a
-          // lie sends every seek to absurd offsets (stalls, wrong landings).
+          // content-range total -> the URL's clen= param -> content-length, never
+          // a made-up number: gst maps time to bytes with it, so a wrong total
+          // sends every seek to the wrong offset.
           const cr = upstream.headers.get("content-range")?.split("/")[1];
           if (cr && cr !== "*") total = parseInt(cr);
           else {
@@ -212,8 +211,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
             notify("stream/resumed", { url: relayed, videoId: entry.videoId ?? "" });
           }
         }
-        // pipeline: fetch the NEXT chunk while this one pipes — serial fetches
-        // add a full upstream round-trip of dead air per MB after seeks
+        // fetch the next chunk while this one pipes: serial fetches add an
+        // upstream round-trip of silence per MB after a seek
         const nPos = end + 1;
         if (!closed && nPos < total && nPos <= clientEnd)
           next = startChunk(entry, nPos, Math.min(nPos + tuning.chunk - 1, clientEnd));

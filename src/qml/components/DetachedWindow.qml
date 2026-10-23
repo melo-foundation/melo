@@ -18,12 +18,12 @@ MeloWindow {
     property string controls: ""
     readonly property bool overlay: kind !== "queue" && (controls || defaultControls) === "over"
     // a resize takes the pointer, so hover reads false: held through it, or every fade
-    // that follows hover animates mid-resize (docs/mini-player-windowing.md §3)
+    // that follows hover animates mid-resize
     property bool resizing: false
     property bool hovered: false
     Binding on hovered { value: hover.hovered; when: !dw.resizing; restoreMode: Binding.RestoreNone }
     // set by a Ctrl+drag; let go next to the bar, the window asks to go back under it.
-    // Every move or resize sets it afresh: one KWin never reported the end of arms nothing after it
+    // Every move or resize sets it afresh, so a drag whose end KWin never reported arms no later one
     property bool reattachArmed: false
     function startMove(ctrl) { reattachArmed = ctrl; startSystemMove() }
     onTitleMoveStarting: (mods) => reattachArmed = (mods & Qt.ControlModifier) !== 0

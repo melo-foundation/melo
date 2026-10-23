@@ -107,7 +107,7 @@ Item {
             tryCompare(this, "shownTilesNow", 1, 2000)
         }
 
-        // a model change during the trim's fade froze the trimmed placeholders on screen
+        // a model change during the trim's fade must not hold the trimmed placeholders on screen
         function test_trimmed_placeholders_leave_after_a_fast_last_page() {
             rootItem.morePage = { ok: true, tracks: [], cursor: "" }
             pv.open("PLfast", "Fast", null, null)
