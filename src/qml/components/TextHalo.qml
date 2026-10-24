@@ -20,6 +20,7 @@ Halo {
         id: words
         Text {
             text: th.label.text
+            textFormat: Text.PlainText
             font: th.label.font
             horizontalAlignment: th.label.horizontalAlignment
             verticalAlignment: th.label.verticalAlignment

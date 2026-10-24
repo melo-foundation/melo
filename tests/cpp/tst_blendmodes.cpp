@@ -525,6 +525,29 @@ private slots:
             "reaching the effect").arg(pct)));
     }
 
+    // Titles are data: both paths show a "<i>" as written (tst_plaintext covers the rest).
+    void blendTextIsPlainText() {
+        for (const char* mode : {"", "multiply"}) {
+            QQmlEngine engine;
+            QQmlComponent comp(&engine);
+            comp.setData(QStringLiteral(
+                "import QtQuick\nimport \"file://%1\" as C\n"
+                "C.BlendText { width: 300; height: 20; blend: '%2'; text: 'What does :<i> code stand for' }")
+                .arg(QStringLiteral(MELO_QML_DIR) + QStringLiteral("/components"), QLatin1String(mode)).toUtf8(),
+                QUrl::fromLocalFile(QStringLiteral(MELO_QML_DIR) + QStringLiteral("/probe.qml")));
+            QVERIFY2(!comp.isError(), qPrintable(comp.errorString()));
+            std::unique_ptr<QObject> root(comp.create());
+            QVERIFY(root);
+            int texts = 0;
+            for (QObject* o : root->findChildren<QObject*>()) {
+                if (!o->inherits("QQuickText")) continue;
+                ++texts;
+                QCOMPARE(o->property("textFormat").toInt(), int(Qt::PlainText));
+            }
+            QCOMPARE(texts, 2);
+        }
+    }
+
     // A name nobody implements must draw NOTHING, so a typo in a theme shows
     // as the missing surface it is rather than as a plausible normal fill.
     void anUnknownModeDrawsNothing() {

@@ -36,6 +36,7 @@ Item {
             width: root.width
             height: root.height
             text: root.text
+            textFormat: Text.PlainText
             font: root.font
             color: "#ffffff"          // coverage only; the shader supplies colour
             horizontalAlignment: root.horizontalAlignment

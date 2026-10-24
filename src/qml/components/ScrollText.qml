@@ -167,6 +167,7 @@ Item {
     Text {
         id: label
         renderType: root.renderType
+        textFormat: Text.PlainText
         // still laid out when adaptive: it is what the twin above is measured
         // and positioned against, and what the scroll animation moves
         opacity: root.twin ? 0 : 1

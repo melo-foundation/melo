@@ -36,6 +36,7 @@ Item {
         anchors.fill: parent
         visible: !root.blending
         text: root.text
+        textFormat: Text.PlainText
         font: root.font
         color: root.color
         horizontalAlignment: root.horizontalAlignment
@@ -59,6 +60,7 @@ Item {
             width: root.width
             height: root.height
             text: root.text
+            textFormat: Text.PlainText
             font: root.font
             // WHITE, not root.color. This is a coverage mask — the blend
             // decides what the words look like, and a coloured mask would

@@ -46,6 +46,7 @@ Item {
             horizontalAlignment: root.align
             wrapMode: Text.Wrap
             text: modelData.text
+            textFormat: Text.PlainText
             color: away === 0 ? root.activeColor : root.restColor
             style: root.overArt ? Theme.overArtStyle : Theme.textStyle
             styleColor: root.overArt ? Theme.overArtStyleColor : Theme.textStyleColor
@@ -76,6 +77,7 @@ Item {
             wrapMode: Text.Wrap
             lineHeight: 1.45
             text: root.plain
+            textFormat: Text.PlainText
             color: root.restColor
             style: root.overArt ? Theme.overArtStyle : Theme.textStyle
             styleColor: root.overArt ? Theme.overArtStyleColor : Theme.textStyleColor

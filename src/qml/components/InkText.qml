@@ -8,6 +8,8 @@ Text {
     id: root
     property string ink: "text"
     font.family: Theme.fontFamily
+    // titles and names are data: AutoText would render a "<i>" in one, or fetch an <img src>
+    textFormat: Text.PlainText
     readonly property var inkRole: Theme.inkRole(ink)
     readonly property bool adaptive: inkRole.source === "adaptive"
     readonly property bool styled: Theme.layered(inkRole)

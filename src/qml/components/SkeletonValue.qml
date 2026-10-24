@@ -57,6 +57,7 @@ Item {
     Text {
         id: label
         width: root.width
+        textFormat: Text.PlainText
         anchors.verticalCenter: parent.verticalCenter
         horizontalAlignment: root.alignRight ? Text.AlignRight : Text.AlignLeft
         elide: Text.ElideRight
