@@ -2,6 +2,8 @@
 #include <QProcess>
 #include <QtTest>
 
+#include "../../src/core/SelfLaunch.h"
+
 // `melo --splash` (Splash.h): up until melo says its window shows, or melo is
 // gone, and never longer.
 class TstSplash : public QObject {
@@ -44,6 +46,23 @@ private slots:
         p.closeWriteChannel();   // what melo exiting does to the pipe
         QVERIFY(p.waitForFinished(3000));
         QCOMPARE(p.exitCode(), 0);
+    }
+
+    void startsThroughSharunInTheAnylinuxAppImage() {
+        QTemporaryDir root;
+        QVERIFY(QDir(root.path()).mkpath(QStringLiteral("bin")));
+        QVERIFY(QDir(root.path()).mkpath(QStringLiteral("shared/bin")));
+        const QString real = root.path() + QStringLiteral("/shared/bin/melo");
+        const QString launcher = root.path() + QStringLiteral("/bin/melo");
+        for (const QString& f : {real, launcher}) {
+            QFile file(f);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        }
+        QCOMPARE(selfLaunchPath(real, root.path()), launcher);
+        QCOMPARE(selfLaunchPath(real, QString()), real);
+        // no launcher beside it: melo's own file
+        QCOMPARE(selfLaunchPath(real, root.path() + QStringLiteral("/elsewhere")), real);
     }
 };
 

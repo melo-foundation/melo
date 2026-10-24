@@ -28,6 +28,8 @@
 #include <rhi/qrhi.h>
 #include <thread>
 
+#include "SelfLaunch.h"
+
 // The startup splash: melo runs itself again as `melo --splash`, which shows
 // one of the logo looks in <qml>/splash until melo's window shows. A process
 // of its own, because melo's GUI thread is busy building the window until then.
@@ -270,7 +272,7 @@ inline int runSplash(int argc, char** argv, QString (*qmlDir)()) {
 class SplashLauncher {
 public:
     void start() {
-        proc_.setProgram(QCoreApplication::applicationFilePath());
+        proc_.setProgram(selfLaunchPath(QCoreApplication::applicationFilePath(), qEnvironmentVariable("SHARUN_DIR")));
         proc_.setArguments({QStringLiteral("--splash")});
         // the launcher's activation token is for melo's window: a splash that
         // opened with it would spend it, and the window would open unfocused
