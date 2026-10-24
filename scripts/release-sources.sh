@@ -41,7 +41,12 @@ cp "$ROOT/patches/projectm-caller-fbo.patch" "$S/projectm/"
 # --- FFmpeg: the tarball build-ffmpeg.sh pins, checked against its hash ------
 FV="$(sed -n 's/^VER="\(.*\)"$/\1/p' "$ROOT/scripts/build-ffmpeg.sh")"
 FSHA="$(sed -n 's/^SHA256="\(.*\)"$/\1/p' "$ROOT/scripts/build-ffmpeg.sh")"
-curl -fsSLo "$S/ffmpeg/ffmpeg-$FV.tar.xz" "https://ffmpeg.org/releases/ffmpeg-$FV.tar.xz"
+# ffmpeg.org times out or resets from the runner (Alpha 4.1): the same tarball is kept on
+# melo-foundation/build-inputs, tried first; the hash below holds either way
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 5 --connect-timeout 30 \
+    -o "$S/ffmpeg/ffmpeg-$FV.tar.xz" "https://github.com/melo-foundation/build-inputs/releases/download/ffmpeg-$FV/ffmpeg-$FV.tar.xz" \
+  || curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
+    -o "$S/ffmpeg/ffmpeg-$FV.tar.xz" "https://ffmpeg.org/releases/ffmpeg-$FV.tar.xz"
 echo "$FSHA  $S/ffmpeg/ffmpeg-$FV.tar.xz" | sha256sum -c --quiet
 cp "$ROOT/scripts/build-ffmpeg.sh" "$S/ffmpeg/"   # holds the configure line
 
