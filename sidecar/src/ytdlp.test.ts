@@ -162,6 +162,19 @@ describe("first-run install", () => {
     expect(logged()).toMatch(/update refused: the downloaded binary failed --version/);
   });
 
+  it("does not download a refused binary again in the same session", async () => {
+    trustSigner();
+    setupBin(null);
+    const fetchMock = stubFetch(await release("#!/bin/sh\nexit 3\n"));
+    captureLog();
+    await expect(ytdlpReady()).rejects.toThrow(/could not be verified/);
+    await expect(ytdlpReady()).rejects.toThrow(/could not be verified/);
+    expect(binaryFetches(fetchMock)).toBe(1);
+    // switching channel tries again
+    await updateNow();
+    expect(binaryFetches(fetchMock)).toBe(2);
+  });
+
   it("makes concurrent callers share one download", async () => {
     trustSigner();
     const bin = setupBin(null);
@@ -321,6 +334,11 @@ describe("asset name", () => {
     expect(hostIsMusl(...host({ [MUSL]: "musl", [GLIBC]: "\0GLIBC_PRIVATE\0" }))).toBe(false);
     // Alpine with gcompat: its ld-linux is a musl program
     expect(hostIsMusl(...host({ [MUSL]: "musl", [GLIBC]: "/lib/ld-musl-x86_64.so.1" }))).toBe(true);
+  });
+
+  it("takes the glibc build in the anylinux AppImage, on any host", () => {
+    expect(ytdlpAssetName("linux", () => true, () => true)).toBe("yt-dlp_linux");
+    expect(ytdlpAssetName("linux", () => false, () => true)).toBe("yt-dlp_linux");
   });
 
   it("names the binary per platform", () => {

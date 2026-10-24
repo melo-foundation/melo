@@ -9,9 +9,9 @@
 // Python remove that copy (measured: SIGTERM leaves yt_dlp*/temporary.sqlite).
 
 import { spawn, type ChildProcess } from "child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, statfsSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, statfsSync, symlinkSync } from "fs";
 import { homedir, tmpdir } from "os";
-import { join } from "path";
+import { basename, dirname, join } from "path";
 
 const unixGroups = process.platform !== "win32";
 
@@ -90,6 +90,92 @@ export function removeTempDir(dir: string): boolean {
   }
 }
 
+const LOADER = "ld-linux-x86-64.so.2";
+// glibc's own libraries and the zlib yt-dlp_linux's bootloader links: all it
+// takes from a host (scripts/anylinux/ytdlp-needs.sh)
+const LIBC_FILES = [LOADER, "libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1", "libutil.so.1",
+  "libresolv.so.2", "libanl.so.1", "libnss_dns.so.2", "libnss_files.so.2", "libmvec.so.1", "libz.so.1"];
+
+/** The anylinux AppImage's library folder (sharun's), when it carries a glibc loader. */
+export function bundledLibDir(env: NodeJS.ProcessEnv = process.env,
+                              platform: NodeJS.Platform = process.platform): string | null {
+  if (platform !== "linux" || !env.SHARUN_DIR) return null;
+  const lib = join(env.SHARUN_DIR, "shared", "lib");
+  return existsSync(join(lib, LOADER)) ? lib : null;
+}
+
+const MUSL_LOADER = "/lib/ld-musl-x86_64.so.1";
+const GLIBC_LOADER = `/lib64/${LOADER}`;
+
+function readOrNull(path: string): Buffer | null {
+  try { return readFileSync(path); } catch { return null; }
+}
+
+/** The host's libc is musl: its loader is there and no glibc loader is. Read from
+ *  the files, since node in the anylinux AppImage runs on its own glibc. gcompat's
+ *  ld-linux is a musl program; a glibc loader carries GLIBC_PRIVATE. */
+export function hostIsMusl(exists: (path: string) => boolean = existsSync,
+                           read: (path: string) => Buffer | null = readOrNull): boolean {
+  if (!exists(MUSL_LOADER)) return false;
+  const glibc = read(GLIBC_LOADER);
+  return !glibc || !glibc.includes("GLIBC_PRIVATE");
+}
+
+const LIBC_PATHS = ["/lib/x86_64-linux-gnu/libc.so.6", "/lib64/libc.so.6", "/usr/lib/libc.so.6",
+  "/usr/lib64/libc.so.6", "/lib/libc.so.6"];
+
+/** The host glibc's [major, minor], from its banner ("release version 2.11.1"). */
+export function hostGlibc(read: (path: string) => Buffer | null = readOrNull,
+                          paths: string[] = LIBC_PATHS): [number, number] | null {
+  for (const p of paths) {
+    const m = /release version (\d+)\.(\d+)/.exec(read(p)?.toString("latin1") ?? "");
+    if (m) return [Number(m[1]), Number(m[2])];
+  }
+  return null;
+}
+
+/** yt-dlp_linux asks for GLIBC_2.17 (scripts/anylinux/ytdlp-glibc.sh). A libc that
+ *  cannot be read runs it as the host's. */
+export function hostNeedsLibc(musl: () => boolean = hostIsMusl,
+                              glibc: () => [number, number] | null = hostGlibc): boolean {
+  if (musl()) return true;
+  const v = glibc();
+  return v !== null && (v[0] < 2 || (v[0] === 2 && v[1] < 17));
+}
+
+export interface BundledLibc { loader: string; libDir: string; bin: string }
+let libc: BundledLibc | null | undefined;
+
+/** In the anylinux AppImage, where the host cannot run yt-dlp_linux (musl before 1.2
+ *  crashes yt-dlp_musllinux), it runs on the bundled glibc. A folder of links to glibc
+ *  and zlib alone, so neither the host's libraries nor the rest of the bundle stand
+ *  in for what PyInstaller unpacks. */
+export function bundledLibc(): BundledLibc | null {
+  if (libc !== undefined) return libc;
+  libc = null;
+  const lib = bundledLibDir();
+  if (!lib || !hostNeedsLibc()) return null;
+  try {
+    const dir = makeTempDir("melo-libc-");
+    for (const f of LIBC_FILES) if (existsSync(join(lib, f))) symlinkSync(join(lib, f), join(dir, f));
+    libc = { loader: join(dir, LOADER), libDir: dir, bin: join(dirname(dirname(lib)), "bin") };
+    console.error("[ytdlp-proc] yt-dlp runs on the bundled glibc");
+  } catch (e: any) {
+    console.error(`[ytdlp-proc] no folder for the bundled glibc: ${e?.code ?? e}`);
+  }
+  return libc;
+}
+
+/** LD_LIBRARY_PATH, not --library-path: PyInstaller starts its child through the
+ *  loader again, without the loader's arguments. PATH holds the bundle's programs
+ *  alone: a host program yt-dlp starts (Python's platform runs uname) would load this
+ *  glibc under its own loader and crash. */
+export function launchCommand(bin: string, argv: string[], env: NodeJS.ProcessEnv, via: BundledLibc | null):
+    { file: string; args: string[]; env: NodeJS.ProcessEnv } {
+  if (!via) return { file: bin, args: argv, env };
+  return { file: via.loader, args: [bin, ...argv], env: { ...env, LD_LIBRARY_PATH: via.libDir, PATH: via.bin } };
+}
+
 const INT_GRACE_MS = 3000;
 const KILL_GRACE_MS = 2000;
 
@@ -156,10 +242,11 @@ export function runYtdlp(bin: string, args: string[], opts: RunOptions = {}): Pr
   return new Promise((resolve, reject) => {
     let child: ChildProcess;
     try {
-      child = spawn(bin, argv, {
+      const run = launchCommand(bin, argv, { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp }, bundledLibc());
+      child = spawn(run.file, run.args, {
         detached: unixGroups,
         stdio: [config ? "pipe" : "ignore", "pipe", "pipe"],
-        env: { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp },
+        env: run.env,
       });
     } catch (e) { removeTempDir(tmp); reject(e); return; }
     if (config) { child.stdin!.on("error", () => { /* exited first */ }); child.stdin!.end(config); }
@@ -212,7 +299,7 @@ process.on("exit", shutdownYtdlp);
 
 const STALE_TEMP_MS = 10 * 60 * 1000;
 const STALE_UNPACK_MS = 2 * 60 * 1000;
-const TEMP_PREFIXES = ["melo-cookies-", "melo-subs-", "melo-chrome-", "melo-run-"];
+const TEMP_PREFIXES = ["melo-cookies-", "melo-subs-", "melo-chrome-", "melo-run-", "melo-libc-"];
 
 function olderThan(path: string, ms: number, now: number): boolean {
   try { return now - statSync(path).mtimeMs > ms; } catch { return false; }
@@ -271,7 +358,9 @@ export function findOrphans(bin: string, procRoot = "/proc"): number[] {
   const runs = new Map<number, number>();   // pid -> ppid, for yt-dlp runs of `bin`
   for (const name of readdirSync(procRoot)) {
     if (!/^\d+$/.test(name)) continue;
-    if (read(join(procRoot, name, "cmdline")).split("\0")[0] !== bin) continue;
+    // through the bundled loader, the binary is the loader's first argument
+    const argv = read(join(procRoot, name, "cmdline")).split("\0");
+    if (argv[0] !== bin && !(basename(argv[0]) === LOADER && argv[1] === bin)) continue;
     // the ppid is the 2nd field after the parenthesised command name
     const stat = read(join(procRoot, name, "stat"));
     runs.set(Number(name), Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]));

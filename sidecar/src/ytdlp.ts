@@ -11,7 +11,7 @@ import { YTDLP_KEY_FINGERPRINT, YTDLP_PUBLIC_KEY } from "./ytdlp-key";
 import { getEnv } from "./env";
 import { loadSettings } from "./settings";
 import { log, notify } from "./rpc";
-import { runYtdlp, type RunOptions, type RunResult } from "./ytdlp-proc";
+import { bundledLibDir, hostIsMusl, runYtdlp, type RunOptions, type RunResult } from "./ytdlp-proc";
 
 const UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -34,31 +34,18 @@ export function ensureYtdlp(seedPath?: string): boolean {
   return false;
 }
 
-const MUSL_LOADER = "/lib/ld-musl-x86_64.so.1";
-const GLIBC_LOADER = "/lib64/ld-linux-x86-64.so.2";
-
-/** The host's libc is musl: its loader is there and no glibc loader is. Read from
- *  the files, since node in the anylinux AppImage runs on its own glibc. gcompat's
- *  ld-linux is a musl program; a glibc loader carries GLIBC_PRIVATE. */
-export function hostIsMusl(exists: (path: string) => boolean = existsSync,
-                           read: (path: string) => Buffer | null = readOrNull): boolean {
-  if (!exists(MUSL_LOADER)) return false;
-  const glibc = read(GLIBC_LOADER);
-  return !glibc || !glibc.includes("GLIBC_PRIVATE");
-}
-
-function readOrNull(path: string): Buffer | null {
-  try { return readFileSync(path); } catch { return null; }
-}
+export { hostIsMusl };
 
 let muslHost: boolean | undefined;
 
-/** Release asset name for this platform (yt-dlp publishes per-OS binaries). */
+/** Release asset name for this platform (yt-dlp publishes per-OS binaries). The
+ *  anylinux AppImage takes the glibc build, on its own glibc where the host cannot run it (ytdlp-proc.ts). */
 export function ytdlpAssetName(platform: NodeJS.Platform = process.platform,
-                               musl: () => boolean = () => (muslHost ??= hostIsMusl())): string {
+                               musl: () => boolean = () => (muslHost ??= hostIsMusl()),
+                               bundled: () => boolean = () => bundledLibDir() !== null): string {
   if (platform === "win32") return "yt-dlp.exe";
   if (platform === "darwin") return "yt-dlp_macos";
-  return musl() ? "yt-dlp_musllinux" : "yt-dlp_linux";
+  return !bundled() && musl() ? "yt-dlp_musllinux" : "yt-dlp_linux";
 }
 
 function releaseRepo(channel: string): string {
@@ -217,6 +204,9 @@ async function syncOnce(channel: string): Promise<Outcome> {
 }
 
 let pending: { channel: string; run: Promise<Outcome> } | null = null;
+// A refused first install leaves no binary to throttle on: without this every
+// caller would download it again (30 MB). updateNow tries again.
+const refused = new Set<string>();
 
 /** Concurrent calls for one channel share a run; a different channel waits
  *  for the current run, since both stage to the same .part file. */
@@ -234,8 +224,10 @@ function sync(channel: string): Promise<Outcome> {
 export async function ytdlpReady(): Promise<string> {
   const bin = getEnv().ytdlpPath;
   if (existsSync(bin)) return bin;
-  const outcome = await sync(ytdlpChannel());
-  if (outcome === "refused") throw new Error("yt-dlp could not be verified; not installed");
+  const channel = ytdlpChannel();
+  const key = `${bin}\n${channel}`;
+  const outcome = refused.has(key) ? "refused" : await sync(channel);
+  if (outcome === "refused") { refused.add(key); throw new Error("yt-dlp could not be verified; not installed"); }
   if (outcome === "failed") throw new Error("yt-dlp could not be downloaded; check the connection and try again");
   return bin;
 }
@@ -272,7 +264,9 @@ export async function maybeUpdateYtdlp(): Promise<void> {
 
 /** Immediate update, used when the user switches channel. */
 export async function updateNow(channel?: string): Promise<boolean> {
-  return (await sync(channel ?? ytdlpChannel())) === "ok";
+  const c = channel ?? ytdlpChannel();
+  refused.delete(`${getEnv().ytdlpPath}\n${c}`);
+  return (await sync(c)) === "ok";
 }
 
 export function looksStale(errorMessage: string): boolean {

@@ -4,7 +4,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import {
-  chooseUnpackDir, findOrphans, makeTempDir, privateTmp, runYtdlp, shutdownYtdlp, splitConfigArgs, sweepStale,
+  bundledLibDir, chooseUnpackDir, findOrphans, hostGlibc, hostNeedsLibc, launchCommand, makeTempDir, privateTmp, runYtdlp, shutdownYtdlp,
+  splitConfigArgs, sweepStale,
 } from "./ytdlp-proc";
 
 const linux = process.platform === "linux";
@@ -228,5 +229,67 @@ describe("leftovers", () => {
     p(21, bin, 20, "yt-dlp");                    //   its child
     p(30, "/usr/bin/yt-dlp", 2228, "yt-dlp");    // someone else's yt-dlp
     expect(findOrphans(bin, proc).sort()).toEqual([10, 11]);
+  });
+
+  it("finds orphaned runs that went through the bundled loader", () => {
+    const proc = join(root, "proc-loader");
+    const bin = "/home/u/.local/share/melo/bin/yt-dlp";
+    const p = (pid: number, argv: string[], ppid: number, comm: string): void => {
+      mkdirSync(join(proc, String(pid)), { recursive: true });
+      writeFileSync(join(proc, String(pid), "cmdline"), argv.join("\0") + "\0");
+      writeFileSync(join(proc, String(pid), "stat"), `${pid} (${comm}) S ${ppid} ${pid} ${pid} 0`);
+      writeFileSync(join(proc, String(pid), "comm"), `${comm}\n`);
+    };
+    // as on Ubuntu 10.04: the parent through the sidecar's links, the child through the mount
+    p(10, ["/home/u/.cache/melo/tmp/melo-libc-9-x/ld-linux-x86-64.so.2", bin, "-j"], 1, "ld-linux-x86-64");
+    p(11, ["/tmp/.mount_melo/shared/lib/ld-linux-x86-64.so.2", bin, "-j"], 10, "ld-linux-x86-64");
+    p(20, ["/lib64/ld-linux-x86-64.so.2", "/usr/bin/yt-dlp"], 1, "ld-linux-x86-64");   // not melo's
+    expect(findOrphans(bin, proc).sort()).toEqual([10, 11]);
+  });
+});
+
+describe("the anylinux AppImage's glibc", () => {
+  const root = mkdtempSync(join(tmpdir(), "melo-libc-test-"));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  it("is found through SHARUN_DIR when its loader is there", () => {
+    mkdirSync(join(root, "shared", "lib"), { recursive: true });
+    expect(bundledLibDir({ SHARUN_DIR: root }, "linux")).toBeNull();
+    writeFileSync(join(root, "shared", "lib", "ld-linux-x86-64.so.2"), "");
+    expect(bundledLibDir({ SHARUN_DIR: root }, "linux")).toBe(join(root, "shared", "lib"));
+    expect(bundledLibDir({}, "linux")).toBeNull();
+    expect(bundledLibDir({ SHARUN_DIR: root }, "win32")).toBeNull();
+  });
+
+  it("runs yt-dlp through the loader, with glibc on LD_LIBRARY_PATH and only the bundle's programs on PATH", () => {
+    const env = { PATH: "/usr/bin", HOME: "/h" };
+    expect(launchCommand("/d/yt-dlp", ["-j"], env, null)).toEqual({ file: "/d/yt-dlp", args: ["-j"], env });
+    const libc = { loader: "/t/libc/ld-linux-x86-64.so.2", libDir: "/t/libc", bin: "/app/bin" };
+    expect(launchCommand("/d/yt-dlp", ["-j"], env, libc)).toEqual({
+      file: "/t/libc/ld-linux-x86-64.so.2",
+      args: ["/d/yt-dlp", "-j"],
+      env: { PATH: "/app/bin", HOME: "/h", LD_LIBRARY_PATH: "/t/libc" },
+    });
+  });
+
+  it("reads the host's glibc from its libc", () => {
+    const files: Record<string, string> = {
+      "/lib/libc.so.6": "\0GNU C Library (Ubuntu EGLIBC 2.11.1-0ubuntu7) stable release version 2.11.1, by Roland",
+      "/lib64/libc.so.6": "\0GNU C Library (GNU libc) release release version 2.42.\0",
+    };
+    const read = (p: string) => (p in files ? Buffer.from(files[p]) : null);
+    expect(hostGlibc(read, ["/lib/x86_64-linux-gnu/libc.so.6", "/lib/libc.so.6"])).toEqual([2, 11]);
+    expect(hostGlibc(read, ["/lib64/libc.so.6"])).toEqual([2, 42]);
+    expect(hostGlibc(read, ["/nowhere/libc.so.6"])).toBeNull();
+  });
+
+  it("is used where the host cannot run yt-dlp_linux: musl, or glibc before 2.17", () => {
+    expect(hostNeedsLibc(() => true, () => null)).toBe(true);
+    expect(hostNeedsLibc(() => false, () => [2, 11])).toBe(true);
+    expect(hostNeedsLibc(() => false, () => [2, 16])).toBe(true);
+    expect(hostNeedsLibc(() => false, () => [2, 17])).toBe(false);
+    expect(hostNeedsLibc(() => false, () => [2, 42])).toBe(false);
+    // unreadable: as the host's, which is what melo did before
+    expect(hostNeedsLibc(() => false, () => null)).toBe(false);
   });
 });
