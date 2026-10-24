@@ -119,6 +119,20 @@ if [ -n "$ARCH_LIST" ]; then
         done <<< "$MIRRORED"
         return 1
     }
+    # Files whose host times out from the runner (gmplib.org: 6 × 134 s), kept there too:
+    # url, file, sha256. The mirror is tried first.
+    MIRRORED_URLS="https://gmplib.org/download/gmp/gmp-6.3.0.tar.lz gmp-6.3.0/gmp-6.3.0.tar.lz be5c908a7a836c3a9bd9d62aa58563c5e9e7fef94c43a7f42dbc35bb6d02733c
+https://gmplib.org/download/gmp/gmp-6.3.0.tar.lz.sig gmp-6.3.0/gmp-6.3.0.tar.lz.sig ecc20ea069574880a8d482653e4dc2262a92021281c3fcb2c8bb55c44054fe7c"
+    mirroredUrl() {   # mirroredUrl <url> <out>
+        local u f s
+        while read -r u f s; do
+            [ "$u" = "$1" ] || continue
+            $C -o "$2" "https://github.com/melo-foundation/build-inputs/releases/download/$f" || return 1
+            echo "$s  $2" | sha256sum -c --quiet || { rm -f "$2"; return 1; }
+            return 0
+        done <<< "$MIRRORED_URLS"
+        return 1
+    }
     swh() {   # swh <commit> <out.tar.gz>: the commit's tree from the archive's vault
         local api=https://archive.softwareheritage.org/api/1 dir st i
         dir=$($C "$api/revision/$1/" | sed -n 's/.*"directory":"\([0-9a-f]*\)".*/\1/p') || return 1
@@ -165,7 +179,8 @@ if [ -n "$ARCH_LIST" ]; then
                 fi
                 rm -rf "$g" ;;
             http://*|https://*|ftp://*)
-                $C -o "$d/${name:-${url##*/}}" "$url" || echo "$base $ver $url" >> "$AL/UNRESOLVED.txt" ;;
+                mirroredUrl "$url" "$d/${name:-${url##*/}}" || $C -o "$d/${name:-${url##*/}}" "$url" \
+                    || echo "$base $ver $url" >> "$AL/UNRESOLVED.txt" ;;
             esac   # anything else is a file in the packaging tarball
         done < "$W/srcinfo"
         # cached only whole: a source that failed is fetched again next time
