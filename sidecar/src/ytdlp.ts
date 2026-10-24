@@ -205,7 +205,7 @@ async function syncOnce(channel: string): Promise<Outcome> {
 
 let pending: { channel: string; run: Promise<Outcome> } | null = null;
 // A refused first install leaves no binary to throttle on: without this every
-// caller would download it again (30 MB). updateNow tries again.
+// caller would download it again (39 MB). updateNow tries again.
 const refused = new Set<string>();
 
 /** Concurrent calls for one channel share a run; a different channel waits

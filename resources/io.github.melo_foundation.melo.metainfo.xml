@@ -70,6 +70,17 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.4.1" type="development" date="2026-10-24">
+      <description>
+        <p>Hotfix for Alpha 4.</p>
+        <ul>
+          <li>Fix titles with HTML tags losing words or turning italic</li>
+          <li>Fix some titles showing HTML codes instead of their characters</li>
+          <li>Fix the queue's background changing when it opens in its own window</li>
+          <li>Add an AppImage that runs on any Linux distribution</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.0" type="development" date="2026-10-23">
       <description>
         <p>Fourth alpha.</p>

@@ -1,5 +1,27 @@
 # Changelog
 
+## Alpha 4.1
+
+### Known Issues
+
+On X11 desktops without a compositor, the splash shows a black box around the logo.
+
+### Interface Fixes
+
+- Fix titles with HTML tags losing words or turning italic
+- Fix some titles showing HTML codes instead of their characters
+- Fix the queue's background changing when it opens in its own window
+
+### AppImage Updates and Fixes
+
+- Add an AppImage that runs on any Linux distribution
+- Fix yt-dlp downloading again on every request when it cannot run
+
+### Build and Packaging Improvements
+
+- Allow building with Qt 6.8
+- Add GMP's source to the release sources archive
+
 ## Alpha 4
 
 ### Playback Updates and Fixes

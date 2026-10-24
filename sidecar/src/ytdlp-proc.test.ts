@@ -289,7 +289,7 @@ describe("the anylinux AppImage's glibc", () => {
     expect(hostNeedsLibc(() => false, () => [2, 16])).toBe(true);
     expect(hostNeedsLibc(() => false, () => [2, 17])).toBe(false);
     expect(hostNeedsLibc(() => false, () => [2, 42])).toBe(false);
-    // unreadable: as the host's, which is what melo did before
+    // unreadable: run as the host's
     expect(hostNeedsLibc(() => false, () => null)).toBe(false);
   });
 });
