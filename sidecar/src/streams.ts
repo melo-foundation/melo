@@ -18,7 +18,7 @@ import {
 import { getDownloadedUrl, getTrackMetadata } from "./library";
 import {
   browserUnread, cookiesForHost, fetchBrowserPremium, fetchMusicAlbum, fetchMusicRadio, forgetBrowser, hasAuthCookie,
-  noteKeyringFailure, resolveCookies,
+  noteKeyringFailure, resolveCookies, decodeTitle,
 } from "./innertube";
 import { AUDIO_FORMAT, UNPACK_FAILED, unpackFailedMessage } from "./ytdlp-proc";
 import { relayUrl } from "./stream-relay";
@@ -288,7 +288,7 @@ async function innertubeStream(
     videoId,
     raw: url,
     headers: undefined,
-    title: b.title ?? "",
+    title: decodeTitle(b.title ?? ""),
     channel: b.author ?? "",
     duration: b.duration ?? 0,
     thumbnail: b.thumbnail?.[0]?.url ?? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
@@ -314,7 +314,7 @@ function flatFromInnertube(v: any): FlatTrack | null {
   if (typeof id !== "string" || id.length !== 11) return null;
 
   const md = v?.metadata;
-  const title = md?.title?.text ?? v?.title?.text ?? v?.title?.runs?.[0]?.text ?? "";
+  const title = decodeTitle(md?.title?.text ?? v?.title?.text ?? v?.title?.runs?.[0]?.text ?? "");
 
   let channel = v?.author?.name ?? v?.author?.text ?? "";
   let views = "";
@@ -561,7 +561,7 @@ function flatFromPanelItem(v: any): FlatTrack | null {
   const thumbs = v?.thumbnail?.thumbnails ?? [];
   return {
     id,
-    title: v?.title?.simpleText ?? v?.title?.runs?.[0]?.text ?? "",
+    title: decodeTitle(v?.title?.simpleText ?? v?.title?.runs?.[0]?.text ?? ""),
     channel: v?.shortBylineText?.runs?.[0]?.text ?? v?.longBylineText?.runs?.[0]?.text ?? "",
     duration: hmsToSeconds(v?.lengthText?.simpleText ?? ""),
     thumbnail: thumbs[thumbs.length - 1]?.url ?? `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
@@ -1011,7 +1011,7 @@ async function resolveWithClient(
     videoId,
     raw,
     headers: ytdlpHttpHeaders(data),
-    title: data.title,
+    title: decodeTitle(data.title || ""),
     channel: data.channel || data.uploader || "",
     duration: data.duration,
     thumbnail: data.thumbnail,
@@ -1410,7 +1410,7 @@ export async function fetchRecommendedTracks(count: number = 30): Promise<FlatTr
     const d = JSON.parse(line);
     return {
       id: d.id,
-      title: d.title || "",
+      title: decodeTitle(d.title || ""),
       channel: d.channel || d.uploader || "",
       duration: d.duration ?? 0,
       views: d.view_count ? compactCount(d.view_count) + " views" : "",
@@ -1441,7 +1441,7 @@ function parseFlatPlaylist(stdout: string): { title: string; tracks: FlatTrack[]
     if (!playlistTitle && d.playlist_title) playlistTitle = d.playlist_title;
     return {
       id: d.id,
-      title: d.title || "",
+      title: decodeTitle(d.title || ""),
       channel: d.channel || d.uploader || "",
       duration: d.duration ?? 0,
       thumbnail: d.thumbnails?.[d.thumbnails.length - 1]?.url || "",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseNextResponse, hasAuthCookie, cookiesForHost, parseAccountMenu, parsePremium, authCookie, signedInFrom } from "./innertube";
+import { parseNextResponse, hasAuthCookie, cookiesForHost, parseAccountMenu, parsePremium, authCookie, signedInFrom, decodeTitle, parseLockupVideo, parseSearchResponse, parsePanelVideo, parseMusicListItem } from "./innertube";
 
 // Shape taken from a live /next response: the related list ends in a
 // continuation item, and the numbers live in the primary/secondary renderers.
@@ -259,5 +259,47 @@ describe("signedInFrom", () => {
   });
   it("is signed out without an auth cookie", () => {
     expect(signedInFrom(false, { answered: false, account: null })).toBe(false);
+  });
+});
+
+// Shapes and strings from live responses (2026-10-24): 8chYzR2wWMI, KipIjSUmwAw,
+// XPZ82pet7Ac, and channel UCqCEKG8pfkU0cviZUDrpvyg, whose name is the typed "&lt;3".
+const lockup = (title: string, channel: string) => ({
+  contentId: "8chYzR2wWMI", contentType: "LOCKUP_CONTENT_TYPE_VIDEO",
+  metadata: { lockupMetadataViewModel: { title: { content: title },
+    metadata: { contentMetadataViewModel: { metadataRows: [{ metadataParts: [{ text: { content: channel } }] }] } } } },
+});
+
+describe("titles as YouTube stores them", () => {
+  it("decodes once", () => {
+    expect(decodeTitle("Difference between &lt;div&gt;  and &lt;span&gt; element.")).toBe("Difference between <div>  and <span> element.");
+    expect(decodeTitle("can&#39;t find error android")).toBe("can't find error android");
+    expect(decodeTitle("AXiS2 - &lt; and &gt; are getting converted to &amp;lt;  and")).toBe("AXiS2 - < and > are getting converted to &lt;  and");
+    expect(decodeTitle("&gt;elephant is $$#?&amp;lt;?")).toBe(">elephant is $$#?&lt;?");
+    expect(decodeTitle("Learn HTML span & div in 4 minutes!")).toBe("Learn HTML span & div in 4 minutes!");
+    expect(decodeTitle("Wear &Quot;Samue&Quot; &unknown; &#0;")).toBe("Wear &Quot;Samue&Quot; &unknown; &#0;");
+  });
+  it("decodes a stored title from /next, a channel tab and YouTube Music", () => {
+    const v = parseLockupVideo(lockup("What does :&lt;i&gt; code stand for in subtitles?", "Roel Van de Paar"));
+    expect(v?.title).toBe("What does :<i> code stand for in subtitles?");
+    const p = parsePanelVideo({ playlistPanelVideoRenderer: { videoId: "8chYzR2wWMI",
+      title: { runs: [{ text: "What does :&lt;i&gt; code stand for in subtitles?" }] },
+      shortBylineText: { runs: [{ text: "Roel Van de Paar" }] } } });
+    expect(p?.title).toBe("What does :<i> code stand for in subtitles?");
+    const m = parseMusicListItem({ playlistItemData: { videoId: "KipIjSUmwAw" }, flexColumns: [
+      { musicResponsiveListItemFlexColumnRenderer: { text: { runs: [{ text: "클라라 슈만 : &lt;4개의 소품&gt; 중 라르게토 바장조 Op.15-1" }] } } },
+      { musicResponsiveListItemFlexColumnRenderer: { text: { runs: [{ text: "강현주" }] } } }] });
+    expect(m?.kind === "track" && m.track.title).toBe("클라라 슈만 : <4개의 소품> 중 라르게토 바장조 Op.15-1");
+  });
+  it("keeps web search's title, which comes decoded already", () => {
+    const r = parseSearchResponse({ contents: { twoColumnSearchResultsRenderer: { primaryContents: { sectionListRenderer: { contents: [
+      { itemSectionRenderer: { contents: [
+        { videoRenderer: { videoId: "XPZ82pet7Ac", title: { runs: [{ text: "AXiS2 - < and > are getting converted to &lt;  and" }] },
+                           ownerText: { runs: [{ text: "TheKnowledgeBase" }] } } },
+        { lockupViewModel: lockup("Promise { <pending> } .forEach &amp; more", "TheKnowledgeBase") }] } }] } } } } });
+    expect(r.results.map((x) => x.title)).toEqual(["AXiS2 - < and > are getting converted to &lt;  and", "Promise { <pending> } .forEach &amp; more"]);
+  });
+  it("leaves a channel's name as typed", () => {
+    expect(parseLockupVideo(lockup("[VOD 1] getting my ass kicked", "&lt;3"))?.channel).toBe("&lt;3");
   });
 });

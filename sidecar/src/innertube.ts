@@ -692,7 +692,7 @@ function parseRichItemVideo(item: any): SearchResult | null {
   if (vr?.videoId) {
     return {
       id: vr.videoId,
-      title: vr.title?.runs?.[0]?.text || "",
+      title: decodeTitle(vr.title?.runs?.[0]?.text || ""),
       channel: vr.ownerText?.runs?.[0]?.text || "",
       duration: parseDuration(vr.lengthText?.simpleText || ""),
       thumbnail: pickThumb(vr.thumbnail?.thumbnails),
@@ -923,7 +923,7 @@ function parseSearchItems(items: any[], results: SearchResult[], playlists: Sear
     const lvm = item?.lockupViewModel;
     if (lvm?.contentId) {
       if (lvm.contentType === "LOCKUP_CONTENT_TYPE_VIDEO") {
-        const parsed = parseLockupVideo(lvm);
+        const parsed = parseLockupVideo(lvm, false);
         if (parsed) results.push(parsed);
       } else if (
         lvm.contentType === "LOCKUP_CONTENT_TYPE_PLAYLIST" ||
@@ -945,7 +945,7 @@ function extractContinuationToken(items: any[]): string | undefined {
   return undefined;
 }
 
-function parseSearchResponse(data: any): InnerTubeSearchResult {
+export function parseSearchResponse(data: any): InnerTubeSearchResult {
   const results: SearchResult[] = [];
   const playlists: SearchPlaylistResult[] = [];
   let continuation: string | undefined;
@@ -967,9 +967,10 @@ function parseSearchResponse(data: any): InnerTubeSearchResult {
   return { results, playlists, continuation };
 }
 
-function parseLockupVideo(lvm: any): SearchResult | null {
+export function parseLockupVideo(lvm: any, stored = true): SearchResult | null {
   const meta = lvm.metadata?.lockupMetadataViewModel;
-  const title = meta?.title?.content || "";
+  const raw = meta?.title?.content || "";
+  const title = stored ? decodeTitle(raw) : raw;
 
   // rows[0] is the channel; the row after it carries the view count and the
   // age, which is the information a wide row has space for and lacked
@@ -1145,7 +1146,24 @@ function continuationToken(items: any): string {
   return "";
 }
 
-function textOf(v: any): string {
+// A video's stored title can itself be HTML-escaped ("&lt;i&gt;", "can&#39;t"), and
+// YouTube's web search shows it decoded once; every other source sends it as stored.
+// One pass, so a typed "&lt;" (stored "&amp;lt;") stays "&lt;". Names and descriptions
+// are never escaped and never go through this.
+const NAMED: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'" };
+export function decodeTitle(s: string): string {
+  if (!s || s.indexOf("&") < 0) return s;
+  return s.replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{2,4});/gi, (m, e: string) => {
+    if (e[0] === "#") {
+      const n = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+      return n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : m;
+    }
+    const v = NAMED[e];
+    return v === undefined ? m : v;
+  });
+}
+
+export function textOf(v: any): string {
   if (!v) return "";
   if (typeof v.simpleText === "string") return v.simpleText;
   if (Array.isArray(v.runs)) return v.runs.map((r: any) => r?.text || "").join("");
@@ -1221,7 +1239,7 @@ function parseNextItem(item: any): SearchResult | null {
   const lvm = item?.lockupViewModel;
   if (lvm && lvm.contentId && lvm.contentType === "LOCKUP_CONTENT_TYPE_VIDEO") {
     const meta = lvm.metadata?.lockupMetadataViewModel;
-    const title = meta?.title?.content || "";
+    const title = decodeTitle(meta?.title?.content || "");
 
     // Channel name is in the first metadataRow's first part
     let channel = "";
@@ -1240,7 +1258,7 @@ function parseNextItem(item: any): SearchResult | null {
   // Old format: compactVideoRenderer
   const cvr = item?.compactVideoRenderer;
   if (cvr?.videoId) {
-    const title = cvr.title?.simpleText || cvr.title?.runs?.[0]?.text || "";
+    const title = decodeTitle(cvr.title?.simpleText || cvr.title?.runs?.[0]?.text || "");
     const channel = cvr.longBylineText?.runs?.[0]?.text ||
       cvr.shortBylineText?.runs?.[0]?.text || "";
     const durationText = cvr.lengthText?.simpleText || "";
@@ -1277,7 +1295,7 @@ function parseHomeItem(it: any): HomeItem | null {
     const channel = artist.join("").trim();
     // Quick picks put the album in a third column
     const albumRuns = cols[2]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
-    return rememberMusic<HomeItem>({ kind: "song", videoId, playlistId: "", title: textOf(first), description: channel, channel,
+    return rememberMusic<HomeItem>({ kind: "song", videoId, playlistId: "", title: decodeTitle(textOf(first)), description: channel, channel,
                            thumbnail: lastThumb(song.thumbnail), ...bylineInfo([...runs, ...albumRuns]) });
   }
   const card = it?.musicTwoRowItemRenderer;
@@ -1288,7 +1306,7 @@ function parseHomeItem(it: any): HomeItem | null {
   const base = { videoId: "", title: textOf(card.title), description: textOf(card.subtitle), channel: "",
                  thumbnail: lastThumb(card.thumbnailRenderer) };
   if (nav.watchEndpoint?.videoId)
-    return rememberMusic<HomeItem>({ ...base, kind: "song", videoId: nav.watchEndpoint.videoId, playlistId: "", ...bylineInfo(card.subtitle?.runs) });
+    return rememberMusic<HomeItem>({ ...base, title: decodeTitle(base.title), kind: "song", videoId: nav.watchEndpoint.videoId, playlistId: "", ...bylineInfo(card.subtitle?.runs) });
   if (bid.startsWith("VL")) return { ...base, kind: "playlist", playlistId: bid.slice(2) };
   if (nav.watchPlaylistEndpoint?.playlistId) return { ...base, kind: "playlist", playlistId: nav.watchPlaylistEndpoint.playlistId };
   if (bid.startsWith("RD")) return { ...base, kind: "playlist", playlistId: bid };
@@ -1461,7 +1479,7 @@ export function parseMusicListItem(r: any): MusicListItem {
   const runs: any[] = r.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
   if (videoId) {
     const duration = parseDuration(segs.find((s) => /^\d+(:\d\d)+$/.test(s)) || "");
-    return { kind: "track", track: rememberMusic({ id: videoId, title, channel: segs[0] || "", duration, thumbnail,
+    return { kind: "track", track: rememberMusic({ id: videoId, title: decodeTitle(title), channel: segs[0] || "", duration, thumbnail,
                                                    views: musicViews(segs, columnText(r, 2)), ...bylineInfo(runs) }) };
   }
   const bid: string = r.navigationEndpoint?.browseEndpoint?.browseId || "";
@@ -1620,7 +1638,7 @@ function albumTracks(items: any[] | undefined, album: { title: string; artist: s
     const runs: any[] = r.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
     const artists = bylineInfo(runs).artists ?? album.artists;
     const fixed = textOf(r.fixedColumns?.[0]?.musicResponsiveListItemFixedColumnRenderer?.text);
-    out.push(rememberMusic({ id, title: columnText(r, 0), channel: columnText(r, 1) || album.artist,
+    out.push(rememberMusic({ id, title: decodeTitle(columnText(r, 0)), channel: columnText(r, 1) || album.artist,
                              duration: parseDuration(fixed), thumbnail: album.thumbnail,
                              views: columnText(r, 2),
                              ...(artists ? { artists } : {}),
@@ -1706,7 +1724,7 @@ export function parsePanelVideo(item: any): SearchResult | null {
   const segs = textOf(v.longBylineText).split(/\s+•\s+/).map((s: string) => s.trim());
   const views = musicViews(segs, "");
   return rememberMusic({
-    id, title: textOf(v.title),
+    id, title: decodeTitle(textOf(v.title)),
     channel: textOf(v.shortBylineText) || segs[0] || "",
     duration: parseDuration(textOf(v.lengthText)),
     thumbnail: musicThumb(v.thumbnail?.thumbnails) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
@@ -1738,7 +1756,7 @@ function watchInfoOf(v: any): MusicWatchInfo | null {
   const thumbs: any[] = (v.thumbnail?.thumbnails || []).filter((t: any) => typeof t?.url === "string");
   const segs = textOf(v.longBylineText).split(/\s+•\s+/).map((s: string) => s.trim());
   return {
-    videoId: v.videoId, type: type.replace(/^MUSIC_VIDEO_TYPE_/, ""), title: textOf(v.title),
+    videoId: v.videoId, type: type.replace(/^MUSIC_VIDEO_TYPE_/, ""), title: decodeTitle(textOf(v.title)),
     artist: segs[0] || textOf(v.shortBylineText), cover: thumbs.length ? thumbs[thumbs.length - 1].url : "",
     ...bylineInfo(v.longBylineText?.runs),
   };

@@ -944,6 +944,12 @@ if(Qt6Test_FOUND)
     # Content fidelity + containment for the queue view a plugin is handed.
     # MeloUiQueueView has its own translation unit precisely so this links
     # against QueueModel alone — keep it that way.
+    # a title's <img src> never makes melo's text items fetch it
+    add_executable(tst_plaintextfetch tests/cpp/tst_plaintextfetch.cpp)
+    target_compile_definitions(tst_plaintextfetch PRIVATE MELO_QML_SRC="${CMAKE_CURRENT_SOURCE_DIR}/src/qml")
+    target_link_libraries(tst_plaintextfetch PRIVATE Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::Network Qt6::Test)
+    add_test(NAME plaintextfetch COMMAND tst_plaintextfetch)
+
     add_executable(tst_queueview
         tests/cpp/tst_queueview.cpp
         src/plugins/MeloUiQueueView.cpp
