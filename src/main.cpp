@@ -383,6 +383,19 @@ int main(int argc, char** argv) {
 
     LogFile::startTee(meloConfigDir() + QStringLiteral("/logs"), smoke);
 
+#ifdef Q_OS_LINUX
+    // Without XDG_RUNTIME_DIR (Ubuntu 10.04, su) Mesa makes /tmp/xdg-runtime-mesa-<uid>
+    // itself, and melo and its splash racing to make it crashed a cold first start (139).
+    // Qt's own fallback, set before the splash so every process shares it.
+    if (qEnvironmentVariableIsEmpty("XDG_RUNTIME_DIR")) {
+        const QString rt = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+        if (!rt.isEmpty()) {
+            qputenv("XDG_RUNTIME_DIR", QFile::encodeName(rt));
+            std::fprintf(stderr, "[melo] no XDG_RUNTIME_DIR: using %s\n", qPrintable(rt));
+        }
+    }
+#endif
+
     // up until the window shows (Splash.h); MELO_NO_SPLASH=1 turns it off
     SplashLauncher splash;
     if (!smoke && !qEnvironmentVariableIsSet("MELO_NO_SPLASH")) splash.start();
