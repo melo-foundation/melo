@@ -19,7 +19,7 @@ import { reapOrphans, sweepStale } from "./ytdlp-proc";
 import { warmStreamSession } from "./streams";
 import { warmPoTokenSession } from "./potoken";
 
-const SIDECAR_VERSION = "0.4.1";
+const SIDECAR_VERSION = "0.4.2";
 
 let initialized = false;
 

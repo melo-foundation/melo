@@ -1,5 +1,11 @@
 # Changelog
 
+## Alpha 4.2
+
+### Startup Fixes
+
+- Fix melo crashing on its first start on older systems
+
 ## Alpha 4.1
 
 ### Known Issues
