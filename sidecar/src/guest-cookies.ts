@@ -211,12 +211,24 @@ function parseSetCookie(header: string): GuestCookie | null {
   return { domain, path, secure, expiry, name, value };
 }
 
+// From the EU and UK youtube.com answers a visitor without SOCS with its consent
+// page, so a new guest gets no visitor id, chips or history. As yt-dlp does: SOCS=CAI
+// ("accept all") unless signed in or already answered (CAA... is unanswered).
+export function withConsent(cookieHeader: string): string {
+  const parts = cookieHeader ? cookieHeader.split("; ") : [];
+  const name = (p: string) => p.slice(0, p.indexOf("="));
+  if (parts.some((p) => name(p) === "SAPISID" || name(p) === "__Secure-3PAPISID")) return cookieHeader;
+  const socs = parts.find((p) => name(p) === "SOCS");
+  if (socs && !socs.startsWith("SOCS=CAA")) return cookieHeader;
+  return [...parts.filter((p) => name(p) !== "SOCS"), "SOCS=CAI"].join("; ");
+}
+
 /**
  * Fetch fresh guest cookies from YouTube.
  */
 async function fetchGuestCookies(): Promise<GuestCookie[]> {
   const res = await fetch("https://www.youtube.com", {
-    headers: { "User-Agent": USER_AGENT },
+    headers: { "User-Agent": USER_AGENT, Cookie: withConsent("") },
     redirect: "follow",
   });
 

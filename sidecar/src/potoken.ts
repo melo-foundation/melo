@@ -7,6 +7,7 @@
 // fingerprints the DOM and refuses a hand-written shim.
 
 import { log } from "./rpc";
+import { withConsent } from "./guest-cookies";
 
 interface Minter {
   mintAsWebsafeString(contentBinding: string): Promise<string>;
@@ -50,7 +51,7 @@ async function createSession(): Promise<Session> {
 
   // The token is bound to an identity; YouTube's own homepage issues one.
   const html = await (await fetch("https://www.youtube.com", {
-    headers: { "User-Agent": BROWSER_UA },
+    headers: { "User-Agent": BROWSER_UA, Cookie: withConsent("") },
   })).text();
   const m = /"visitorData":"([^"]+)"/.exec(html);
   if (!m) throw new Error("no visitorData on youtube.com");

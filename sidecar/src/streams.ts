@@ -14,6 +14,7 @@ import {
   parseNetscapeCookieFile,
   mergeGuestCookies,
   cookiesTxtPath,
+  withConsent,
 } from "./guest-cookies";
 import { getDownloadedUrl, getTrackMetadata } from "./library";
 import {
@@ -706,7 +707,7 @@ async function guestVisitorData(): Promise<string> {
     try {
       const res = await fetch("https://www.youtube.com", {
         headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" },
+          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", Cookie: withConsent("") },
       });
       const m = /"visitorData":"([^"]+)"/.exec(await res.text());
       visitorData = m ? (JSON.parse(`"${m[1]}"`) as string) : "";

@@ -1,7 +1,7 @@
 import { localePref, loadSettings } from "./settings";
 import { createHash } from "crypto";
 import type { CookieSource } from "./settings";
-import { getGuestCookies, clearGuestCache, captureResponseCookies, dumpBrowserCookies, hasSignInCookie, KeyringError, KEYRING_FAILED } from "./guest-cookies";
+import { getGuestCookies, clearGuestCache, captureResponseCookies, dumpBrowserCookies, hasSignInCookie, KeyringError, KEYRING_FAILED, withConsent } from "./guest-cookies";
 import { USER_AGENT } from "./platform";
 
 interface Cookie {
@@ -329,9 +329,7 @@ export async function buildHeaders(origin: string, cookieSource: CookieSource, b
     "X-Origin": origin,
   };
 
-  if (cookieHeader) {
-    headers["Cookie"] = cookieHeader;
-  }
+  headers["Cookie"] = withConsent(cookieHeader);
 
   const sapisid = authCookie(cookies, new URL(origin).hostname);
   if (sapisid) {
@@ -469,7 +467,7 @@ export async function fetchRecommendedChips(cookieSource: CookieSource, browser:
     "Sec-Fetch-Site": "none",
     "Sec-Fetch-User": "?1",
   };
-  if (cookieHeader) headers["Cookie"] = cookieHeader;
+  headers["Cookie"] = withConsent(cookieHeader);
 
   const res = await fetch("https://www.youtube.com", { headers });
   if (cookieSource === "guest") captureResponseCookies(profile, res);
