@@ -100,8 +100,12 @@ export function isSupportedLocale(code: string): boolean {
 }
 
 /** Nearest supported code, or "" when there is none. */
+// YouTube keeps the old codes where a system has the new ones
+const ALIASES: Record<string, string> = { he: "iw", nb: "no", nn: "no", tl: "fil" };
+
 export function nearestSupported(code: string): string {
-  const c = (code || "").toLowerCase();
+  const raw = (code || "").toLowerCase(), base0 = raw.split("-")[0];
+  const c = ALIASES[base0] ? ALIASES[base0] + raw.slice(base0.length) : raw;
   for (const l of LOCALES) if (l.code.toLowerCase() === c) return l.code;
   const base = c.split("-")[0];
   for (const l of LOCALES) if (l.code.toLowerCase() === base) return l.code;
@@ -109,9 +113,15 @@ export function nearestSupported(code: string): string {
 }
 
 // ---- regions (gl) -------------------------------------------------------
-// gl steers recommendations and availability, not titles, and unlike hl it
-// tolerates junk (gl=XX and gl="" both return a normal payload), so it needs a
-// picker, not a validator. Generated from Intl's ISO 3166 table.
+// gl steers recommendations and availability, not titles. YouTube offers 111
+// locations; for any other region YouTube search answers "Something went wrong"
+// and YouTube Music 400, while both answer normally without gl. Names come
+// from Intl's ISO 3166 table.
+const YT_REGIONS = new Set((
+  "AE AM AR AT AU AZ BA BD BE BG BH BO BR BY CA CH CL CO CR CY CZ DE DK DO DZ EC EE EG ES FI FR " +
+  "GB GE GH GR GT HK HN HR HU ID IE IL IN IQ IS IT JM JO JP KE KH KR KW KZ LA LB LI LK LT LU LV LY " +
+  "MA MD ME MK MT MX MY NG NI NL NO NP NZ OM PA PE PG PH PK PL PR PT PY QA RO RS RU SA SE SG SI SK " +
+  "SN SV TH TN TR TW TZ UA UG US UY VE VN YE ZA ZW").split(" "));
 export interface RegionEntry { code: string; name: string }
 
 let regionCache: RegionEntry[] | null = null;
@@ -126,7 +136,7 @@ export function REGIONS(): RegionEntry[] {
         const code = String.fromCharCode(a, b);
         let name: string | undefined;
         try { name = dn.of(code); } catch { continue; }
-        if (name && name !== code) out.push({ code, name });
+        if (name && name !== code && YT_REGIONS.has(code)) out.push({ code, name });
       }
     }
   } catch { /* no Intl region data — the picker just shows nothing */ }
@@ -136,6 +146,5 @@ export function REGIONS(): RegionEntry[] {
 }
 
 export function isSupportedRegion(code: string): boolean {
-  const c = (code || "").toUpperCase();
-  return REGIONS().some((r) => r.code === c);
+  return YT_REGIONS.has((code || "").toUpperCase());
 }

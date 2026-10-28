@@ -38,9 +38,9 @@ describe("locale validation", () => {
 });
 
 describe("regions (gl)", () => {
-  it("resolves the ISO table from Intl", () => {
+  it("names every YouTube location from Intl", () => {
     const r = REGIONS();
-    expect(r.length).toBeGreaterThan(200);
+    expect(r.length).toBe(111);
     expect(r.some((x) => x.code === "JP" && x.name === "Japan")).toBe(true);
     expect(r.some((x) => x.code === "US")).toBe(true);
   });

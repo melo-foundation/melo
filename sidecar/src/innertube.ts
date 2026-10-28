@@ -413,7 +413,7 @@ export async function fetchMusicHome(cookieSource: CookieSource, browser: string
 export async function fetchMusicHomeContinuation(token: string, cookieSource: CookieSource, browser: string, profile: string): Promise<{ sections: HomeSection[]; continuation: string }> {
   const origin = "https://music.youtube.com";
   const headers = await buildHeaders(origin, cookieSource, browser, profile);
-  const client: Record<string, string> = {
+  const client: Record<string, string | undefined> = {
     clientName: "WEB_REMIX", clientVersion: "1.20260301.01.00",
     hl: localePref().hl, gl: localePref().gl,
   };
@@ -463,7 +463,7 @@ export async function fetchRecommendedChips(cookieSource: CookieSource, browser:
   const headers: Record<string, string> = {
     "User-Agent": USER_AGENT,
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": `${localePref().hl}-${localePref().gl},${localePref().hl};q=0.5`,
+    "Accept-Language": `${localePref().hl},${localePref().hl.split("-")[0]};q=0.5`,
     "Sec-Fetch-Dest": "document",
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": "none",
@@ -495,7 +495,7 @@ export async function fetchRecommendedByChip(token: string, cookieSource: Cookie
   const headers = await buildHeaders(origin, cookieSource, browser, profile);
   headers["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64; rv:137.0) Gecko/20100101 Firefox/137.0";
 
-  const client: Record<string, string> = {
+  const client: Record<string, string | undefined> = {
     clientName: "WEB",
     clientVersion: "2.20260301.00.00",
     hl: localePref().hl,
@@ -553,7 +553,7 @@ export async function fetchRecommendedContinuation(
   const headers = await buildHeaders(origin, cookieSource, browser, profile);
   headers["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64; rv:137.0) Gecko/20100101 Firefox/137.0";
 
-  const client: Record<string, string> = {
+  const client: Record<string, string | undefined> = {
     clientName: "WEB",
     clientVersion: "2.20260301.00.00",
     hl: localePref().hl,
@@ -1371,7 +1371,7 @@ function ytmFallback(what: string, why: unknown): void {
 async function musicPost(endpoint: string, body: Record<string, unknown>,
                          cookieSource: CookieSource, browser: string, profile: string): Promise<any> {
   const headers = await buildHeaders(MUSIC_ORIGIN, cookieSource, browser, profile);
-  const client: Record<string, string> = {
+  const client: Record<string, string | undefined> = {
     clientName: "WEB_REMIX", clientVersion: "1.20260301.01.00",
     hl: localePref().hl, gl: localePref().gl,
   };

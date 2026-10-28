@@ -3,7 +3,7 @@ import { readFileSync, existsSync, mkdirSync, chmodSync } from "fs";
 import { writeFileAtomic, backupOnce, backupPath } from "./atomic";
 import { dataDir, musicDir } from "./env";
 import type { PluginGrants } from "./plugins/permissions";
-import { nearestSupported } from "./locales";
+import { nearestSupported, isSupportedRegion } from "./locales";
 import type { TagServices } from "./metadata";
 
 // melo settings. Sidecar-relevant fields are typed; everything UI-only lives under `ui` as an
@@ -18,14 +18,13 @@ export type YtdlpChannel = "stable" | "nightly";
  *  translation whenever hl differs from the video's language. There is no
  *  "no locale": hl "", "zxx", "und" and "mul" are rejected, and omitting hl
  *  means en. /player's videoDetails.title ignores hl (always the original). */
-export function localePref(): { hl: string; gl: string } {
+export function localePref(): { hl: string; gl: string | undefined } {
   const st = loadSettings();
   const sys = systemLocale().replace(/_/g, "-");
-  const [sysLang, sysRegion] = sys.split("-");
+  const sysLang = sys.split("-")[0];
+  const sysRegion = systemRegion(sys);
 
   // hl decides translated titles; gl steers recommendations and availability.
-  // Validated differently: an unsupported hl returns no usable renderers,
-  // while gl tolerates anything (gl=XX and gl="" both work).
   const wantLang = (st.language || "").trim() || sysLang || "";
   const hl = nearestSupported(wantLang) || nearestSupported(sysLang || "") || "en";
   if ((st.language || "").trim() && !nearestSupported(wantLang)) {
@@ -33,17 +32,27 @@ export function localePref(): { hl: string; gl: string } {
   }
 
   const wantRegion = ((st.region || "").trim() || sysRegion || "US").toUpperCase();
-  return { hl: hl.toLowerCase(), gl: wantRegion };
+  // hl as LOCALES spells it: YouTube answers 400 to "en-gb" or "pt-br".
+  // A region YouTube does not offer goes as none: undefined drops out of the JSON
+  return { hl, gl: isSupportedRegion(wantRegion) ? wantRegion : undefined };
 }
 
-function systemLocale(): string {
-  try {
-    const l = Intl.DateTimeFormat().resolvedOptions().locale;
-    if (l) return l;
-  } catch { /* fall through */ }
-  const env = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || "";
-  const m = /^([A-Za-z]{2,3}(?:[-_][A-Za-z]{2})?)/.exec(env);
+// The region subtag, past a script or variant: zh-Hans-CN is CN, not "HANS"
+export function systemRegion(locale: string): string {
+  return locale.split("-").slice(1).find((p) => /^[A-Za-z]{2}$/.test(p))?.toUpperCase() ?? "";
+}
+
+// ICU answers "und" when LC_ALL or LC_MESSAGES is set but empty; POSIX skips an
+// empty one, so the variables are read the same way
+export function systemLocale(intl: string = intlLocale(), env: NodeJS.ProcessEnv = process.env): string {
+  if (intl && intl !== "und") return intl;
+  const v = env.LC_ALL || env.LC_MESSAGES || env.LANG || "";
+  const m = /^([A-Za-z]{2,3}(?:[-_][A-Za-z]{2})?)/.exec(v);
   return m ? m[1] : "en-US";
+}
+
+function intlLocale(): string {
+  try { return Intl.DateTimeFormat().resolvedOptions().locale; } catch { return ""; }
 }
 
 export interface SettingsV2 {

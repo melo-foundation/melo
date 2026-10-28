@@ -119,7 +119,7 @@ export function resetSession(): void {
 // titles in the previous language after the setting changed
 function keyOf(id: Identity): string {
   const { hl, gl } = localePref();
-  return `${id.join(":")}:${hl}-${gl}`;
+  return `${id.join(":")}:${hl}-${gl ?? ""}`;
 }
 
 /** The Cookie header for youtubei.js: what a browser sends www.youtube.com,
