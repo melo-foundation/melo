@@ -261,8 +261,10 @@ function loadGuestCookies(profile: string): GuestCookie[] {
  * Merge new cookies into the guest cookie store (upsert by domain+name).
  * Also invalidates the in-memory cache so next read picks up changes.
  */
-export function mergeGuestCookies(profile: string, newCookies: GuestCookie[]): void {
+export function mergeGuestCookies(profile: string, incoming: GuestCookie[]): void {
   checkProfileName(profile);
+  // every path in, yt-dlp's write-back included, keeps YouTube's cookies only
+  const newCookies = youtubeCookies(incoming);
   if (newCookies.length === 0) return;
 
   const stored = loadGuestCookies(profile);

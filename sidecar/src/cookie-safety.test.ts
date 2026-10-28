@@ -144,6 +144,7 @@ describe.skipIf(!unix)("reading a browser's cookies", () => {
     process.env.XDG_CACHE_HOME = join(root, "cache");
     process.env.MELO_FAKE_LOG = log;
     writeFileSync(fake, `#!/bin/bash
+[ "$1" = --ignore-config ] && [ "$2" = --no-plugin-dirs ] && shift 2 || { echo "ERROR: user config not ignored" >&2; exit 2; }
 b="$2"; f="$4"
 if [ -p "$f" ]; then echo fifo >> "$MELO_FAKE_LOG"; else echo file >> "$MELO_FAKE_LOG"; fi
 # as yt-dlp: a readable --cookies is loaded first, and one without the header is refused

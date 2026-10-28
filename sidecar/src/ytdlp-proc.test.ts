@@ -26,6 +26,8 @@ describe.skipIf(!linux)("running yt-dlp", () => {
   beforeAll(() => {
     process.env.XDG_CACHE_HOME = join(root, "cache");
     writeFileSync(fake, `#!/bin/bash
+all=("$@")
+[ "$1" = --ignore-config ] && [ "$2" = --no-plugin-dirs ] && shift 2
 case "$1" in
   tmpdir) echo "$TMPDIR"; exit 0 ;;
   full) echo "[PYI-1:ERROR] Failed to extract x.so: decompression resulted in return code -1!" >&2; exit 1 ;;
@@ -39,7 +41,8 @@ case "$1" in
         echo "$$ $d" > "$2"; while :; do sleep 0.05; done ;;
   stubborn) d="$TMPDIR/yt_dlptest$$"; mkdir -p "$d"; echo x > "$d/temporary.sqlite"; trap '' INT TERM
             echo "$$ $d" > "$2"; while :; do sleep 0.05; done ;;
-  --config-locations) printf '%s\n' "$@"; echo ---; cat; exit 0 ;;
+  args) printf '%s\n' "\${all[@]}"; echo ---; exit 0 ;;
+  --config-locations) printf '%s\n' "\${all[@]}"; echo ---; cat; exit 0 ;;
 esac`);
     chmodSync(fake, 0o755);
   });
@@ -77,12 +80,19 @@ esac`);
     expect(existsSync(dir)).toBe(false);
   }, 15000);
 
+  // a user's yt-dlp config (--cookies-from-browser, --download-archive, --print) or
+  // plugin would load into every melo run
+  it("never loads the user's yt-dlp config or plugins", async () => {
+    const { stdout } = await runYtdlp(fake, ["args", "-j"]);
+    expect(stdout.split("---\n")[0].trim().split("\n")).toEqual(["--ignore-config", "--no-plugin-dirs", "args", "-j"]);
+  });
+
   it("extractor args go in on stdin, not on the command line", async () => {
     const { stdout } = await runYtdlp(fake, ["args", "--extractor-args", "youtube:po_token=web.gvs+SECRET;visitor_data=VD", "-j"]);
     const [argv, stdin] = stdout.split("---\n");
     expect(argv).not.toContain("SECRET");
     expect(argv).not.toContain("VD");
-    expect(argv.trim().split("\n")).toEqual(["--config-locations", "-", "args", "-j"]);
+    expect(argv.trim().split("\n")).toEqual(["--ignore-config", "--no-plugin-dirs", "--config-locations", "-", "args", "-j"]);
     expect(stdin.trim()).toBe("--extractor-args 'youtube:po_token=web.gvs+SECRET;visitor_data=VD'");
   });
 

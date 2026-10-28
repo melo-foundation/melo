@@ -234,7 +234,10 @@ export function splitConfigArgs(args: string[]): { argv: string[]; config: strin
  *  an Error carrying code, signal, killed, stdout and stderr otherwise. */
 export function runYtdlp(bin: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
   const maxBuffer = opts.maxBuffer ?? 1024 * 1024;
-  const { argv, config } = splitConfigArgs(args);
+  const split = splitConfigArgs(args);
+  // never the user's own yt-dlp config or plugins: a --cookies-from-browser or
+  // --download-archive line there would run inside every melo run
+  const argv = ["--ignore-config", "--no-plugin-dirs", ...split.argv], config = split.config;
   // nothing is unpacking now, so any unpack folder left is a leftover
   if (running.size === 0) sweepStale();
   let tmp: string;
