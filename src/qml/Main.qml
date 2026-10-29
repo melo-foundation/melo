@@ -292,6 +292,9 @@ Window {
     function clearFilters() {
         searchSort = "relevance"; searchType = "any"; searchDate = "any"; searchDuration = "any"
     }
+    // YouTube disables Upload date and Duration for playlists: they match none
+    readonly property bool playlistSearch: !musicSearch && searchType === "playlist"
+    onPlaylistSearchChanged: if (playlistSearch) { searchDate = "any"; searchDuration = "any" }
     function buildFilters() {
         const f = {}
         if (searchSort !== "relevance") f.sort = searchSort
@@ -2274,29 +2277,26 @@ Window {
                 FilterGroup { label: "Sort"; visible: !root.musicSearch
                     FilterSelect { value: root.searchSort; onPicked: (v) => root.searchSort = v
                         options: [ { value: "relevance", label: "Relevance" },
-                                   { value: "date", label: "Upload date" },
-                                   { value: "views", label: "View count" },
-                                   { value: "rating", label: "Rating" } ] } }
+                                   { value: "views", label: "View count" } ] } }
                 FilterGroup { label: "Type"; visible: !root.musicSearch
                     FilterSelect { value: root.searchType; onPicked: (v) => root.searchType = v
                         options: [ { value: "any", label: "Any" },
                                    { value: "video", label: "Video" },
-                                   { value: "playlist", label: "Playlist" },
-                                   { value: "channel", label: "Channel" },
-                                   { value: "movie", label: "Movie" } ] } }
+                                   { value: "playlist", label: "Playlist" } ] } }
                 FilterGroup { label: "Upload date"; visible: !root.musicSearch
+                    enabled: !root.playlistSearch; opacity: enabled ? 1 : 0.5
                     FilterSelect { value: root.searchDate; onPicked: (v) => root.searchDate = v
                         options: [ { value: "any", label: "Any time" },
-                                   { value: "hour", label: "Last hour" },
                                    { value: "today", label: "Today" },
                                    { value: "week", label: "This week" },
                                    { value: "month", label: "This month" },
                                    { value: "year", label: "This year" } ] } }
                 FilterGroup { label: "Duration"; visible: !root.musicSearch
+                    enabled: !root.playlistSearch; opacity: enabled ? 1 : 0.5
                     FilterSelect { value: root.searchDuration; onPicked: (v) => root.searchDuration = v
                         options: [ { value: "any", label: "Any" },
-                                   { value: "short", label: "Under 4 min" },
-                                   { value: "medium", label: "4-20 min" },
+                                   { value: "short", label: "Under 3 min" },
+                                   { value: "medium", label: "3-20 min" },
                                    { value: "long", label: "Over 20 min" } ] } }
                 InkText {
                     visible: root.hasFilters

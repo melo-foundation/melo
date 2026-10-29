@@ -724,11 +724,11 @@ export interface InnerTubeSearchResult {
  * Encode search filters into YouTube's protobuf params format.
  * Structure: { 1: sort, 2: { 1: uploadDate, 2: type, 3: duration } }
  */
-function encodeSearchParams(filters: SearchFilters): string | undefined {
+export function encodeSearchParams(filters: SearchFilters): string | undefined {
   const bytes: number[] = [];
 
-  // Field 1 (varint): sort
-  const sortMap: Record<string, number> = { date: 1, views: 2, rating: 3 };
+  // Field 1 (varint): sort; YouTube answers every other value with relevance
+  const sortMap: Record<string, number> = { views: 3 };
   if (filters.sort && sortMap[filters.sort]) {
     bytes.push(8, sortMap[filters.sort]); // tag = (1<<3)|0 = 8
   }
@@ -736,17 +736,19 @@ function encodeSearchParams(filters: SearchFilters): string | undefined {
   // Field 2 (embedded message): filters
   const inner: number[] = [];
 
-  const dateMap: Record<string, number> = { hour: 1, today: 2, week: 3, month: 4, year: 5 };
+  // date, type and duration: the values youtube.com's own filter panel sends
+  const dateMap: Record<string, number> = { today: 2, week: 3, month: 4, year: 5 };
   if (filters.uploadDate && dateMap[filters.uploadDate]) {
     inner.push(8, dateMap[filters.uploadDate]); // inner field 1
   }
 
-  const typeMap: Record<string, number> = { video: 1, channel: 2, playlist: 3, movie: 4 };
+  // no channel (2) or movie (4): the results parser reads neither renderer
+  const typeMap: Record<string, number> = { video: 1, playlist: 3 };
   if (filters.type && typeMap[filters.type]) {
     inner.push(16, typeMap[filters.type]); // inner field 2
   }
 
-  const durMap: Record<string, number> = { short: 1, medium: 2, long: 3 };
+  const durMap: Record<string, number> = { short: 4, medium: 5, long: 2 };   // under 3, 3-20, over 20 min
   if (filters.duration && durMap[filters.duration]) {
     inner.push(24, durMap[filters.duration]); // inner field 3
   }
