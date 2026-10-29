@@ -38,14 +38,22 @@ function storeDirs(o: BrowserProbe): Record<string, string[]> {
   }
   const config = o.env.XDG_CONFIG_HOME || `${o.home}/.config`;
   return {
-    firefox: [`${o.home}/.mozilla/firefox`,
-              `${o.home}/snap/firefox/common/.mozilla/firefox`,
-              `${o.home}/.var/app/org.mozilla.firefox/.mozilla/firefox`],
+    // yt-dlp's list: Firefox 147+ makes new profiles under XDG_CONFIG_HOME
+    firefox: [`${config}/mozilla/firefox`,
+              `${o.home}/.mozilla/firefox`,
+              `${o.home}/.var/app/org.mozilla.firefox/config/mozilla/firefox`,
+              `${o.home}/.var/app/org.mozilla.firefox/.mozilla/firefox`,
+              `${o.home}/snap/firefox/common/.mozilla/firefox`],
     chrome: [`${config}/google-chrome`],
     chromium: [`${config}/chromium`],
     brave: [`${config}/BraveSoftware/Brave-Browser`],
     edge: [`${config}/microsoft-edge`],
   };
+}
+
+/** The folders Firefox's profiles live in, newest layout first. */
+export function firefoxRoots(o: BrowserProbe = { platform: process.platform, home: homedir(), env: process.env, exists: existsSync }): string[] {
+  return storeDirs(o).firefox;
 }
 
 export function detectBrowsers(o: BrowserProbe): string[] {

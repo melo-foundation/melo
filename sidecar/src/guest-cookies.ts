@@ -7,6 +7,8 @@ import type { Readable, Writable } from "stream";
 import { USER_AGENT } from "./platform";
 import { ytdlp } from "./ytdlp";
 import { makeTempDir, removeTempDir, trackChild } from "./ytdlp-proc";
+import { canReadFirefox, newestFirefoxCookieDb, readFirefoxYoutubeCookies } from "./firefox-cookies";
+import { firefoxRoots } from "./browsers";
 
 
 interface GuestCookie {
@@ -243,6 +245,15 @@ async function fetchGuestCookies(): Promise<GuestCookie[]> {
   return cookies;
 }
 
+// A fresh guest fetch takes a second; an import or capture that landed meanwhile
+// wins, or the browser's identity just imported is replaced by a new guest.
+function saveFreshGuest(profile: string, fresh: GuestCookie[]): GuestCookie[] {
+  const now = loadGuestCookies(profile);
+  if (now.length > 0) return now;
+  if (fresh.length > 0) saveGuestCookies(profile, fresh);
+  return fresh;
+}
+
 function saveGuestCookies(profile: string, cookies: GuestCookie[]): void {
   mkdirSync(profilesDir(), { recursive: true, mode: 0o700 });
   writeFileSync(cookiesJsonPath(profile), JSON.stringify(cookies, null, 2), { mode: 0o600 });
@@ -275,8 +286,10 @@ function loadGuestCookies(profile: string): GuestCookie[] {
  */
 export function mergeGuestCookies(profile: string, incoming: GuestCookie[]): void {
   checkProfileName(profile);
-  // every path in, yt-dlp's write-back included, keeps YouTube's cookies only
-  const newCookies = youtubeCookies(incoming);
+  // every path in, yt-dlp's write-back included, keeps YouTube's unexpired cookies
+  // only: a browser keeps stale ST- cookies, 300 KB of request header
+  const now = Math.floor(Date.now() / 1000);
+  const newCookies = youtubeCookies(incoming).filter((c) => c.expiry > now);
   if (newCookies.length === 0) return;
 
   const stored = loadGuestCookies(profile);
@@ -530,6 +543,9 @@ export class KeyringError extends Error {
 const DUMP_TIMEOUT_MS = 45000;
 
 let fifoAllowed = true;
+let firefoxDirect = true;
+/** Tests that fake yt-dlp turn the direct Firefox read off: it would read this machine's Firefox. */
+export function readFirefoxDirectForTest(on: boolean): void { firefoxDirect = on; }
 /** @internal test seam: false takes the no-FIFO path (Windows, root). */
 export function useFifoForTest(on: boolean): void { fifoAllowed = on; }
 
@@ -571,6 +587,14 @@ export async function readThroughFifo(path: string, run: () => Promise<unknown>)
 // the exec error is thrown with its stderr. A keyring that gave no key throws
 // KeyringError.
 export async function dumpBrowserCookies(browser: string): Promise<GuestCookie[]> {
+  // Firefox read here: yt-dlp mixes in every container's and embed's copy
+  if (browser === "firefox" && firefoxDirect && canReadFirefox()) {
+    const db = newestFirefoxCookieDb(firefoxRoots());
+    if (db) {
+      try { return readFirefoxYoutubeCookies(db); }
+      catch (e) { console.error(`[guest-cookies] firefox read through yt-dlp: ${String(e).split("\n")[0]}`); }
+    }
+  }
   const dir = makeTempDir("melo-cookies-");
   const file = join(dir, "cookies.txt");
   const args = ["--cookies-from-browser", browser, "--cookies", file, "--skip-download", "--flat-playlist", "about:blank"];
@@ -649,11 +673,9 @@ export async function getGuestCookies(profile: string): Promise<Cookie[]> {
   let stored = loadGuestCookies(profile);
   if (stored.length === 0) {
     console.log(`[guest-cookies:${profile}] No stored cookies, fetching fresh...`);
-    stored = await fetchGuestCookies();
-    if (stored.length > 0) {
-      saveGuestCookies(profile, stored);
-      console.log(`[guest-cookies:${profile}] Saved ${stored.length} cookies`);
-    }
+    const fresh = await fetchGuestCookies();
+    stored = saveFreshGuest(profile, fresh);
+    if (stored === fresh && fresh.length > 0) console.log(`[guest-cookies:${profile}] Saved ${stored.length} cookies`);
   } else {
     console.log(`[guest-cookies:${profile}] Loaded ${stored.length} cookies from disk`);
   }
@@ -670,8 +692,7 @@ export async function writeNetscapeCookieFile(profile: string): Promise<string> 
   checkProfileName(profile);
   let stored = loadGuestCookies(profile);
   if (stored.length === 0) {
-    stored = await fetchGuestCookies();
-    if (stored.length > 0) saveGuestCookies(profile, stored);
+    stored = saveFreshGuest(profile, await fetchGuestCookies());
   }
 
   const lines = ["# Netscape HTTP Cookie File"];

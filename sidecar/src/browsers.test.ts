@@ -13,6 +13,16 @@ describe("detectBrowsers", () => {
     expect(got).toEqual(["firefox", "chromium"]);
   });
 
+  // Firefox 147+ creates new profiles under XDG_CONFIG_HOME; older ones stay in ~/.mozilla
+  it("finds a new Firefox profile in the XDG config folder, as yt-dlp does", () => {
+    expect(detectBrowsers({ platform: "linux", home: "/h", env: {},
+      exists: on(["/h/.config/mozilla/firefox"]) })).toEqual(["firefox"]);
+    expect(detectBrowsers({ platform: "linux", home: "/h", env: { XDG_CONFIG_HOME: "/x" },
+      exists: on(["/x/mozilla/firefox"]) })).toEqual(["firefox"]);
+    expect(detectBrowsers({ platform: "linux", home: "/h", env: {},
+      exists: on(["/h/.var/app/org.mozilla.firefox/config/mozilla/firefox"]) })).toEqual(["firefox"]);
+  });
+
   it("finds a Snap or Flatpak Firefox, which yt-dlp searches too", () => {
     expect(detectBrowsers({ platform: "linux", home: "/h", env: {},
       exists: on(["/h/snap/firefox/common/.mozilla/firefox"]) })).toEqual(["firefox"]);
