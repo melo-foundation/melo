@@ -1,5 +1,16 @@
 # Changelog
 
+## Alpha 4.3
+
+### Fixes
+
+- Fix some languages and regions, such as English (UK), Hebrew and China, breaking search or falling back to English
+- Fix a yt-dlp config file changing melo's downloads and cookies
+- Fix melo ignoring a proxy set in HTTPS_PROXY
+- Fix YouTube's cookie consent page blocking guests in Europe
+- Fix the search filters that gave wrong or empty results
+- Fix importing browser cookies not finding Firefox, breaking Home or missing your YouTube recommendations
+
 ## Alpha 4.2
 
 ### Startup Fixes
