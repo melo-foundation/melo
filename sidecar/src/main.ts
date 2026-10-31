@@ -18,13 +18,13 @@ import { ensureYtdlp, maybeUpdateYtdlp, downloadYtdlp } from "./ytdlp";
 import { reapOrphans, sweepStale } from "./ytdlp-proc";
 import { warmStreamSession } from "./streams";
 import { warmPoTokenSession } from "./potoken";
-import { useEnvProxy } from "./proxy";
+import { setUpFetch } from "./proxy";
 
 const SIDECAR_VERSION = "0.4.2";
 
 let initialized = false;
 
-if (useEnvProxy()) console.error("[proxy] HTTP(S)_PROXY carries melo's requests");
+if (setUpFetch()) console.error("[proxy] HTTP(S)_PROXY carries melo's requests");
 
 method("initialize", (params: SidecarEnv & { ytdlpSeedPath?: string }) => {
   if (initialized) return { sidecarVersion: SIDECAR_VERSION, capabilities: [] };
