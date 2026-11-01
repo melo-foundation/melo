@@ -6,7 +6,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { readdirSync, mkdirSync } from "fs";
 import { join, dirname, resolve, sep } from "path";
 import { createInterface } from "readline";
-import { loadPluginDir, type LoadedPlugin } from "./manifest";
+import { loadPluginDir, linkError, type LoadedPlugin } from "./manifest";
 import type { UiBlock, SettingsField } from "./ui-manifest";
 import { EMPTY_GRANTS, INTERCEPT_ACTIONS, type PluginGrants, type PluginPermissions } from "./permissions";
 import { GESTURE_IDS, type CommandDecl } from "./commands";
@@ -130,6 +130,16 @@ function spawnPlugin(id: string): void {
   }
   const dataDir = join(cfg.pluginDataRoot, id);
   mkdirSync(dataDir, { recursive: true });
+  // checked again here: a link can be added after load, and the data dir is not walked at load
+  const linked = linkError(rt.loaded.dir) ?? linkError(dataDir, "the plugin's data folder");
+  if (linked) {
+    rt.enabled = false;
+    rt.state = "error";
+    rt.error = linked;
+    log(`[plugins] ${id} not started: ${linked}`);
+    cfg.onChanged();
+    return;
+  }
   const distDir = dirname(cfg.hostPath);
   // Node --permission needs the directory-CONTENTS form (trailing /*), one
   // flag per path. fs reach: the plugin's own folder + its data dir + the

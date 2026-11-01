@@ -73,8 +73,31 @@ function scanSource(dir: string): string[] {
   return warnings;
 }
 
+// Node's --permission follows a link out of a granted folder, so a plugin
+// folder or data dir holding any link is refused. Returns the first, relative.
+export function findLink(dir: string): string | null {
+  const walk = (d: string): string | null => {
+    let entries;
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch { return null; }
+    for (const e of entries) {
+      const abs = join(d, e.name);
+      if (e.isSymbolicLink()) return relative(dir, abs);
+      if (e.isDirectory()) { const hit = walk(abs); if (hit) return hit; }
+    }
+    return null;
+  };
+  return walk(dir);
+}
+
+export function linkError(dir: string, what = "the plugin folder"): string | null {
+  const link = findLink(dir);
+  return link === null ? null : `${what} contains a link (${link}); remove it to load this plugin`;
+}
+
 export function loadPluginDir(dir: string, takenKeys: Set<string> = new Set()): LoadedPlugin {
   const out: LoadedPlugin = { dir, manifest: null, warnings: [], error: null };
+  const linked = linkError(dir);
+  if (linked) { out.error = linked; return out; }
   let raw: string;
   try { raw = readFileSync(join(dir, "manifest.json"), "utf8"); }
   catch { out.error = "manifest.json missing"; return out; }

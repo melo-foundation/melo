@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, cpSync, rmSync, writeFileSync, mkdirSync } from "fs";
+import { mkdtempSync, cpSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { execSync } from "child_process";
@@ -110,6 +110,23 @@ describe("plugin manager", () => {
     expect(listPlugins()[0].state).toBe("stopped");
     setPluginEnabled("sample", true);
     await until(() => listPlugins()[0].state === "running");
+  });
+  it("a link added after load stops the plugin starting", () => {
+    boot({});
+    symlinkSync(join(root, "plugins"), join(root, "plugins", "sample", "up"));
+    setPluginEnabled("sample", true);
+    const p = listPlugins().find((x) => x.id === "sample")!;
+    expect(p.state).toBe("error");
+    expect(p.error).toMatch(/plugin folder contains a link \(up\)/);
+    expect(sourceList()).toEqual([]);
+  });
+  it("a link in the data folder stops the plugin starting", () => {
+    mkdirSync(join(root, "plugin-data", "sample"), { recursive: true });
+    symlinkSync(root, join(root, "plugin-data", "sample", "out"));
+    boot();
+    const p = listPlugins().find((x) => x.id === "sample")!;
+    expect(p.state).toBe("error");
+    expect(p.error).toMatch(/data folder contains a link \(out\)/);
   });
   it("invalid manifest reports error state, never throws", () => {
     mkdirSync(join(root, "plugins", "broken"));

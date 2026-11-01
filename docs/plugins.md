@@ -697,6 +697,8 @@ imports, `eval`/`new Function`/`process.binding`/`process.getBuiltinModule`,
 - **One directory per plugin id.** When two directories declare the same `id`,
   the first by name loads and the other shows *duplicate plugin id "x": already
   loaded from another directory*. A copy such as `my-plugin.bak` counts.
+- A plugin folder or data dir that holds a link (symlink or junction) does not
+  load. Replace the link with the files it points to.
 
 ## Checking plugin QML
 

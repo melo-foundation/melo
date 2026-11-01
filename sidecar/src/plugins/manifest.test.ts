@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "fs";
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync, symlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { loadPluginDir, API_VERSION } from "./manifest";
@@ -348,5 +348,28 @@ describe("loadPluginDir", () => {
     expect(p.error).toBeNull();
     expect(p.warnings.join(" ")).toMatch(/demo\.playSample: default key already taken/);
     expect(p.manifest!.commands[0].default).toBe("");
+  });
+});
+
+// Node's --permission follows a link that already exists inside a granted
+// folder, so a link to ~/.ssh would hand the plugin your keys.
+describe("links in a plugin folder", () => {
+  it("refuses a link to a file outside the folder", () => {
+    write(good);
+    writeFileSync(join(root, "secret.txt"), "s");
+    symlinkSync(join(root, "secret.txt"), join(dir, "assets.txt"));
+    expect(loadPluginDir(dir).error).toMatch(/contains a link \(assets\.txt\)/);
+  });
+  it("refuses a link deep in a subfolder, even one pointing inside", () => {
+    write(good);
+    mkdirSync(join(dir, "a", "b", "c", "d", "e", "f", "g"), { recursive: true });
+    symlinkSync(join(dir, "main.js"), join(dir, "a", "b", "c", "d", "e", "f", "g", "x.js"));
+    expect(loadPluginDir(dir).error).toMatch(/contains a link/);
+  });
+  it("refuses a linked manifest", () => {
+    writeFileSync(join(root, "m.json"), JSON.stringify(good));
+    writeFileSync(join(dir, "main.js"), "export default function activate() {}");
+    symlinkSync(join(root, "m.json"), join(dir, "manifest.json"));
+    expect(loadPluginDir(dir).error).toMatch(/contains a link \(manifest\.json\)/);
   });
 });
