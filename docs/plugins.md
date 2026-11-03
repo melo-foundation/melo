@@ -71,7 +71,7 @@ disables the plugin and shows the message in the Plugins tab.
 | `settings` | rows on the plugin's settings page; see [Settings schema](#settings-schema) |
 | `commands` | `{ id, label, default? }[]` for a `ui` plugin, invoked as `<pluginId>.<id>`; see [Commands](#commands) |
 | `permissions.network` | hostnames `fetch` may reach. `*.x.com` matches `x.com` and any subdomain |
-| `permissions.rawNetwork` | `true` to request `node:net`/`tls`/`dgram`/`http`/`https`/`http2` and `WebSocket`. Granted when the user enables the plugin; the `network` allowlist does not apply to those sockets |
+| `permissions.rawNetwork` | `true` to request `node:net`/`tls`/`dgram`/`http`/`https`/`http2`/`dns` and `WebSocket`. Granted when the user enables the plugin; the `network` allowlist does not apply to those sockets |
 | `permissions.intercept` | [catalog](#intercepts) actions to handle before melo does. Each becomes a grant row the user turns on |
 
 `entry` needs `sidecar`, `qml`, or both. A permissions key other than these three
@@ -671,11 +671,17 @@ Each plugin runs as a separate Node process launched with `--permission`:
 - **Enforced by Node:** read access to the plugin folder, its data dir and
   melo's plugin host folder; write access to the data dir only; no child
   processes, worker threads or native addons.
-- **Network:** `fetch` only, to the manifest's `network` hostnames. Any other
-  host rejects with `melo: <host> is not in this plugin's manifest network allowlist`.
+- **Network:** `fetch` only, over `http` or `https`, to the manifest's
+  `network` hostnames, every redirect included. Any other host rejects with
+  `melo: <host> is not in this plugin's manifest network allowlist`.
   Low-level socket modules and `globalThis.WebSocket` throw
   `melo: <module> is not available to this plugin (rawNetwork is not granted)`
-  unless the plugin declares `rawNetwork` and is enabled. The socket-module block needs Node ≥ 22.15.
+  unless the plugin declares `rawNetwork` and is enabled.
+- **Node builtins:** `assert`, `async_hooks`, `buffer`, `console`, `constants`,
+  `crypto`, `diagnostics_channel`, `domain`, `events`, `fs`, `os`, `path`,
+  `perf_hooks`, `process`, `punycode`, `querystring`, `readline`, `stream`,
+  `string_decoder`, `timers`, `tty`, `url`, `util`, `zlib` and their
+  subpaths. Any other builtin throws `melo: <module> is not available to this plugin`.
 - **Limit:** the network restriction is JavaScript-level. A plugin granted
   `rawNetwork`, or one exploiting a Node escape, is not contained. Review a
   plugin before you install it.

@@ -26,62 +26,118 @@ function readGrants(raw: string | undefined): PluginGrants {
 }
 const grants = readGrants(grantsArg);
 
-// --- network scoping ---
-// Socket modules are withheld unless the user granted rawNetwork, so the
-// manifest's network domains are the effective scope. A plugin needing raw
-// sockets declares it; the install-time static scan warns about it.
-const LOWLEVEL_NET = new Set(["net", "tls", "dgram", "http", "https", "http2",
-  "node:net", "node:tls", "node:dgram", "node:http", "node:https", "node:http2"]);
-if (!grants.rawNetwork) {
-  if (typeof (moduleApi as any).registerHooks === "function") {
-    (moduleApi as any).registerHooks({
-      resolve(specifier: string, context: unknown, nextResolve: (s: string, c: unknown) => unknown) {
-        if (LOWLEVEL_NET.has(specifier))
-          throw new Error(`melo: ${specifier} is not available to this plugin (rawNetwork is not granted)`);
-        return nextResolve(specifier, context);
-      },
-    });
-  } else {
-    // module.registerHooks landed in Node 22.15/23; on older runtimes the
-    // socket-module tripwire can't install. The WebSocket withhold + fetch
-    // allowlist + install-time static scan still apply; log so it's visible.
-    process.stderr.write("melo: node:module.registerHooks unavailable — low-level socket import block not installed (Node too old)\n");
-  }
+// --- builtin modules ---
+// A plugin may load only these builtins; rawNetwork adds the socket modules.
+// Everything else (child_process, module, vm, v8, inspector, worker_threads,
+// internals such as _http_client) reaches processes, the network or the
+// loader, and is refused.
+const SAFE_BUILTINS = new Set(["assert", "assert/strict", "async_hooks", "buffer", "console",
+  "constants", "crypto", "diagnostics_channel", "domain", "events", "fs", "fs/promises", "os", "path",
+  "path/posix", "path/win32", "perf_hooks", "process", "punycode", "querystring", "readline",
+  "readline/promises", "stream", "stream/consumers", "stream/promises", "stream/web",
+  "string_decoder", "sys", "timers", "timers/promises", "tty", "url", "util", "util/types", "zlib"]);
+const NET_BUILTINS = new Set(["net", "tls", "dgram", "http", "https", "http2", "dns", "dns/promises"]);
+const isBuiltin: (s: string) => boolean = (moduleApi as any).isBuiltin;
+function builtinRefusal(specifier: string): string | null {
+  if (!isBuiltin(specifier)) return null;
+  const name = specifier.replace(/^node:/, "");
+  if (SAFE_BUILTINS.has(name)) return null;
+  if (NET_BUILTINS.has(name))
+    return grants.rawNetwork ? null : `melo: ${specifier} is not available to this plugin (rawNetwork is not granted)`;
+  return `melo: ${specifier} is not available to this plugin`;
+}
+if (typeof (moduleApi as any).registerHooks === "function") {
+  (moduleApi as any).registerHooks({
+    resolve(specifier: string, context: unknown, nextResolve: (s: string, c: unknown) => unknown) {
+      const refused = builtinRefusal(specifier);
+      if (refused) throw new Error(refused);
+      return nextResolve(specifier, context);
+    },
+  });
+} else {
+  // module.registerHooks landed in Node 22.15/23; without it the builtin
+  // allowlist can't install. Log so it's visible.
+  process.stderr.write("melo: node:module.registerHooks unavailable — builtin module allowlist not installed (Node too old)\n");
+}
+// process.getBuiltinModule() skips resolve hooks, so it gets the same allowlist.
+const hostGetBuiltin = (process as any).getBuiltinModule?.bind(process);
+if (hostGetBuiltin) {
+  (process as any).getBuiltinModule = (id: string) => {
+    const refused = builtinRefusal(String(id));
+    if (refused) throw new Error(refused);
+    return hostGetBuiltin(id);
+  };
+}
+// os is allowed for its constants and platform facts; setPriority reaches other processes.
+{
+  const os = (moduleApi as any).createRequire(import.meta.url)("os");
+  os.setPriority = () => { throw new Error("melo: os.setPriority is not available to this plugin"); };
+  (moduleApi as any).syncBuiltinESMExports();
 }
 
 // allowlisted fetch: the manifest's `network` domains are the only hosts a
 // plugin may reach through fetch (subdomain wildcards supported).
 const allow: string[] = manifest.permissions?.network ?? [];
 function hostAllowed(host: string): boolean {
-  return allow.some((pat) => pat.startsWith("*.")
+  host = host.toLowerCase();
+  return allow.map((p) => p.toLowerCase()).some((pat) => pat.startsWith("*.")
     ? host === pat.slice(2) || host.endsWith(pat.slice(1))
     : host === pat);
 }
-function urlOf(input: any): URL {
-  if (input instanceof URL) return input;
-  return new URL(typeof input === "string" ? input : input.url);
+// One Request is built from the caller's arguments and that same object is
+// fetched, so the URL checked is the URL fetched. The constructors are held
+// from before the plugin loads, which could replace the globals.
+const HostRequest = globalThis.Request, HostURL = globalThis.URL;
+function checkedRequest(input: any, init?: any): Request {
+  const req = new HostRequest(input, init);
+  const u = new HostURL(req.url);
+  if (u.protocol !== "https:" && u.protocol !== "http:")
+    throw new Error(`melo: ${u.protocol} URLs are not available to this plugin`);
+  if (!hostAllowed(u.hostname))
+    throw new Error(`melo: ${u.hostname} is not in this plugin's manifest network allowlist`);
+  return req;
 }
 const realFetch = globalThis.fetch;
-globalThis.fetch = ((input: any, init?: any) => {
-  let u: URL;
-  try { u = urlOf(input); } catch (e) { return Promise.reject(e); }
-  if (!hostAllowed(u.hostname))
-    return Promise.reject(new Error(`melo: ${u.hostname} is not in this plugin's manifest network allowlist`));
-  return realFetch(input, init);
-}) as typeof fetch;
+// Redirects are followed here, one checked hop at a time, at most 20 as in fetch.
+const REDIRECTS = new Set([301, 302, 303, 307, 308]);
+async function allowlistedFetch(input: any, init?: any): Promise<Response> {
+  let req = checkedRequest(input, init);
+  const mode = req.redirect;
+  for (let hop = 0; ; hop++) {
+    const spare = req.body ? req.clone() : req;
+    const res = await realFetch(req, { redirect: "manual" });
+    if (!REDIRECTS.has(res.status) || mode === "manual") return res;
+    const loc = res.headers.get("location");
+    if (loc === null) return res;
+    if (mode === "error") throw new TypeError(`melo: ${req.url} redirects, and redirect is "error"`);
+    if (hop >= 20) throw new TypeError("melo: too many redirects");
+    const next = new HostURL(loc, req.url);
+    const headers = new Headers(spare.headers);
+    let method = spare.method, body: ReadableStream | null = spare.body;
+    if ((res.status === 303 && method !== "GET" && method !== "HEAD")
+        || ((res.status === 301 || res.status === 302) && method === "POST")) {
+      method = "GET";
+      body = null;
+      for (const h of ["content-type", "content-length", "content-encoding", "content-language", "content-location"])
+        headers.delete(h);
+    }
+    if (next.origin !== new HostURL(req.url).origin)
+      for (const h of ["authorization", "cookie", "proxy-authorization"]) headers.delete(h);
+    req = checkedRequest(next.href, { method, headers, body, signal: spare.signal,
+                                      ...(body ? { duplex: "half" } : {}) });
+  }
+}
+globalThis.fetch = ((input: any, init?: any) => allowlistedFetch(input, init)) as typeof fetch;
 // WebSocket bypasses the fetch allowlist, so withhold the global unless the
 // plugin granted rawNetwork (same policy as the low-level socket modules).
 if (!grants.rawNetwork) {
   (globalThis as any).WebSocket = function () {
     throw new Error("melo: WebSocket is not available to this plugin (rawNetwork is not granted)");
   };
-  // process.getBuiltinModule() returns builtins without consulting resolve
-  // hooks, so it bypasses the tripwire above; the plugin API does not need it.
   // In-realm patching like this and the fetch wrapper only stops honest
   // mistakes: the plugin can reach anything this realm can. The --permission
   // flags on the child are what stop fs, child_process and process.binding;
   // anything that must hold belongs behind a flag or in the parent process.
-  delete (process as any).getBuiltinModule;
 }
 
 // --- NDJSON JSON-RPC bridge to the sidecar parent ---

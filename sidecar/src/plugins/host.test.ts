@@ -124,6 +124,6 @@ describe("plugin host", () => {
     const h = startHost(dir, JSON.stringify({ ui: false, rawNetwork: false, intercept: [] }));
     const m = await h.nextOf("fatal");
     expect(m.params.error).not.toMatch(/REACHED/);
-    expect(m.params.error).toMatch(/getBuiltinModule is not a function/);
+    expect(m.params.error).toMatch(/node:http is not available to this plugin/);
   }, 20000);
 });
