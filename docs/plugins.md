@@ -671,6 +671,9 @@ Each plugin runs as a separate Node process launched with `--permission`:
 - **Enforced by Node:** read access to the plugin folder, its data dir and
   melo's plugin host folder; write access to the data dir only; no child
   processes, worker threads or native addons.
+- **Environment:** `LANG`, `LC_ALL`, `LC_CTYPE`, `LC_MESSAGES` and `TZ` only
+  (plus `SystemRoot` on Windows).
+- **Signals:** `process.kill` reaches the plugin's own process only.
 - **Network:** `fetch` only, over `http` or `https`, to the manifest's
   `network` hostnames, every redirect included. Any other host rejects with
   `melo: <host> is not in this plugin's manifest network allowlist`.

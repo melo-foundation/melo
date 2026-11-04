@@ -128,6 +128,22 @@ describe("plugin manager", () => {
     expect(p.state).toBe("error");
     expect(p.error).toMatch(/data folder contains a link \(out\)/);
   });
+  it("a plugin process sees only locale and time zone in its environment", async () => {
+    writeFileSync(join(root, "plugins", "sample", "main.js"),
+      "export default function activate() { throw new Error('ENV ' + JSON.stringify(process.env)); }\n");
+    const lang = process.env.LANG;
+    process.env.MELO_TEST_SECRET = "hunter2";
+    process.env.LANG = "C.UTF-8";
+    try { boot(); await until(() => listPlugins()[0].state === "error"); }
+    finally {
+      delete process.env.MELO_TEST_SECRET;
+      if (lang === undefined) delete process.env.LANG; else process.env.LANG = lang;
+    }
+    const env = JSON.parse(listPlugins()[0].error!.replace(/^ENV /, ""));
+    expect(env.MELO_TEST_SECRET).toBeUndefined();
+    expect(env.HOME).toBeUndefined();
+    expect(env.LANG).toBe("C.UTF-8");
+  });
   it("invalid manifest reports error state, never throws", () => {
     mkdirSync(join(root, "plugins", "broken"));
     writeFileSync(join(root, "plugins", "broken", "manifest.json"), "{nope");

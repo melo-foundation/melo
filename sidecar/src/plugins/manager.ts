@@ -151,7 +151,7 @@ function spawnPlugin(id: string): void {
      `--allow-fs-read=${distDir}/*`,
      `--allow-fs-write=${dataDir}/*`,
      cfg.hostPath, rt.loaded.dir, dataDir, JSON.stringify(rt.grants)],
-    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, env: pluginEnv() });
   rt.proc = p;
   rt.error = null;
   // state becomes "running" only when the host reports `registered` (sources
@@ -164,6 +164,15 @@ function spawnPlugin(id: string): void {
   p.on("error", (e) => { if (rt.proc === p) { log(`[plugins] ${id} spawn error: ${e}`); onExit(id, -1); } });
   p.on("exit", (code) => { if (rt.proc === p) onExit(id, code ?? -1); });
   cfg.onChanged();
+}
+
+// The plugin process sees only locale and time zone: tokens, proxy credentials,
+// SSH_AUTH_SOCK and the D-Bus address stay with melo. Windows needs SystemRoot.
+const PLUGIN_ENV_KEYS = ["LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "TZ", "SystemRoot"];
+export function pluginEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const k of PLUGIN_ENV_KEYS) if (env[k] !== undefined) out[k] = env[k];
+  return out;
 }
 
 function onHostLine(id: string, line: string): void {

@@ -140,6 +140,15 @@ if (!grants.rawNetwork) {
   // anything that must hold belongs behind a flag or in the parent process.
 }
 
+// A plugin may signal only its own process.
+{
+  const hostKill = process.kill.bind(process);
+  process.kill = ((pid: number, signal?: string | number) => {
+    if (Number(pid) !== process.pid) throw new Error("melo: a plugin may signal only its own process");
+    return hostKill(pid, signal);
+  }) as typeof process.kill;
+}
+
 // --- NDJSON JSON-RPC bridge to the sidecar parent ---
 function send(msg: object) { process.stdout.write(JSON.stringify(msg) + "\n"); }
 function notifyParent(method: string, params: unknown) { send({ jsonrpc: "2.0", method, params }); }

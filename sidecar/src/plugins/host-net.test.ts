@@ -173,3 +173,10 @@ describe("plugin builtins", () => {
     expect(r.error).toMatch(/setPriority is not available/);
   }, 20000);
 });
+
+describe("plugin process signals", () => {
+  it("refuses to signal another process", async () => {
+    const r = await probe("return process.kill(process.ppid, 0);");
+    expect(r.error).toMatch(/may signal only its own process/);
+  }, 20000);
+});
