@@ -11,6 +11,7 @@ import type { UiBlock, SettingsField } from "./ui-manifest";
 import { EMPTY_GRANTS, INTERCEPT_ACTIONS, type PluginGrants, type PluginPermissions } from "./permissions";
 import { GESTURE_IDS, type CommandDecl } from "./commands";
 import { log } from "../rpc";
+import { PluginProxy } from "./net-proxy";
 
 const INTERCEPT_SET = new Set<string>(INTERCEPT_ACTIONS);
 const GESTURE_SET = new Set<string>(GESTURE_IDS);
@@ -27,10 +28,27 @@ interface Runtime {
   restarts: number[];              // timestamps of recent restarts
   nextId: number;
   pending: Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>;
+  proxyToken?: string;             // this process's route through the network proxy
+  awaitingProxy?: boolean;         // a spawn waits for the proxy to listen
 }
 let plugins = new Map<string, Runtime>();
 let cfg: { pluginsDir: string; pluginDataRoot: string; hostPath: string;
            grants: Record<string, PluginGrants>; onChanged: () => void } | null = null;
+
+// One proxy for every plugin process without rawNetwork, started on first use.
+let proxy: PluginProxy | null = null;
+let proxyPort = 0;
+function startedProxy(): PluginProxy {
+  if (!proxy) {
+    const p = proxy = new PluginProxy();
+    p.ready.then((port) => { if (proxy === p) proxyPort = port; }, (e) => log(`[plugins] network proxy failed: ${e}`));
+  }
+  return proxy;
+}
+function dropProxyRoute(rt: Runtime): void {
+  if (rt.proxyToken) proxy?.remove(rt.proxyToken);
+  rt.proxyToken = undefined;
+}
 
 export interface PluginInfo {
   id: string; name: string; version: string; description?: string; author?: string;
@@ -140,18 +158,42 @@ function spawnPlugin(id: string): void {
     cfg.onChanged();
     return;
   }
+  // without rawNetwork, fetch goes through the proxy; the first spawn waits for it to listen
+  const viaProxy = !rt.grants.rawNetwork;
+  if (viaProxy && proxyPort === 0) {
+    if (!rt.awaitingProxy) {
+      rt.awaitingProxy = true;
+      startedProxy().ready.then(() => {
+        rt.awaitingProxy = false;
+        if (plugins.get(id) === rt && rt.enabled && !rt.proc) spawnPlugin(id);
+      }, () => { rt.awaitingProxy = false; });
+    }
+    return;
+  }
+  dropProxyRoute(rt);
+  const env = pluginEnv();
+  let execArgs: string[] = [];
+  if (viaProxy) {
+    const route = proxy!.add({
+      network: rt.loaded.manifest.permissions?.network ?? [],
+      onRefuse: (target, why) => log(`[plugin:${id}] network: refused ${target}: ${why}`),
+    });
+    rt.proxyToken = route.token;
+    Object.assign(env, { NODE_USE_ENV_PROXY: "1", HTTP_PROXY: route.url, HTTPS_PROXY: route.url });
+    execArgs = ["--disable-warning=UNDICI-EHPA"];
+  }
   const distDir = dirname(cfg.hostPath);
   // Node --permission needs the directory-CONTENTS form (trailing /*), one
   // flag per path. fs reach: the plugin's own folder + its data dir + the
   // host bundle dir. Writes: the data dir only.
   const p = spawn(process.execPath,
-    ["--permission",
+    ["--permission", ...execArgs,
      `--allow-fs-read=${rt.loaded.dir}/*`,
      `--allow-fs-read=${dataDir}/*`,
      `--allow-fs-read=${distDir}/*`,
      `--allow-fs-write=${dataDir}/*`,
      cfg.hostPath, rt.loaded.dir, dataDir, JSON.stringify(rt.grants)],
-    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, env: pluginEnv() });
+    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, env });
   rt.proc = p;
   rt.error = null;
   // state becomes "running" only when the host reports `registered` (sources
@@ -211,6 +253,7 @@ function onExit(id: string, code: number): void {
   const rt = plugins.get(id);
   if (!rt) return;
   rt.proc = null;
+  dropProxyRoute(rt);
   for (const [, pend] of rt.pending) { clearTimeout(pend.timer); pend.reject(new Error("plugin exited")); }
   rt.pending.clear();
   if (!rt.enabled) { rt.state = rt.state === "error" ? "error" : "stopped"; cfg?.onChanged(); return; }
@@ -439,5 +482,8 @@ export async function _resetForTests(): Promise<void> {
   for (const rt of plugins.values()) rt.proc?.kill();
   plugins = new Map();
   cfg = null;
+  proxy?.close();
+  proxy = null;
+  proxyPort = 0;
   await new Promise((r) => setTimeout(r, 100));
 }

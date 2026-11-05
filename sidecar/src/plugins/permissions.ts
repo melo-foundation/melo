@@ -27,6 +27,15 @@ export const EMPTY_GRANTS: PluginGrants = { ui: false, rawNetwork: false, interc
 // because a typo grants nothing while its author believes it did.
 const KNOWN_PERMISSIONS = new Set(["network", "rawNetwork", "intercept"]);
 
+/** True when `network` lets a plugin reach `host`; `*.x.com` covers x.com and its subdomains. */
+export function networkHostAllowed(network: string[], host: string): boolean {
+  const h = host.toLowerCase();
+  return network.some((raw) => {
+    const pat = raw.toLowerCase();
+    return pat.startsWith("*.") ? h === pat.slice(2) || h.endsWith(pat.slice(1)) : h === pat;
+  });
+}
+
 export function unknownPermissionKeys(raw: unknown): string[] {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return [];
   return Object.keys(raw as Record<string, unknown>).filter((k) => !KNOWN_PERMISSIONS.has(k));

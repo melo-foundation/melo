@@ -6,7 +6,6 @@ import { createServer, type Server } from "http";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { createInterface } from "readline";
-import { fsAllowGlob } from "./permissions";
 
 const HOST = resolve(__dirname, "../../dist/melo-plugin-host.mjs");
 let procs: ChildProcess[] = [];
@@ -47,8 +46,8 @@ async function probe(body: string, network: string[] = ["127.0.0.1"],
     + "}\n");
   const dist = resolve(__dirname, "../../dist");
   const p = spawn(process.execPath, ["--permission",
-    `--allow-fs-read=${fsAllowGlob(dir)}`, `--allow-fs-read=${fsAllowGlob(dataDir)}`,
-    `--allow-fs-read=${fsAllowGlob(dist)}`, `--allow-fs-write=${fsAllowGlob(dataDir)}`,
+    `--allow-fs-read=${dir}/*`, `--allow-fs-read=${dataDir}/*`,
+    `--allow-fs-read=${dist}/*`, `--allow-fs-write=${dataDir}/*`,
     HOST, dir, dataDir, JSON.stringify(grants)], { stdio: ["pipe", "pipe", "pipe"] });
   procs.push(p);
   p.stdin!.write(JSON.stringify({ jsonrpc: "2.0", method: "settings", params: { values: {} } }) + "\n");

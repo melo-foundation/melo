@@ -14,7 +14,7 @@ import { join } from "path";
 import { pathToFileURL } from "url";
 import { createInterface } from "readline";
 import * as moduleApi from "node:module";
-import { EMPTY_GRANTS, type PluginGrants } from "./plugins/permissions";
+import { EMPTY_GRANTS, networkHostAllowed, type PluginGrants } from "./plugins/permissions";
 
 const [pluginDir, dataDir, grantsArg] = process.argv.slice(2);
 const manifest = JSON.parse(readFileSync(join(pluginDir, "manifest.json"), "utf8"));
@@ -78,12 +78,7 @@ if (hostGetBuiltin) {
 // allowlisted fetch: the manifest's `network` domains are the only hosts a
 // plugin may reach through fetch (subdomain wildcards supported).
 const allow: string[] = manifest.permissions?.network ?? [];
-function hostAllowed(host: string): boolean {
-  host = host.toLowerCase();
-  return allow.map((p) => p.toLowerCase()).some((pat) => pat.startsWith("*.")
-    ? host === pat.slice(2) || host.endsWith(pat.slice(1))
-    : host === pat);
-}
+const hostAllowed = (host: string): boolean => networkHostAllowed(allow, host);
 // One Request is built from the caller's arguments and that same object is
 // fetched, so the URL checked is the URL fetched. The constructors are held
 // from before the plugin loads, which could replace the globals.

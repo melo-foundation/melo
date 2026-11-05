@@ -677,6 +677,8 @@ Each plugin runs as a separate Node process launched with `--permission`:
 - **Network:** `fetch` only, over `http` or `https`, to the manifest's
   `network` hostnames, every redirect included. Any other host rejects with
   `melo: <host> is not in this plugin's manifest network allowlist`.
+  A host that resolves to a loopback, private or link-local address fails
+  unless `network` lists that exact host (`localhost`, `192.168.1.20`).
   Low-level socket modules and `globalThis.WebSocket` throw
   `melo: <module> is not available to this plugin (rawNetwork is not granted)`
   unless the plugin declares `rawNetwork` and is enabled.
