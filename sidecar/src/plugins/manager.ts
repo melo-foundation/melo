@@ -3,8 +3,8 @@
 // crashes up to 3 per 60s, then parks. A plugin that fails to load or crashes
 // never affects the sidecar or other plugins.
 import { spawn, type ChildProcess } from "child_process";
-import { readdirSync, mkdirSync } from "fs";
-import { join, dirname, resolve, sep } from "path";
+import { readdirSync, mkdirSync, readFileSync, lstatSync } from "fs";
+import { join, dirname, resolve, sep, basename } from "path";
 import { createInterface } from "readline";
 import { loadPluginDir, linkError, type LoadedPlugin } from "./manifest";
 import type { UiBlock, SettingsField } from "./ui-manifest";
@@ -93,6 +93,36 @@ function grantOnEnable(id: string, rt: Runtime): void {
   if (cfg) cfg.grants[id] = rt.grants;
 }
 
+// The id a folder's manifest claims, read without validating the rest.
+function claimedId(dir: string, name: string): string {
+  try {
+    const f = join(dir, "manifest.json");
+    if (!lstatSync(f).isFile()) return name;
+    const id = JSON.parse(readFileSync(f, "utf8"))?.id;
+    return typeof id === "string" && id ? id : name;
+  } catch { return name; }
+}
+
+// Ids claimed by more than one folder: every such folder is refused, so no copy
+// inherits the grants the user gave another.
+function duplicateIds(root: string, names: string[]): Map<string, string[]> {
+  const byId = new Map<string, string[]>();
+  for (const name of names) {
+    const id = claimedId(join(root, name), name);
+    byId.set(id, [...(byId.get(id) ?? []), name]);
+  }
+  return new Map([...byId].filter(([, dirs]) => dirs.length > 1));
+}
+
+function duplicateRow(dir: string, id: string, dirs: string[]): Runtime {
+  return {
+    loaded: { dir, manifest: null, warnings: [], error: null },
+    enabled: false, grants: EMPTY_GRANTS, state: "error",
+    error: `duplicate plugin id "${id}": also in ${dirs.filter((d) => d !== basename(dir)).join(", ")}; keep one folder`,
+    proc: null, sources: [], events: [], restarts: [], nextId: 1, pending: new Map(),
+  };
+}
+
 export function initPlugins(opts: { pluginsDir: string; pluginDataRoot: string; hostPath: string;
                                     enabled: Record<string, boolean>;
                                     grants: Record<string, PluginGrants>; onChanged: () => void }): void {
@@ -102,22 +132,15 @@ export function initPlugins(opts: { pluginsDir: string; pluginDataRoot: string; 
   try { dirs = readdirSync(opts.pluginsDir, { withFileTypes: true })
           .filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch {}
   const takenKeys = new Set<string>();
+  const dups = duplicateIds(opts.pluginsDir, dirs);
   for (const name of dirs) {
-    const loaded = loadPluginDir(join(opts.pluginsDir, name), takenKeys);
-    const id = loaded.manifest?.id ?? name;
-    // Two directories, one id: the first in sorted order wins (`foo` over
-    // `foo.bak`), so the manifest, settings schema and `dir` stay on the copy
-    // being edited. The other becomes an error row keyed by directory, since
-    // its id is taken.
-    if (plugins.has(id)) {
-      plugins.set(`dir:${name}`, {
-        loaded: { ...loaded, manifest: null },
-        enabled: false, grants: EMPTY_GRANTS, state: "error",
-        error: `duplicate plugin id "${id}": already loaded from another directory`,
-        proc: null, sources: [], events: [], restarts: [], nextId: 1, pending: new Map(),
-      });
+    const dupId = [...dups].find(([, ds]) => ds.includes(name));
+    if (dupId) {
+      plugins.set(`dir:${name}`, duplicateRow(join(opts.pluginsDir, name), dupId[0], dupId[1]));
       continue;
     }
+    const loaded = loadPluginDir(join(opts.pluginsDir, name), takenKeys);
+    const id = loaded.manifest?.id ?? name;
     const rt: Runtime = {
       loaded, enabled: opts.enabled[id] === true,
       grants: sanitizeGrants(opts.grants[id], loaded),
@@ -373,8 +396,21 @@ export function rescanPlugins(): PluginInfo[] {
           .filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch {}
   const seen = new Set<string>();
   let takenKeys = new Set<string>();
+  // duplicate rows are worked out afresh on every scan
+  for (const k of [...plugins.keys()]) if (k.startsWith("dir:")) plugins.delete(k);
+  const dups = duplicateIds(cfg.pluginsDir, entries);
+  for (const [id, dirs] of dups) {
+    const rt = plugins.get(id);
+    if (rt) { rt.enabled = false; rt.proc?.kill(); plugins.delete(id); }
+    for (const name of dirs) {
+      plugins.set(`dir:${name}`, duplicateRow(join(cfg.pluginsDir, name), id, dirs));
+      seen.add(`dir:${name}`);
+    }
+  }
+  const dupDirs = new Set([...dups.values()].flat());
   const existingByDir = new Map<string, string>();
   for (const [id, rt] of plugins) {
+    if (id.startsWith("dir:")) continue;
     existingByDir.set(resolve(rt.loaded.dir), id);
     for (const command of rt.loaded.manifest?.commands ?? []) {
       const key = command.default ?? "";
@@ -382,6 +418,7 @@ export function rescanPlugins(): PluginInfo[] {
     }
   }
   for (const name of entries) {
+    if (dupDirs.has(name)) continue;
     const pluginDir = resolve(join(cfg.pluginsDir, name));
     const existingId = existingByDir.get(pluginDir);
     if (existingId !== undefined) {

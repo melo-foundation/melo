@@ -54,39 +54,48 @@ const until = (pred: () => boolean, ms = 8000) => new Promise<void>((res, rej) =
 });
 
 
-// Two directories, one id. Unchecked, the later directory in sort order would
-// replace the earlier one (manifest, settings schema and `dir` together), and
-// melo would load QML from a copy nobody was editing. A backup folder left
-// beside the plugin is enough to do it.
+// Two directories, one id: neither loads, so a folder named to sort first
+// cannot take over the grants the user gave the other.
 describe("a duplicate plugin id", () => {
-  it("keeps the first directory and reports the second", () => {
-    const root = mkdtempSync(join(tmpdir(), "melo-dup-"));
-    const write = (dir: string, extra: Record<string, unknown>) => {
-      mkdirSync(join(root, dir), { recursive: true });
-      writeFileSync(join(root, dir, "main.js"), "export function activate() {}\n");
-      writeFileSync(join(root, dir, "manifest.json"), JSON.stringify({
-        id: "twin", name: dir, version: "1.0.0", apiVersion: 3,
-        entry: { sidecar: "main.js" }, ...extra,
-      }));
-    };
-    write("twin", {});
-    write("twin.bak", {});
+  const writeTwin = (root: string, dir: string) => {
+    mkdirSync(join(root, dir), { recursive: true });
+    writeFileSync(join(root, dir, "main.js"), "export default function activate() {}\n");
+    writeFileSync(join(root, dir, "manifest.json"), JSON.stringify({
+      id: "twin", name: dir, version: "1.0.0", apiVersion: 3,
+      capabilities: ["source"], entry: { sidecar: "main.js" },
+    }));
+  };
 
+  it("refuses both directories, even when the id is enabled", () => {
+    const root = mkdtempSync(join(tmpdir(), "melo-dup-"));
+    writeTwin(root, "twin");
+    writeTwin(root, "a-twin");
     initPlugins({ pluginsDir: root, pluginDataRoot: join(root, "data"),
-                  hostPath: join(root, "host.mjs"), enabled: {}, grants: {},
+                  hostPath: join(root, "host.mjs"), enabled: { twin: true }, grants: {},
                   onChanged: () => {} });
     const list = listPlugins();
-    const kept = list.filter((p) => p.id === "twin");
-    expect(kept).toHaveLength(1);
-    expect(kept[0].name).toBe("twin");          // the plainer name sorts first
+    expect(list.filter((p) => p.id === "twin")).toHaveLength(0);
+    for (const dir of ["twin", "a-twin"]) {
+      const row = list.find((p) => p.id === `dir:${dir}`)!;
+      expect(row.state).toBe("error");
+      expect(row.enabled).toBe(false);
+      expect(row.error).toMatch(/duplicate plugin id "twin": also in/);
+    }
+    rmSync(root, { recursive: true, force: true });
+  });
 
-    // ...and the loser is visible rather than gone, or a user with two copies
-    // has no way to find out which one is running.
-    const loser = list.find((p) => p.id === "dir:twin.bak");
-    expect(loser, "the shadowed directory is not reported at all").toBeTruthy();
-    expect(loser!.state).toBe("error");
-    expect(loser!.error).toMatch(/duplicate plugin id/);
-    expect(loser!.enabled).toBe(false);
+  it("a copy dropped in while melo runs stops the running plugin", async () => {
+    const root = mkdtempSync(join(tmpdir(), "melo-dup-"));
+    writeTwin(root, "twin");
+    initPlugins({ pluginsDir: root, pluginDataRoot: mkdtempSync(join(tmpdir(), "melo-dupdata-")),
+                  hostPath: HOST, enabled: { twin: true }, grants: {}, onChanged: () => {} });
+    await until(() => listPlugins()[0].state === "running");
+    writeTwin(root, "a-twin");
+    const list = rescanPlugins();
+    expect(list.map((p) => p.id).sort()).toEqual(["dir:a-twin", "dir:twin"]);
+    rmSync(join(root, "a-twin"), { recursive: true, force: true });
+    const healed = rescanPlugins();
+    expect(healed.map((p) => [p.id, p.enabled, p.state])).toEqual([["twin", false, "stopped"]]);
     rmSync(root, { recursive: true, force: true });
   });
 });
