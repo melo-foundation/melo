@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, cpSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from "fs";
+import { mkdtempSync, cpSync, rmSync, writeFileSync, mkdirSync, symlinkSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { execSync } from "child_process";
 import { initPlugins, listPlugins, setPluginEnabled, setPluginGrants, pluginSearch,
          pluginResolveStream, dispatchPlayerEvent, sourceList, restartPlugin,
-         rescanPlugins, restartAll, pluginSettingFiles, _resetForTests } from "./manager";
+         rescanPlugins, restartAll, pluginSettingFiles, _resetForTests, CHANGED_WARNING } from "./manager";
+import type { PluginGrants } from "./permissions";
 
 const HOST = resolve(__dirname, "../../dist/melo-plugin-host.mjs");
 const FIXTURE = resolve(__dirname, "../../test-fixtures/sample-source");
@@ -97,6 +98,68 @@ describe("a duplicate plugin id", () => {
     const healed = rescanPlugins();
     expect(healed.map((p) => [p.id, p.enabled, p.state])).toEqual([["twin", false, "stopped"]]);
     rmSync(root, { recursive: true, force: true });
+  });
+});
+
+// Grants hold what the user agreed to: the folder and the permission fields.
+describe("plugin consent", () => {
+  function bootWith(grants: Record<string, PluginGrants>, saved?: (g: Record<string, PluginGrants>) => void) {
+    initPlugins({ pluginsDir: join(root, "plugins"), pluginDataRoot: join(root, "plugin-data"),
+                  hostPath: HOST, enabled: { sample: true }, grants, onChanged: () => {}, saveGrants: saved });
+  }
+  async function agreed(): Promise<PluginGrants> {
+    let stored: Record<string, PluginGrants> = {};
+    bootWith({}, (g) => { stored = JSON.parse(JSON.stringify(g)); });
+    await _resetForTests();
+    return stored.sample;
+  }
+  const sample = () => listPlugins().find((p) => p.id === "sample")!;
+  const setNetwork = (dir: string, network: string[]) => {
+    const f = join(dir, "manifest.json");
+    const m = JSON.parse(readFileSync(f, "utf8"));
+    writeFileSync(f, JSON.stringify({ ...m, permissions: { ...(m.permissions ?? {}), network } }));
+  };
+
+  it("an enabled plugin with no consent stored adopts and saves its current one", async () => {
+    const g = await agreed();
+    expect(g.consent).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("starts when folder and permissions match what was agreed", async () => {
+    const g = await agreed();
+    bootWith({ sample: g });
+    await until(() => sample().state === "running");
+    expect(sample().enabled).toBe(true);
+  });
+
+  it("loads turned off, warned, when its permissions changed", async () => {
+    const g = await agreed();
+    setNetwork(join(root, "plugins", "sample"), ["evil.example"]);
+    bootWith({ sample: g });
+    expect(sample().enabled).toBe(false);
+    expect(sample().state).toBe("stopped");
+    expect(sample().warnings[0]).toBe(CHANGED_WARNING);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(sourceList()).toEqual([]);
+    setPluginEnabled("sample", true);
+    await until(() => sample().state === "running");
+    expect(sample().grants.consent).not.toBe(g.consent);
+  });
+
+  it("loads turned off when the same id comes from another folder", async () => {
+    const g = await agreed();
+    cpSync(join(root, "plugins", "sample"), join(root, "plugins", "elsewhere"), { recursive: true });
+    rmSync(join(root, "plugins", "sample"), { recursive: true, force: true });
+    bootWith({ sample: g });
+    expect(sample().enabled).toBe(false);
+    expect(sample().warnings[0]).toBe(CHANGED_WARNING);
+  });
+
+  it("a grants patch cannot set the consent", async () => {
+    const g = await agreed();
+    bootWith({ sample: g });
+    setPluginGrants("sample", { consent: "forged" } as Partial<PluginGrants>);
+    expect(sample().grants.consent).toBe(g.consent);
   });
 });
 

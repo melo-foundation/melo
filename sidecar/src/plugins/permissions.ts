@@ -19,6 +19,7 @@ export interface PluginGrants {
   ui: boolean;
   rawNetwork: boolean;
   intercept: InterceptAction[];
+  consent?: string;              // consentOf() the plugin had when the user turned it on
 }
 export const EMPTY_GRANTS: PluginGrants = { ui: false, rawNetwork: false, intercept: [] };
 

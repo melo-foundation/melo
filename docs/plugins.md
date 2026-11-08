@@ -37,6 +37,10 @@ Templates in the repo: `sidecar/test-fixtures/sample-source/` (a source),
    `ui` and `rawNetwork` plugin has one. Enabling grants `ui` and `rawNetwork`.
 4. Turn on the row under it for each `intercept` action you allow.
 
+A plugin whose folder or permission fields (`capabilities` `ui`, `permissions`)
+changed since it was turned on loads turned off with the warning *Its folder or
+permissions changed since you turned it on*; turn it on again.
+
 ## manifest.json
 
 ```json

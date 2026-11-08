@@ -65,6 +65,10 @@ method("initialize", (params: SidecarEnv & { ytdlpSeedPath?: string }) => {
     enabled: settings.plugins?.enabled ?? {},
     grants: settings.plugins?.grants ?? {},
     onChanged: () => notify("plugins/changed", { plugins: listPlugins() }),
+    saveGrants: (grants) => {
+      const s = loadSettings();
+      saveSettings({ plugins: { ...(s.plugins ?? { enabled: {} }), grants } });
+    },
   });
 
   initialized = true;

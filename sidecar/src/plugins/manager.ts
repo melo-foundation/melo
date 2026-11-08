@@ -3,6 +3,7 @@
 // crashes up to 3 per 60s, then parks. A plugin that fails to load or crashes
 // never affects the sidecar or other plugins.
 import { spawn, type ChildProcess } from "child_process";
+import { createHash } from "crypto";
 import { readdirSync, mkdirSync, readFileSync, lstatSync } from "fs";
 import { join, dirname, resolve, sep, basename } from "path";
 import { createInterface } from "readline";
@@ -77,20 +78,51 @@ function sanitizeGrants(g: unknown, loaded: LoadedPlugin): PluginGrants {
     ui: capUi && r.ui === true,
     rawNetwork: declaredRn && r.rawNetwork === true,
     intercept: intercept.filter((a) => INTERCEPT_SET.has(a) && declaredIc.has(a)),
+    ...(typeof r.consent === "string" ? { consent: r.consent } : {}),
   };
 }
+
+// What turning a plugin on agrees to: its folder and every permission field.
+// Grants hold this; a plugin whose value differs at launch loads turned off.
+export function consentOf(loaded: LoadedPlugin): string {
+  const m = loaded.manifest, p = m?.permissions ?? {};
+  const sorted = (xs?: readonly string[]) => [...(xs ?? [])].map(String).sort();
+  return createHash("sha256").update(JSON.stringify({
+    dir: resolve(loaded.dir), ui: m?.capabilities.includes("ui") === true,
+    network: sorted(p.network), rawNetwork: p.rawNetwork === true,
+    intercept: sorted(p.intercept),
+  })).digest("hex");
+}
+
+export const CHANGED_WARNING = "Its folder or permissions changed since you turned it on.";
 
 // Enable is the ui and rawNetwork grant: the ⚠ lines on the plugin's row are
 // what the user agrees to, with no nested row per grant.
 function grantOnEnable(id: string, rt: Runtime): void {
   const m = rt.loaded.manifest;
   if (!m) return;
-  const patch: Partial<PluginGrants> = {};
+  const patch: Partial<PluginGrants> = { consent: consentOf(rt.loaded) };
   if (m.capabilities.includes("ui")) patch.ui = true;
   if (m.permissions?.rawNetwork) patch.rawNetwork = true;
-  if (Object.keys(patch).length === 0) return;
   rt.grants = sanitizeGrants({ ...rt.grants, ...patch }, rt.loaded);
   if (cfg) cfg.grants[id] = rt.grants;
+}
+
+// An enabled plugin at launch or after its folder was replaced: it starts only
+// when its folder and permissions are what the user agreed to. A plugin with no
+// consent stored (enabled before melo kept one, or by hand) adopts its current one.
+function startEnabled(id: string, rt: Runtime): void {
+  const had = rt.grants.consent;
+  if (had !== undefined && had !== consentOf(rt.loaded)) {
+    rt.enabled = false;
+    rt.state = "stopped";
+    rt.grants = sanitizeGrants({ intercept: rt.grants.intercept, consent: had }, rt.loaded);
+    rt.loaded = { ...rt.loaded, warnings: [CHANGED_WARNING, ...rt.loaded.warnings] };
+    log(`[plugins] ${id} turned off: its folder or permissions changed`);
+    return;
+  }
+  grantOnEnable(id, rt);
+  spawnPlugin(id);
 }
 
 // The id a folder's manifest claims, read without validating the rest.
@@ -125,7 +157,8 @@ function duplicateRow(dir: string, id: string, dirs: string[]): Runtime {
 
 export function initPlugins(opts: { pluginsDir: string; pluginDataRoot: string; hostPath: string;
                                     enabled: Record<string, boolean>;
-                                    grants: Record<string, PluginGrants>; onChanged: () => void }): void {
+                                    grants: Record<string, PluginGrants>; onChanged: () => void;
+                                    saveGrants?: (grants: Record<string, PluginGrants>) => void }): void {
   cfg = opts;
   mkdirSync(opts.pluginsDir, { recursive: true });
   let dirs: string[] = [];
@@ -148,11 +181,9 @@ export function initPlugins(opts: { pluginsDir: string; pluginDataRoot: string; 
       proc: null, sources: [], events: [], restarts: [], nextId: 1, pending: new Map(),
     };
     plugins.set(id, rt);
-    if (rt.enabled && !loaded.error) {
-      grantOnEnable(id, rt);
-      spawnPlugin(id);
-    }
+    if (rt.enabled && !loaded.error) startEnabled(id, rt);
   }
+  opts.saveGrants?.(opts.grants);
 }
 
 function spawnPlugin(id: string): void {
@@ -377,7 +408,8 @@ export function setPluginGrants(id: string, patch: Partial<PluginGrants>): Plugi
   const rt = plugins.get(id);
   if (rt && !rt.loaded.error) {
     const before = JSON.stringify(rt.grants);
-    rt.grants = sanitizeGrants({ ...rt.grants, ...patch }, rt.loaded);
+    const { consent: _ignored, ...asked } = patch;
+    rt.grants = sanitizeGrants({ ...rt.grants, ...asked }, rt.loaded);
     if (cfg) cfg.grants[id] = rt.grants;
     // grants are fixed at spawn: an enabled plugin restarts to get the new ones
     if (rt.enabled && JSON.stringify(rt.grants) !== before) doRestart(id);
@@ -436,10 +468,7 @@ export function rescanPlugins(): PluginInfo[] {
         } else {
           takenKeys = candidateTakenKeys;
           rt.grants = sanitizeGrants(rt.grants, loaded);
-          if (rt.enabled) {
-            grantOnEnable(existingId, rt);
-            spawnPlugin(existingId);
-          }
+          if (rt.enabled) startEnabled(existingId, rt);
           else { rt.state = "stopped"; rt.error = null; }
         }
       }
