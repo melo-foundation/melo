@@ -123,7 +123,16 @@ export default function activate(melo) {
 
 Do not use `youtube` as a source id; melo resolves those tracks itself.
 
-`resolveStream` returns a directly playable `url`. Optional fields: `duration`
+`resolveStream` returns a directly playable `url`:
+
+- `https://` or `http://` to a public host. The `network` allowlist does not
+  apply to it. A loopback, private or link-local address fails.
+- `file://` inside your plugin folder or data dir. For a file in your plugin
+  folder use `new URL("assets/a.wav", import.meta.url).href`.
+
+Any other URL fails with `melo: resolveStream returned …`.
+
+Optional fields: `duration`
 (seconds, used when above 0), `title` (used when the track has none), `channel`
 (replaces the track's). `headers` and `mime` are not read: put any credentials
 the CDN needs into the URL.

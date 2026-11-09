@@ -12,7 +12,10 @@ import type { UiBlock, SettingsField } from "./ui-manifest";
 import { EMPTY_GRANTS, INTERCEPT_ACTIONS, type PluginGrants, type PluginPermissions } from "./permissions";
 import { GESTURE_IDS, type CommandDecl } from "./commands";
 import { log } from "../rpc";
-import { PluginProxy } from "./net-proxy";
+import { PluginProxy, isPrivateAddress } from "./net-proxy";
+import { isIP } from "net";
+import { lookup } from "dns/promises";
+import { fileURLToPath } from "url";
 
 const INTERCEPT_SET = new Set<string>(INTERCEPT_ACTIONS);
 const GESTURE_SET = new Set<string>(GESTURE_IDS);
@@ -531,10 +534,49 @@ export function pluginSearch(sourceId: string, query: string, continuation?: str
   if (!rt) return Promise.reject(new Error(`no source ${sourceId}`));
   return callPlugin(rt, "source/search", { sourceId, query, continuation }, 10000);
 }
-export function pluginResolveStream(sourceId: string, trackId: string): Promise<any> {
+export async function pluginResolveStream(sourceId: string, trackId: string): Promise<any> {
   const rt = bySource(sourceId);
-  if (!rt) return Promise.reject(new Error(`no source ${sourceId}`));
-  return callPlugin(rt, "source/resolveStream", { sourceId, trackId }, 30000);
+  if (!rt) throw new Error(`no source ${sourceId}`);
+  const r = await callPlugin(rt, "source/resolveStream", { sourceId, trackId }, 30000);
+  const roots = [rt.loaded.dir, ...(cfg ? [join(cfg.pluginDataRoot, rt.loaded.manifest?.id ?? "")] : [])];
+  const url = await checkStreamUrl(r?.url, roots);
+  const out: Record<string, unknown> = { url };
+  for (const k of ["duration", "title", "channel", "video"]) if (r?.[k] !== undefined) out[k] = r[k];
+  return out;
+}
+
+const within = (path: string, root: string) => {
+  const p = resolve(path), r = resolve(root);
+  return p === r || p.startsWith(r + sep);
+};
+async function publicHost(host: string): Promise<boolean> {
+  const h = host.replace(/^\[|\]$/g, "").toLowerCase();
+  if (h === "localhost" || h.endsWith(".localhost")) return false;
+  if (isIP(h)) return !isPrivateAddress(h);
+  // a name that does not resolve cannot be played either
+  try { return (await lookup(h, { all: true })).every((a) => !isPrivateAddress(a.address)); }
+  catch { return true; }
+}
+
+// A plugin's stream URL: https or http to a public host, or a file in the
+// plugin's own folder or data dir. Anything else would hand GStreamer or ffmpeg
+// another URI handler, or a request to this machine or the local network.
+export async function checkStreamUrl(raw: unknown, roots: string[]): Promise<string> {
+  let u: URL;
+  try { u = new URL(String(raw ?? "")); } catch { throw new Error("melo: resolveStream returned no valid url"); }
+  if (u.protocol === "https:" || u.protocol === "http:") {
+    if (!(await publicHost(u.hostname)))
+      throw new Error(`melo: resolveStream returned a local or private address: ${u.hostname}`);
+    return u.href;
+  }
+  if (u.protocol === "file:") {
+    let path: string;
+    try { path = fileURLToPath(u); } catch { throw new Error("melo: resolveStream returned a file url melo cannot open"); }
+    if (!roots.some((r) => within(path, r)))
+      throw new Error("melo: resolveStream returned a file outside the plugin's folder and data dir");
+    return u.href;
+  }
+  throw new Error(`melo: resolveStream returned a ${u.protocol} url; use https`);
 }
 export function dispatchPlayerEvent(type: string, payload: unknown): void {
   for (const rt of plugins.values())

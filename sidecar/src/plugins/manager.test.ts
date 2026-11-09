@@ -535,3 +535,43 @@ describe("plugin manager", () => {
     expect(listPlugins().find((x) => x.id === "qmlonly")!.grants.intercept).toEqual([]);
   });
 });
+
+// A plugin's stream URL reaches GStreamer and ffmpeg, which open any URI scheme
+// they have a handler for.
+describe("plugin stream urls", () => {
+  function bootEcho() {
+    const dir = join(root, "plugins", "echo");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify({
+      id: "echo", name: "echo", version: "1.0.0", apiVersion: 3,
+      capabilities: ["source"], entry: { sidecar: "main.js" },
+    }));
+    writeFileSync(join(dir, "main.js"),
+      "export default function activate(melo) {\n"
+      + "  melo.registerSource({ id: 'echo', name: 'Echo', search: async () => ({ tracks: [] }),\n"
+      + "    resolveStream: async (id) => ({ url: id, duration: 5, headers: { a: 1 } }) });\n"
+      + "}\n");
+    initPlugins({ pluginsDir: join(root, "plugins"), pluginDataRoot: join(root, "plugin-data"),
+                  hostPath: HOST, enabled: { echo: true }, grants: {}, onChanged: () => {} });
+    return dir;
+  }
+
+  it("passes https, public http and a file in the plugin folder", async () => {
+    const dir = bootEcho();
+    await until(() => sourceList().some((s) => s.id === "echo"));
+    expect(await pluginResolveStream("echo", "https://cdn.example.com/a.opus?sig=1"))
+      .toEqual({ url: "https://cdn.example.com/a.opus?sig=1", duration: 5 });
+    expect((await pluginResolveStream("echo", "http://93.184.216.34/a.mp3")).url).toBe("http://93.184.216.34/a.mp3");
+    const inside = "file://" + join(dir, "assets", "a.wav");
+    expect((await pluginResolveStream("echo", inside)).url).toBe(inside);
+  });
+
+  it.each(["rtsp://cam.example.com/x", "smb://nas/share/a.mp3", "concat:a|b", "data:audio/wav,x",
+           "http://127.0.0.1:631/", "http://localhost/x", "https://[::1]/x", "http://192.168.1.1/",
+           "http://169.254.169.254/latest/meta-data/", "file:///etc/passwd"])
+    ("refuses %s", async (url) => {
+      bootEcho();
+      await until(() => sourceList().some((s) => s.id === "echo"));
+      await expect(pluginResolveStream("echo", url)).rejects.toThrow(/^melo: resolveStream returned/);
+    });
+});

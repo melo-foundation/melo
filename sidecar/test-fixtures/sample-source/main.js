@@ -7,7 +7,7 @@ export default function activate(melo) {
                  channel: "Fixture", duration: 60, thumbnail: "" }],
       continuation: null,
     }),
-    resolveStream: async (trackId) => ({ url: `file:///tmp/${trackId}.opus` }),
+    resolveStream: async (trackId) => ({ url: new URL(`assets/${trackId}.opus`, import.meta.url).href }),
   });
   melo.player.on("trackChanged", ({ track }) => melo.log("saw trackChanged", track.id));
 }

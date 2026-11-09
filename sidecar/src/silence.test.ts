@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { existsSync, mkdtempSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, writeFileSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { fileURLToPath } from "url";
@@ -42,5 +42,24 @@ describe.skipIf(!existsSync(FFMPEG))("silence scan with melo's ffmpeg", () => {
     const r = await detectSilence(file, 11, -40, 5, 5);
     expect(r.skipStart).toBeCloseTo(3, 1);
     expect(r.skipEnd).toBeCloseTo(8, 1);
+  });
+});
+
+// ffmpeg runs on stream URLs a plugin returned; it may open nothing but a file
+// or plain http (the relay).
+describe.skipIf(process.platform === "win32")("silence scan ffmpeg arguments", () => {
+  it("limits every ffmpeg input to file and http", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "melo-silence-args-"));
+    const log = join(dir, "args.log");
+    const fake = join(dir, "ffmpeg");
+    writeFileSync(fake, `#!/bin/sh\necho "$@" >> '${log}'\nexit 0\n`, { mode: 0o755 });
+    setEnv({ dataDir: dir, musicDir: dir, ytdlpPath: join(dir, "yt-dlp"), ffmpegPath: fake,
+             osPrefersDark: true, appVersion: "test" });
+    const src = join(dir, "t.wav");
+    writeFileSync(src, "x");
+    await detectSilence(src, 100, -40, 15, 15);
+    const lines = readFileSync(log, "utf8").trim().split("\n");
+    expect(lines).toHaveLength(2);
+    for (const l of lines) expect(l).toMatch(/-protocol_whitelist file,http,tcp -i /);
   });
 });

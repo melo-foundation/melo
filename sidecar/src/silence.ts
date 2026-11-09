@@ -60,6 +60,9 @@ export function detectSilence(
 // costs audible buffering. Local files have no such contention.
 const REMOTE_SCAN_DELAY_MS = 3000;
 
+// ffmpeg opens a file, or the relay's or a plain http URL; no other protocol.
+const INPUT_PROTOCOLS = ["-protocol_whitelist", "file,http,tcp"];
+
 const isRemote = (source: string) => /^https?:/i.test(source);
 
 async function detectSilenceUncached(
@@ -85,12 +88,12 @@ async function detectSilenceUncached(
     const windowSamples = Math.floor(sampleRate * 50 / 1000); // 50ms windows = 800 samples
 
     const [headResult, tailResult] = await Promise.all([
-      execFileAsync(ffmpeg, ["-i", input, "-t", String(scanStart), ...ffmpegBase], {
+      execFileAsync(ffmpeg, [...INPUT_PROTOCOLS, "-i", input, "-t", String(scanStart), ...ffmpegBase], {
         timeout: 10000 + scanStart * 500,
         maxBuffer: 10 * 1024 * 1024,
         encoding: "buffer",
       }),
-      execFileAsync(ffmpeg, ["-sseof", `-${scanEnd}`, "-i", input, ...ffmpegBase], {
+      execFileAsync(ffmpeg, ["-sseof", `-${scanEnd}`, ...INPUT_PROTOCOLS, "-i", input, ...ffmpegBase], {
         timeout: 10000 + scanEnd * 500,
         maxBuffer: 10 * 1024 * 1024,
         encoding: "buffer",
