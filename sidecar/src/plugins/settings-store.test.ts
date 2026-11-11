@@ -111,3 +111,28 @@ describe("plugin settings", () => {
       { ui: true, rawNetwork: false, intercept: ["play"] });
   });
 });
+
+// A value that does not fit its row is dropped, so a plugin cannot grow
+// settings.v2.json or store a type its own page cannot show.
+describe("plugin setting values", () => {
+  const rows: SettingsField[] = [
+    ...schema,
+    { key: "vol", type: "slider", label: "Volume", from: 0, to: 10, step: 1, default: 5 },
+    { key: "token", type: "text", label: "Token", default: "" },
+  ];
+  it.each([
+    ["doubleSize", "yes"], ["scroll", "sometimes"], ["vol", 11], ["vol", "5"], ["vol", Number.NaN],
+    ["token", "x".repeat(4097)], ["token", { big: true }], ["skin", "../../settings.v2.json"],
+  ])("drops %s = %s", async (key, value) => {
+    const { pluginSettings, setPluginSetting } = await import("./settings-store");
+    const before = pluginSettings("winamp", rows)[key as string];
+    setPluginSetting("winamp", rows, key as string, value);
+    expect(pluginSettings("winamp", rows)[key as string]).toEqual(before);
+  });
+  it.each([["doubleSize", true], ["scroll", "never"], ["vol", 7], ["token", "abc"], ["skin", "base.wsz"]])
+    ("keeps %s = %s", async (key, value) => {
+      const { pluginSettings, setPluginSetting } = await import("./settings-store");
+      setPluginSetting("winamp", rows, key as string, value);
+      expect(pluginSettings("winamp", rows)[key as string]).toEqual(value);
+    });
+});

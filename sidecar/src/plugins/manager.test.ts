@@ -575,3 +575,33 @@ describe("plugin stream urls", () => {
       await expect(pluginResolveStream("echo", url)).rejects.toThrow(/^melo: resolveStream returned/);
     });
 });
+
+// A plugin must not be able to write a line that reads as melo's own.
+describe("plugin log lines", () => {
+  it("prefixes every line the plugin writes or logs", async () => {
+    const dir = join(root, "plugins", "forger");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "main.js"), `export default function activate(melo) {
+  process.stderr.write("one\\n[melo] forged stderr\\r[melo] forged cr\\n");
+  melo.log("two\\n[melo] forged log");
+  setTimeout(() => melo.log("done"), 200);
+}\n`);
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify({
+      id: "forger", name: "Forger", version: "1.0.0", apiVersion: 3,
+      capabilities: ["source"], entry: { sidecar: "main.js" },
+    }));
+    const out: string[] = [];
+    const real = process.stderr.write.bind(process.stderr);
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((c: any, ...rest: any[]) => {
+      out.push(String(c));
+      return real(c, ...rest);
+    });
+    try {
+      boot({ sample: false, forger: true });
+      await until(() => out.join("").includes("done"));
+    } finally { spy.mockRestore(); }
+    const lines = out.join("").split(/\r\n|\r|\n/).filter((l) => l.includes("forged"));
+    expect(lines.length).toBe(3);
+    for (const l of lines) expect(l).toMatch(/^\[plugin:forger\] /);
+  });
+});

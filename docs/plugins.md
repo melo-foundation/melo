@@ -616,7 +616,9 @@ QtObject {
 
 - A key with no stored value reads as its `default`.
 - `set()` on a key the schema does not declare, or on an `action` key, is
-  ignored. A stored key the schema no longer declares is dropped.
+  ignored. So is a value that does not fit its row: a `toggle` takes a boolean,
+  a `select` one of its option values, a `slider` a number from `from` to `to`,
+  `text` a string of up to 4096 characters, `file` a file name. A stored key the schema no longer declares is dropped.
 - Values reach you as soon as they are written.
 - An `action` row shows only while your QML is loaded.
 

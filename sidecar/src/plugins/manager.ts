@@ -256,7 +256,8 @@ function spawnPlugin(id: string): void {
   // state becomes "running" only when the host reports `registered` (sources
   // ready) — not at spawn, else callers race an empty source list
   createInterface({ input: p.stdout! }).on("line", (line) => onHostLine(id, line));
-  p.stderr!.on("data", (d) => process.stderr.write(`[plugin:${id}] ${d}`));
+  // every line carries the prefix, so a plugin cannot write a line that reads as melo's
+  createInterface({ input: p.stderr! }).on("line", (line) => process.stderr.write(`[plugin:${id}] ${line}\n`));
   // An 'error' with no listener throws and would take the sidecar down (EMFILE/
   // EACCES in a restart storm); treat it as this plugin's spawn failure. The
   // `rt.proc === p` guard stops error+exit double-counting a restart.
@@ -292,7 +293,7 @@ function onHostLine(id: string, line: string): void {
     log(`[plugins] ${id} failed to load: ${rt.error}`);
     cfg?.onChanged();
   } else if (msg.method === "log") {
-    log(`[plugin:${id}]`, msg.params.msg);
+    for (const line of String(msg.params?.msg ?? "").split(/\r\n|\r|\n/)) log(`[plugin:${id}]`, line);
   } else if (msg.id !== undefined) {
     const pend = rt.pending.get(msg.id);
     if (!pend) return;

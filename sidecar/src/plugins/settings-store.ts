@@ -21,10 +21,25 @@ export function pluginSettings(id: string, schema: SettingsField[]): Record<stri
   return out;
 }
 
+// A value must fit its row: a toggle a boolean, a select one of its options, a
+// slider a number in range, text and file a string of at most 4096 characters.
+const MAX_TEXT = 4096;
+export function fitsField(f: SettingsField, v: unknown): boolean {
+  switch (f.type) {
+    case "toggle": return typeof v === "boolean";
+    case "select": return typeof v === "string" && (f.options ?? []).some((o) => o.value === v);
+    case "slider": return typeof v === "number" && Number.isFinite(v)
+      && (f.from === undefined || v >= f.from) && (f.to === undefined || v <= f.to);
+    case "text": return typeof v === "string" && v.length <= MAX_TEXT;
+    case "file": return typeof v === "string" && v.length <= MAX_TEXT && !/[\\/]/.test(v);
+    default: return false;
+  }
+}
+
 export function setPluginSetting(id: string, schema: SettingsField[],
                                  key: string, value: unknown): Record<string, unknown> {
   const field = schema.find((f) => f.key === key);
-  if (!field || field.type === "action") return pluginSettings(id, schema);
+  if (!field || field.type === "action" || !fitsField(field, value)) return pluginSettings(id, schema);
   const s = loadSettings();
   const all = { ...(s.plugins?.settings ?? {}) };
   all[id] = { ...(all[id] ?? {}), [key]: value };
