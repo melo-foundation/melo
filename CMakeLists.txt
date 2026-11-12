@@ -830,6 +830,11 @@ if(Qt6Test_FOUND)
     target_link_libraries(tst_jsonrowmodel PRIVATE Qt6::Core Qt6::Test)
     add_test(NAME jsonrowmodel COMMAND tst_jsonrowmodel)
 
+    add_executable(tst_trackvideoid tests/cpp/tst_trackvideoid.cpp src/core/TrackVideoId.h)
+    target_include_directories(tst_trackvideoid PRIVATE src/core)
+    target_link_libraries(tst_trackvideoid PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME trackvideoid COMMAND tst_trackvideoid)
+
     # Who gets to switch the FFT on: SpectrumSource alone, Qt6::Core only. The
     # host side of the wiring is asserted in tst_windowsnap.
     add_executable(tst_spectrumarbiter

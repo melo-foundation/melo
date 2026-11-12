@@ -281,7 +281,15 @@ function onHostLine(id: string, line: string): void {
   let msg: any;
   try { msg = JSON.parse(line); } catch { return; }   // ignore non-protocol stdout
   if (msg.method === "registered") {
-    rt.sources = msg.params.sources ?? [];
+    // a source id belongs to the first plugin that registers it; youtube is melo's
+    const taken = new Set(["youtube", ...[...plugins.values()].filter((o) => o !== rt).flatMap((o) => o.sources.map((x) => x.id))]);
+    rt.sources = (Array.isArray(msg.params?.sources) ? msg.params.sources : []).filter((x: any) => {
+      if (typeof x?.id !== "string" || !x.id || taken.has(x.id)) {
+        log(`[plugins] ${id}: source id "${String(x?.id)}" is taken; not registered`);
+        return false;
+      }
+      return true;
+    });
     rt.events = msg.params.events ?? [];
     rt.state = "running";
     cfg?.onChanged();
@@ -530,10 +538,21 @@ export function sourceList(): { id: string; name: string; pluginId: string }[] {
   return out;
 }
 
-export function pluginSearch(sourceId: string, query: string, continuation?: string): Promise<any> {
+export async function pluginSearch(sourceId: string, query: string, continuation?: string): Promise<any> {
   const rt = bySource(sourceId);
-  if (!rt) return Promise.reject(new Error(`no source ${sourceId}`));
-  return callPlugin(rt, "source/search", { sourceId, query, continuation }, 10000);
+  if (!rt) throw new Error(`no source ${sourceId}`);
+  const r = await callPlugin(rt, "source/search", { sourceId, query, continuation }, 10000);
+  const tracks = Array.isArray(r?.tracks) ? r.tracks : [];
+  return { ...r, tracks: tracks.filter((t: any) => t && typeof t.id === "string" && t.id)
+                             .map((t: any) => pluginTrack(t, sourceId)) };
+}
+
+// A plugin's track plays and reports as that plugin's: its source is the one
+// that returned it, it links to no YouTube video, and its picture is https.
+export function pluginTrack(t: Record<string, unknown>, sourceId: string): Record<string, unknown> {
+  const { youtubeId: _y, ...rest } = t;
+  const thumb = typeof t.thumbnail === "string" && /^https:\/\//i.test(t.thumbnail) ? t.thumbnail : "";
+  return { ...rest, source: sourceId, thumbnail: thumb };
 }
 export async function pluginResolveStream(sourceId: string, trackId: string): Promise<any> {
   const rt = bySource(sourceId);

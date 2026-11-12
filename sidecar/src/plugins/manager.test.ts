@@ -605,3 +605,70 @@ describe("plugin log lines", () => {
     for (const l of lines) expect(l).toMatch(/^\[plugin:forger\] /);
   });
 });
+
+describe("plugin search results", () => {
+  it("keep the returning source, no YouTube link, and only an https picture", async () => {
+    const dir = join(root, "plugins", "liar");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify({
+      id: "liar", name: "liar", version: "1.0.0", apiVersion: 3,
+      capabilities: ["source"], entry: { sidecar: "main.js" },
+    }));
+    writeFileSync(join(dir, "main.js"),
+      "export default function activate(melo) {\n"
+      + "  melo.registerSource({ id: 'liar', name: 'Liar', resolveStream: async () => ({}),\n"
+      + "    search: async () => ({ continuation: 'c', tracks: [\n"
+      + "      { id: 'dQw4w9WgXcQ', source: 'youtube', youtubeId: 'dQw4w9WgXcQ', thumbnail: 'file:///etc/passwd' },\n"
+      + "      { id: 'l:2', thumbnail: 'http://127.0.0.1/x.png' },\n"
+      + "      { id: 'l:3', thumbnail: 'https://img.example.com/a.jpg', title: 'ok' },\n"
+      + "      { title: 'no id' } ] }) });\n"
+      + "}\n");
+    initPlugins({ pluginsDir: join(root, "plugins"), pluginDataRoot: join(root, "plugin-data"),
+                  hostPath: HOST, enabled: { liar: true }, grants: {}, onChanged: () => {} });
+    await until(() => sourceList().some((s) => s.id === "liar"));
+    const r = await pluginSearch("liar", "q");
+    expect(r.continuation).toBe("c");
+    expect(r.tracks).toEqual([
+      { id: "dQw4w9WgXcQ", source: "liar", thumbnail: "" },
+      { id: "l:2", source: "liar", thumbnail: "" },
+      { id: "l:3", source: "liar", thumbnail: "https://img.example.com/a.jpg", title: "ok" },
+    ]);
+  });
+});
+
+describe("plugin capabilities", () => {
+  function write(folder: string, id: string, caps: string[], body: string) {
+    const dir = join(root, "plugins", folder);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify({
+      id, name: id, version: "1.0.0", apiVersion: 3, capabilities: caps, entry: { sidecar: "main.js" },
+    }));
+    writeFileSync(join(dir, "main.js"), `export default function activate(melo) {\n${body}\n}\n`);
+  }
+  const reg = (sid: string) =>
+    `melo.registerSource({ id: '${sid}', name: '${sid}', search: async () => ({ tracks: [] }), resolveStream: async () => ({}) });`;
+
+  it("registerSource needs the source capability", async () => {
+    write("nosrc", "nosrc", ["events"], reg("nosrc"));
+    boot({ sample: false, nosrc: true });
+    await until(() => listPlugins().find((p) => p.id === "nosrc")!.state === "error");
+    expect(listPlugins().find((p) => p.id === "nosrc")!.error).toMatch(/registerSource needs "source"/);
+  });
+
+  it("player.on needs the events capability", async () => {
+    write("noev", "noev", ["source"], "melo.player.on('trackChanged', () => {});");
+    boot({ sample: false, noev: true });
+    await until(() => listPlugins().find((p) => p.id === "noev")!.state === "error");
+    expect(listPlugins().find((p) => p.id === "noev")!.error).toMatch(/player\.on needs "events"/);
+  });
+
+  it("a plugin cannot take youtube or another plugin's source id", async () => {
+    boot();
+    await until(() => sourceList().some((s) => s.id === "sample"));
+    write("thief", "thief", ["source"], reg("sample") + reg("youtube") + reg("thief"));
+    rescanPlugins();
+    setPluginEnabled("thief", true);
+    await until(() => listPlugins().find((p) => p.id === "thief")!.state === "running");
+    expect(sourceList().map((s) => [s.id, s.pluginId]).sort()).toEqual([["sample", "sample"], ["thief", "thief"]]);
+  });
+});

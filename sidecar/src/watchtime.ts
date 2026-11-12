@@ -103,6 +103,9 @@ async function trkHeaders(
   return headers;
 }
 
+/** A YouTube video id: 11 characters of [A-Za-z0-9_-]. Anything else is never reported. */
+export const isVideoId = (id: unknown): id is string => typeof id === "string" && /^[A-Za-z0-9_-]{11}$/.test(id);
+
 export async function reportPlayback(
   videoId: string,
   duration: number,
@@ -110,6 +113,7 @@ export async function reportPlayback(
   browser: string,
   profile: string,
 ): Promise<string> {
+  if (!isVideoId(videoId)) return "";
   const cpn = generateCPN();
   const startTime = Date.now();
 
@@ -196,6 +200,7 @@ export async function reportDelayplay(
   browser: string,
   profile: string,
 ): Promise<void> {
+  if (!isVideoId(videoId)) return;
   const session = sessions.get(cpn);
   if (!session) {
     console.log(`[watchtime] delayplay skipped — no session for cpn=${cpn}`);
@@ -239,6 +244,7 @@ export async function reportWatchtime(
   browser: string,
   profile: string,
 ): Promise<void> {
+  if (!isVideoId(videoId)) return;
   const session = sessions.get(cpn);
   const stR = String(Math.round(st));
   const etR = String(Math.round(et));

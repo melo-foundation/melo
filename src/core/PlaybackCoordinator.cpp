@@ -9,6 +9,7 @@
 #include "VideoRequest.h"
 #include "LogClock.h"
 #include <cstdio>
+#include "TrackVideoId.h"
 
 #include <QDateTime>
 #include <QJsonArray>
@@ -17,11 +18,8 @@
 #include <cmath>
 #include <cstdio>
 
-// The video a play is reported as. A YouTube track is its own; an imported
-// file reports as the video it is linked to, or as nothing, since its local-
-// id is not a video.
 static QString ytIdOf(const Track& t) {
-    return t.id.startsWith(QLatin1String("local-")) ? t.youtubeId : t.id;
+    return youtubeVideoOf(t.id, t.source, t.youtubeId);
 }
 
 PlaybackCoordinator::PlaybackCoordinator(AudioEngine* engine, SidecarService* sidecar,
@@ -247,7 +245,7 @@ void PlaybackCoordinator::playTrack(const Track& t, int forceCrossfade, PlayInte
         crossfadeHandling_ = false;
 
         flushWatchtime();
-        startWatchtime(ytIdOf(t), merged.duration);
+        startWatchtime(reportedVideoId(t.id, t.source, t.youtubeId), merged.duration);
         fetchSuggestions(ytIdOf(t));
         return;
     }
@@ -312,7 +310,7 @@ void PlaybackCoordinator::onStreamResolved(const Track& t, quint64 gen,
     crossfadeHandling_ = false;
 
     flushWatchtime();
-    startWatchtime(ytIdOf(t), merged.duration);
+    startWatchtime(reportedVideoId(t.id, t.source, t.youtubeId), merged.duration);
 
     // async silence detection (guarded by track identity on reply)
     if (settings_->silenceSkip()) {

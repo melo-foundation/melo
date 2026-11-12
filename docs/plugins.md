@@ -121,7 +121,13 @@ export default function activate(melo) {
   title, channel, duration /* seconds */, thumbnail /* url */ }
 ```
 
-Do not use `youtube` as a source id; melo resolves those tracks itself.
+`id` is required; `title`, `channel`, `duration` and `thumbnail` are optional.
+A track with no `thumbnail`, or one that is not `https://`, shows a blank tile.
+melo sets `source` to the source that returned the track.
+
+`registerSource` needs `"source"` in `capabilities`; `melo.player.on` needs
+`"events"`. Without it the call throws. A source id belongs to the first plugin
+that registers it; `youtube` is melo's. A taken id is not registered.
 
 `resolveStream` returns a directly playable `url`:
 

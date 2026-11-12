@@ -165,6 +165,7 @@ type SourceDef = {
   search: (q: string, o: { continuation?: string }) => Promise<unknown>;
   resolveStream: (trackId: string) => Promise<unknown>;
 };
+const caps: string[] = Array.isArray(manifest.capabilities) ? manifest.capabilities : [];
 const sources = new Map<string, SourceDef>();
 const listeners = new Map<string, ((p: unknown) => void)[]>();
 const storagePath = join(dataDir, "storage.json");
@@ -172,9 +173,13 @@ let storage: Record<string, unknown> = {};
 try { if (existsSync(storagePath)) storage = JSON.parse(readFileSync(storagePath, "utf8")); } catch {}
 
 const melo = {
-  registerSource(def: SourceDef) { sources.set(def.id, def); },
+  registerSource(def: SourceDef) {
+    if (!caps.includes("source")) throw new Error('melo: registerSource needs "source" in capabilities');
+    sources.set(String(def.id), def);
+  },
   player: {
     on(type: string, cb: (p: unknown) => void) {
+      if (!caps.includes("events")) throw new Error('melo: player.on needs "events" in capabilities');
       if (!listeners.has(type)) listeners.set(type, []);
       listeners.get(type)!.push(cb);
     },

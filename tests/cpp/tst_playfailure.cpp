@@ -353,19 +353,19 @@ private slots:
         freshPlayer();
         state_.setVideoSupported(true);
         state_.setVideoWanted(true);
-        coord_->playQueue(QJsonArray{track("short1"), track("short2")}, 0);
-        QTRY_COMPARE_WITH_TIMEOUT(state_.currentTrack().id, QString("short1"), 5000);
+        coord_->playQueue(QJsonArray{track("short000001"), track("short000002")}, 0);
+        QTRY_COMPARE_WITH_TIMEOUT(state_.currentTrack().id, QString("short000001"), 5000);
         for (int i = 0; i < 6; ++i) {   // near the end: the next track is prefetched
             QVERIFY(QMetaObject::invokeMethod(engine_.get(), "positionTick",
                                               Q_ARG(double, 90.0 + i), Q_ARG(double, 100.0)));
             QTest::qWait(60);
         }
-        QTRY_VERIFY_WITH_TIMEOUT(!streamRequests("short2").isEmpty(), 3000);
+        QTRY_VERIFY_WITH_TIMEOUT(!streamRequests("short000002").isEmpty(), 3000);
         state_.setVideoWanted(false);
         QTest::qWait(100);
         const qsizetype before = requests().size();
-        coord_->playQueue(QJsonArray{track("short3"), track("short4")}, 0);
-        QTRY_COMPARE_WITH_TIMEOUT(state_.currentTrack().id, QString("short3"), 5000);
+        coord_->playQueue(QJsonArray{track("short000003"), track("short000004")}, 0);
+        QTRY_COMPARE_WITH_TIMEOUT(state_.currentTrack().id, QString("short000003"), 5000);
         state_.setVideoWanted(true);
         QTest::qWait(300);
         QStringList asked;
@@ -373,8 +373,8 @@ private slots:
         for (qsizetype i = before; i < all.size(); ++i)
             if (all[i]["m"].toString() == QLatin1String("yt/getVideoStream")) asked << all[i]["p"].toObject()["videoId"].toString();
         qInfo() << "video asked after the new queue:" << asked;
-        QVERIFY2(!asked.contains("short2"), qPrintable("the old queue's next was asked: " + asked.join(",")));
-        QVERIFY(asked.contains("short3"));
+        QVERIFY2(!asked.contains("short000002"), qPrintable("the old queue's next was asked: " + asked.join(",")));
+        QVERIFY(asked.contains("short000003"));
     }
 };
 
