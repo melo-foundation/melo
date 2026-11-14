@@ -4,6 +4,7 @@
 #include <cmath>
 #include <QFile>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QTemporaryDir>
 #include "SettingsStore.h"
@@ -122,6 +123,28 @@ private slots:
             t["palette"] = QJsonObject{{"window", QLatin1String(c)}};
             write(path, t);
             QVERIFY2(store_->importTheme(path).isEmpty(), c);
+        }
+    }
+
+    // a theme picture never comes from the network, at any depth
+    void aRemotePictureIsRefused() {
+        const QString path = dir_.path() + "/remote.json";
+        for (const char* src : {"https://example.com/p.png", "http://127.0.0.1/x.png", "ftp://h/x.png"}) {
+            QJsonObject t = theme("remote", QJsonValue::Undefined);
+            QJsonObject s = t["settings"].toObject();
+            s["background"] = QJsonObject{{"type", "image"}, {"src", QLatin1String(src)}};
+            t["settings"] = s;
+            write(path, t);
+            QVERIFY2(store_->importTheme(path).isEmpty(), src);
+            QVERIFY(store_->lastError().startsWith(QStringLiteral("not a local picture")));
+        }
+        for (const char* src : {"file:///home/someone/p.png", "/home/someone/p.png", "C:/p.png", "data:image/png;base64,AA=="}) {
+            QJsonObject t = theme("local", QJsonValue::Undefined);
+            QJsonObject s = t["settings"].toObject();
+            s["background"] = QJsonObject{{"type", "image"}, {"src", QLatin1String(src)}};
+            t["settings"] = s;
+            write(path, t);
+            QVERIFY2(!store_->importTheme(path).isEmpty(), src);
         }
     }
 

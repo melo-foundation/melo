@@ -20,6 +20,7 @@ using ThemeFormat::opacityJson;
 #include <QEvent>
 #include <QSaveFile>
 #include <QFontDatabase>
+#include <QRegularExpression>
 #include <QSet>
 #include <QStandardPaths>
 
@@ -672,6 +673,26 @@ ThemeStore::ThemeStore(SettingsStore* settings, QObject* parent)
     });
 }
 
+// A theme picture never comes from the network: every `src` or `image` string
+// has no scheme, or file: qrc: data: image: (a one-letter scheme is a drive).
+static void remotePictures(const QJsonValue& v, QStringList& out) {
+    static const QRegularExpression scheme(QStringLiteral("^([A-Za-z][A-Za-z0-9+.-]+):"));
+    if (v.isArray()) { for (const QJsonValue& e : v.toArray()) remotePictures(e, out); return; }
+    if (!v.isObject()) return;
+    const QJsonObject o = v.toObject();
+    for (auto it = o.constBegin(); it != o.constEnd(); ++it) {
+        if ((it.key() == QLatin1String("src") || it.key() == QLatin1String("image")) && it.value().isString()) {
+            const QRegularExpressionMatch m = scheme.match(it.value().toString());
+            const QString s = m.captured(1).toLower();
+            if (m.hasMatch() && s != QLatin1String("file") && s != QLatin1String("qrc")
+                && s != QLatin1String("data") && s != QLatin1String("image"))
+                out << it.value().toString().left(80);
+        } else {
+            remotePictures(it.value(), out);
+        }
+    }
+}
+
 void ThemeStore::loadUserThemes() {
     userThemes_.clear();
     const QDir dir(themesDir_);
@@ -1229,6 +1250,15 @@ QString ThemeStore::importTheme(const QString& path) {
     QJsonObject t = migratedTheme(QJsonDocument::fromJson(f.readAll()).object());
     // a theme without a palette is not one; settings may legitimately be empty
     if (t.isEmpty() || !t.contains("palette")) return {};
+    {
+        QStringList remote;
+        remotePictures(t, remote);
+        if (!remote.isEmpty()) {
+            lastError_ = QStringLiteral("not a local picture: %1").arg(remote.join(QStringLiteral(", ")));
+            emit lastErrorChanged();
+            return {};
+        }
+    }
     if (t["version"].toInt() < kThemeVersion) {
         lastError_ = QStringLiteral("theme version %1; this build reads %2")
                          .arg(t["version"].toInt()).arg(kThemeVersion);
@@ -1636,6 +1666,9 @@ QString ThemeStore::importPreset(const QString& path) {
     const QString kind = p["kind"].toString();
     if (!isPresetKind(kind)) return {};
     if (p["body"].toObject().isEmpty()) return {};
+    QStringList remote;
+    remotePictures(p["body"], remote);
+    if (!remote.isEmpty()) return {};
     p["id"] = kind + QStringLiteral("-%1").arg(QDateTime::currentMSecsSinceEpoch());
     p.remove(QStringLiteral("builtIn"));
     if (p["name"].toString().isEmpty()) p["name"] = kind;

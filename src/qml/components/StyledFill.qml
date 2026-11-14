@@ -293,7 +293,7 @@ Item {
                    required property int index
                    readonly property var modelData: root.stack[index]
                    readonly property string wanted: Theme.fillImage(Theme.sourceOf(modelData))
-                           ? ((modelData.params && modelData.params.src) || "") : ""
+                           ? Theme.localPicture((modelData.params && modelData.params.src) || "") : ""
                    // Native placement and nine-slice cuts are in SOURCE pixels;
                    // decoding those at 1024 would silently rescale their borders.
                    readonly property bool nativeFit: Theme.imageOption(Theme.styledOf(modelData), "fit") >= 4

@@ -66,7 +66,7 @@ Item {
                 width: frame.drawW; height: frame.drawH
                 visible: ed.isImage
                 fillMode: Image.Stretch
-                source: ed.isImage ? String(ed.spec.image || "") : ""
+                source: ed.isImage ? Theme.localPicture(ed.spec.image) : ""
             }
             Shape {   // ...and a path shape is drawn
                 x: frame.drawX; y: frame.drawY

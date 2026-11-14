@@ -164,7 +164,7 @@ Item {
                 anchors.fill: parent
                 visible: g.spec.tint !== true
                 layer.enabled: g.spec.tint === true
-                source: g.spec.image
+                source: Theme.localPicture(g.spec.image)
                 fillMode: Image.PreserveAspectFit
                 smooth: g.spec.smooth !== false
                 mipmap: smooth

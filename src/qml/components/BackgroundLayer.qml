@@ -122,7 +122,7 @@ Item {
             }
             Image {
                 id: img
-                source: root.type === "image" && root.config.src ? root.config.src : ""
+                source: root.type === "image" && root.config.src ? Theme.localPicture(root.config.src) : ""
                 width: imgCrop.drawW
                 height: imgCrop.drawH
                 // already scaled to the exact size we want it drawn at
