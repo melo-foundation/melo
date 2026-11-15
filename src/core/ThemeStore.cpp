@@ -21,6 +21,7 @@ using ThemeFormat::opacityJson;
 #include <QSaveFile>
 #include <QFontDatabase>
 #include <QRegularExpression>
+#include <functional>
 #include <QSet>
 #include <QStandardPaths>
 
@@ -673,6 +674,47 @@ ThemeStore::ThemeStore(SettingsStore* settings, QObject* parent)
     });
 }
 
+// Limits on a theme file: its size, layers on one entry and in all, scopes, and
+// one path's length (a glyph's).
+constexpr qint64 kMaxThemeBytes = 4LL << 20;
+constexpr int kMaxLayers = 16;
+constexpr int kMaxLayersTotal = 4096;
+constexpr int kMaxScopes = 1024;
+constexpr int kMaxPathChars = 64 * 1024;
+
+// Empty when `theme` is within the structure limits; otherwise what is over.
+static QString checkStructure(const QJsonObject& theme) {
+    int layers = 0, scopes = 0;
+    QString why;
+    const std::function<void(const QJsonValue&, const QString&)> walk = [&](const QJsonValue& v, const QString& key) {
+        if (!why.isEmpty()) return;
+        const bool pathKey = key == QLatin1String("path") || key == QLatin1String("paths");
+        if (pathKey && v.isString() && v.toString().size() > kMaxPathChars) {
+            why = QStringLiteral("A path is over %1 KB. Simplify the shape.").arg(kMaxPathChars >> 10);
+            return;
+        }
+        if (v.isArray()) {
+            const QJsonArray a = v.toArray();
+            if (key == QLatin1String("layers")) {
+                if (a.size() > kMaxLayers) { why = QStringLiteral("An entry has over %1 layers. Use fewer layers.").arg(kMaxLayers); return; }
+                layers += int(a.size());
+                if (layers > kMaxLayersTotal) { why = QStringLiteral("The theme has over %1 layers. Use fewer layers.").arg(kMaxLayersTotal); return; }
+            }
+            for (const QJsonValue& x : a) walk(x, pathKey ? key : QString());
+            return;
+        }
+        if (!v.isObject()) return;
+        const QJsonObject o = v.toObject();
+        if (key == QLatin1String("scopes")) {
+            scopes += int(o.size());
+            if (scopes > kMaxScopes) { why = QStringLiteral("The theme has over %1 scopes. Use fewer scopes.").arg(kMaxScopes); return; }
+        }
+        for (auto it = o.constBegin(); it != o.constEnd(); ++it) walk(it.value(), it.key());
+    };
+    walk(theme, QString());
+    return why;
+}
+
 // A theme picture never comes from the network: every `src` or `image` string
 // has no scheme, or file: qrc: data: image: (a one-letter scheme is a drive).
 static void remotePictures(const QJsonValue& v, QStringList& out) {
@@ -702,6 +744,11 @@ void ThemeStore::loadUserThemes() {
         const QJsonObject raw = QJsonDocument::fromJson(f.readAll()).object();
         if (raw["id"].toString().isEmpty()) continue;
         f.close();
+        // a file copied in by hand is held to the import's limits
+        if (const QString why = checkStructure(raw); !why.isEmpty()) {
+            std::fprintf(stderr, "[theme] skipped %s: %s\n", qPrintable(name), qPrintable(why));
+            continue;
+        }
         if (raw["version"].toInt() < kThemeVersion) {
             std::fprintf(stderr, "[theme] skipped %s: version %d, this build reads %d\n",
                          qPrintable(name), raw["version"].toInt(), kThemeVersion);
@@ -1247,7 +1294,18 @@ QString ThemeStore::importTheme(const QString& path) {
     emit lastErrorChanged();
     QFile f(portalPath(path));
     if (!f.open(QIODevice::ReadOnly)) return {};
-    QJsonObject t = migratedTheme(QJsonDocument::fromJson(f.readAll()).object());
+    if (f.size() > kMaxThemeBytes) {
+        lastError_ = QStringLiteral("The file is over %1 MB. Pick a .json exported by melo.").arg(kMaxThemeBytes >> 20);
+        emit lastErrorChanged();
+        return {};
+    }
+    const QJsonObject raw = QJsonDocument::fromJson(f.readAll()).object();
+    if (const QString why = checkStructure(raw); !why.isEmpty()) {
+        lastError_ = why;
+        emit lastErrorChanged();
+        return {};
+    }
+    QJsonObject t = migratedTheme(raw);
     // a theme without a palette is not one; settings may legitimately be empty
     if (t.isEmpty() || !t.contains("palette")) return {};
     {
@@ -1661,8 +1719,10 @@ QString ThemeStore::matchingPreset(const QString& kind) const {
 QString ThemeStore::importPreset(const QString& path) {
     if (meloRefuseFromPlugin("ThemeBackend.importPreset")) return {};
     QFile f(portalPath(path));
-    if (!f.open(QIODevice::ReadOnly)) return {};
-    QJsonObject p = migratedPreset(QJsonDocument::fromJson(f.readAll()).object());
+    if (!f.open(QIODevice::ReadOnly) || f.size() > kMaxThemeBytes) return {};
+    const QJsonObject raw = QJsonDocument::fromJson(f.readAll()).object();
+    if (!checkStructure(raw).isEmpty()) return {};
+    QJsonObject p = migratedPreset(raw);
     const QString kind = p["kind"].toString();
     if (!isPresetKind(kind)) return {};
     if (p["body"].toObject().isEmpty()) return {};

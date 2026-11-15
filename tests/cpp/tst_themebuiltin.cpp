@@ -148,6 +148,32 @@ private slots:
         }
     }
 
+    void anOversizedThemeIsRefused() {
+        const QString path = dir_.path() + "/big.json";
+        QJsonObject t = theme("big", QJsonValue::Undefined);
+        QJsonArray many;
+        for (int i = 0; i < 17; ++i) many.append(QJsonObject{{"kind", "solid"}});
+        t["palette"] = QJsonObject{{"window", "#101010"}, {"surface", QJsonObject{{"colour", "#202020"}, {"layers", many}}}};
+        write(path, t);
+        QVERIFY(store_->importTheme(path).isEmpty());
+        QVERIFY(store_->lastError().contains(QStringLiteral("layers")));
+
+        t = theme("long", QJsonValue::Undefined);
+        QJsonObject s = t["settings"].toObject();
+        s["glyphs"] = QJsonObject{{"play", QJsonObject{{"path", QString(64 * 1024 + 1, QLatin1Char('M'))}}}};
+        t["settings"] = s;
+        write(path, t);
+        QVERIFY(store_->importTheme(path).isEmpty());
+        QVERIFY(store_->lastError().contains(QStringLiteral("path")));
+
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(QByteArray((4 << 20) + 1, ' '));
+        f.close();
+        QVERIFY(store_->importTheme(path).isEmpty());
+        QVERIFY(store_->lastError().contains(QStringLiteral("4 MB")));
+    }
+
     void presetsWriteNone() {
         store_->setActive(QStringLiteral("old"));
         const QString path = dir_.path() + "/palette-export.json";
