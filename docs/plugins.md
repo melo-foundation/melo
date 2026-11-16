@@ -708,9 +708,10 @@ Each plugin runs as a separate Node process launched with `--permission`:
   `perf_hooks`, `process`, `punycode`, `querystring`, `readline`, `stream`,
   `string_decoder`, `timers`, `tty`, `url`, `util`, `zlib` and their
   subpaths. Any other builtin throws `melo: <module> is not available to this plugin`.
-- **Limit:** the network restriction is JavaScript-level. A plugin granted
-  `rawNetwork`, or one exploiting a Node escape, is not contained. Review a
-  plugin before you install it.
+- **Limit:** the plugin process has network access of its own. A plugin
+  granted `rawNetwork`, one that builds a connection from Node's internal HTTP
+  client, or one exploiting a Node escape, is not contained. Review a plugin
+  before you install it.
 
 melo scans the plugin's `.js`/`.mjs`/`.cjs`/`.qml` files on load. Raw-socket
 imports, `eval`/`new Function`/`process.binding`/`process.getBuiltinModule`,

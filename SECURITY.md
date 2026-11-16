@@ -15,17 +15,26 @@ A bypass of any of these is a vulnerability:
 | Boundary | A vulnerability is |
 |---|---|
 | Plugin process (Node `--permission`) | A plugin reading files outside its own folder, its data folder and melo's plugin host folder; writing outside its data folder; or starting a process, worker thread or native addon |
-| Plugin network allowlist | A plugin without `rawNetwork` reaching a host its manifest does not list, or opening a raw socket or WebSocket |
+| Plugin folders | A plugin folder or data folder holding a link (symlink or junction) loading |
+| Plugin network allowlist | A plugin without `rawNetwork` reaching, through `fetch` or a redirect, a host its manifest does not list, or a local or private address its manifest does not name; or loading a Node builtin outside the list in `docs/plugins.md` |
+| Plugin grants | A plugin running with `ui` or `rawNetwork` after its folder or permission fields changed, without the user turning it on again |
+| Plugin environment | A plugin process seeing an environment variable other than the locale and time zone |
+| Plugin streams | melo opening a plugin's stream URL other than `https`, `http` to a public host, or a file in that plugin's folder or data folder |
 | Skin archives (`ZipReader`, `SkinArchive`) | A crafted skin causing memory corruption or reading a file outside the archive |
 | Plugin without `ui` | Running code in melo's process |
 | melo's own folders | Writing anywhere outside them |
 | Your credentials | Disclosing your cookies or Last.fm API key |
+| Your YouTube history | A plugin's track being reported to YouTube as watched |
 | Remote input | Input an attacker can craft to crash melo |
 
 ## Not in scope
 
 - A plugin with the `ui` grant doing anything melo can do, including reading
   any file. Its QML runs in melo's process and is not sandboxed.
+- A plugin with the `rawNetwork` grant reaching any host.
+- A plugin that builds its own connection from Node's internal HTTP client
+  instead of `fetch`. The plugin process has network access of its own;
+  review a plugin before you install it.
 - Bypassing the QML import allowlist.
 - Attacks that need code already running as your user.
 - Denial of service through a file or plugin you installed yourself.
@@ -45,7 +54,7 @@ melo has no telemetry, analytics or crash reporting. It contacts these hosts:
 | `ws.audioscrobbler.com` | Auto-tagging, when a Last.fm API key is set | Artist, title and your API key |
 | `lrclib.net` | Lyrics | Artist, title, album, duration |
 | `github.com`, `release-assets.githubusercontent.com` | Start, when yt-dlp is missing; a yt-dlp update check at most once a day | The download request |
-| `nodejs.org` | First start, when the system has no Node 22.15 or newer (every Linux package except the full AppImage) | The download request |
+| `nodejs.org` | First start, when the system has no Node 22.22.2 or newer (every Linux package except the full AppImage) | The download request |
 | A plugin's listed hosts | While that plugin runs | Whatever that plugin sends |
 
 ## Profiles and your Google account
