@@ -909,12 +909,12 @@ QtObject {
         return source === "adaptive" ? "contrast" : isFilter(source) ? filterName(source)
              : isStyled(source) ? fillName(source) : source
     }
-    // reads the glyph coverage itself (an edge, a level), so a swatch of it says nothing
-    // a theme picture never comes from the network: a scheme but file, qrc, data and image draws nothing
+    // a theme picture never comes from the network: any scheme other than file, qrc, data or image draws nothing
     function localPicture(src) {
         const s = src ? String(src) : ""
         return /^[a-z][a-z0-9+.-]+:/i.test(s) && !/^(file|qrc|data|image):/i.test(s) ? "" : s
     }
+    // reads the glyph coverage itself (an edge, a level), so a swatch of it says nothing
     function fillImage(kind) { const f = fillOf(kind); return f ? f.image === true : false }
     readonly property var imageFits: ["tile", "cover", "contain", "stretch", "native", "9-slice"]
     readonly property var imageAnchors: ["top left", "top", "top right", "left", "centre", "right", "bottom left", "bottom", "bottom right"]

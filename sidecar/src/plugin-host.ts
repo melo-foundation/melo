@@ -55,8 +55,7 @@ if (typeof (moduleApi as any).registerHooks === "function") {
     },
   });
 } else {
-  // module.registerHooks landed in Node 22.15/23; without it the builtin
-  // allowlist can't install. Log so it's visible.
+  // module.registerHooks needs Node 22.15; without it the builtin allowlist cannot install
   process.stderr.write("melo: node:module.registerHooks unavailable — builtin module allowlist not installed (Node too old)\n");
 }
 // process.getBuiltinModule() skips resolve hooks, so it gets the same allowlist.

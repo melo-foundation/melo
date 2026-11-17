@@ -1,4 +1,4 @@
-// The plugin host's network rules, against the BUILT host bundle and a local server.
+// The plugin host's network rules, against the built host bundle and a local server.
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { spawn, execSync, type ChildProcess } from "child_process";
 import { mkdtempSync, writeFileSync } from "fs";

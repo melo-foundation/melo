@@ -1,5 +1,32 @@
 # Changelog
 
+## Alpha 4.4
+
+### Security Fixes
+
+- Fix a web server making melo run out of memory (Qt CVE-2026-116337)
+- Fix imported themes loading pictures from the network
+- Fix an oversized theme file stalling melo
+- Fix plugins reading files outside their folder through a link
+- Fix plugin web requests reaching hosts their manifest does not list
+- Fix plugin web requests reaching the local network
+- Fix plugins seeing melo's environment variables
+- Fix a changed plugin keeping its earlier permissions
+- Fix a copied plugin folder taking over an enabled plugin
+- Fix plugins playing streams from any kind of URL
+- Fix plugins writing log lines that look like melo's
+- Fix plugin tracks showing up in YouTube watch history
+- Fix a crafted MP4 corrupting memory in the silence scan (FFmpeg CVE-2026-40962)
+
+### Home Fixes
+
+- Fix guest Home ignoring what a guest plays
+
+### Build and Packaging Improvements
+
+- Update the bundled Node.js to 22.23.5
+- Update the full AppImage's bundled libraries to Ubuntu's security fixes
+
 ## Alpha 4.3
 
 ### Fixes

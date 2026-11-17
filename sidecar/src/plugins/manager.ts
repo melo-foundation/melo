@@ -113,7 +113,7 @@ function grantOnEnable(id: string, rt: Runtime): void {
 
 // An enabled plugin at launch or after its folder was replaced: it starts only
 // when its folder and permissions are what the user agreed to. A plugin with no
-// consent stored (enabled before melo kept one, or by hand) adopts its current one.
+// consent stored adopts its current one.
 function startEnabled(id: string, rt: Runtime): void {
   const had = rt.grants.consent;
   if (had !== undefined && had !== consentOf(rt.loaded)) {
@@ -440,7 +440,6 @@ export function rescanPlugins(): PluginInfo[] {
           .filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch {}
   const seen = new Set<string>();
   let takenKeys = new Set<string>();
-  // duplicate rows are worked out afresh on every scan
   for (const k of [...plugins.keys()]) if (k.startsWith("dir:")) plugins.delete(k);
   const dups = duplicateIds(cfg.pluginsDir, entries);
   for (const [id, dirs] of dups) {
@@ -573,7 +572,7 @@ async function publicHost(host: string): Promise<boolean> {
   const h = host.replace(/^\[|\]$/g, "").toLowerCase();
   if (h === "localhost" || h.endsWith(".localhost")) return false;
   if (isIP(h)) return !isPrivateAddress(h);
-  // a name that does not resolve cannot be played either
+  // a name that does not resolve passes: nothing can play it
   try { return (await lookup(h, { all: true })).every((a) => !isPrivateAddress(a.address)); }
   catch { return true; }
 }

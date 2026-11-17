@@ -536,8 +536,8 @@ describe("plugin manager", () => {
   });
 });
 
-// A plugin's stream URL reaches GStreamer and ffmpeg, which open any URI scheme
-// they have a handler for.
+// A plugin's stream URL reaches GStreamer, which opens any URI scheme it has a
+// handler for.
 describe("plugin stream urls", () => {
   function bootEcho() {
     const dir = join(root, "plugins", "echo");

@@ -70,6 +70,29 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.4.4" type="development" date="2026-11-17">
+      <description>
+        <p>Hotfix for Alpha 4.</p>
+        <ul>
+          <li>Fix a web server making melo run out of memory (Qt CVE-2026-116337)</li>
+          <li>Fix imported themes loading pictures from the network</li>
+          <li>Fix an oversized theme file stalling melo</li>
+          <li>Fix plugins reading files outside their folder through a link</li>
+          <li>Fix plugin web requests reaching hosts their manifest does not list</li>
+          <li>Fix plugin web requests reaching the local network</li>
+          <li>Fix plugins seeing melo's environment variables</li>
+          <li>Fix a changed plugin keeping its earlier permissions</li>
+          <li>Fix a copied plugin folder taking over an enabled plugin</li>
+          <li>Fix plugins playing streams from any kind of URL</li>
+          <li>Fix plugins writing log lines that look like melo's</li>
+          <li>Fix plugin tracks showing up in YouTube watch history</li>
+          <li>Fix a crafted MP4 corrupting memory in the silence scan (FFmpeg CVE-2026-40962)</li>
+          <li>Fix guest Home ignoring what a guest plays</li>
+          <li>Update the bundled Node.js to 22.23.5</li>
+          <li>Update the full AppImage's bundled libraries to Ubuntu's security fixes</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.3" type="development" date="2026-10-29">
       <description>
         <p>Hotfix for Alpha 4.</p>

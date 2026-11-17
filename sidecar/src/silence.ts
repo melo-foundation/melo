@@ -60,7 +60,7 @@ export function detectSilence(
 // costs audible buffering. Local files have no such contention.
 const REMOTE_SCAN_DELAY_MS = 3000;
 
-// ffmpeg opens a file, or the relay's or a plain http URL; no other protocol.
+// ffmpeg opens only files and plain http (the relay).
 const INPUT_PROTOCOLS = ["-protocol_whitelist", "file,http,tcp"];
 
 const isRemote = (source: string) => /^https?:/i.test(source);

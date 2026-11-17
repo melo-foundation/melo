@@ -20,7 +20,7 @@ import { warmStreamSession } from "./streams";
 import { warmPoTokenSession } from "./potoken";
 import { setUpFetch } from "./proxy";
 
-const SIDECAR_VERSION = "0.4.3";
+const SIDECAR_VERSION = "0.4.4";
 
 let initialized = false;
 

@@ -37,9 +37,9 @@ Templates in the repo: `sidecar/test-fixtures/sample-source/` (a source),
    `ui` and `rawNetwork` plugin has one. Enabling grants `ui` and `rawNetwork`.
 4. Turn on the row under it for each `intercept` action you allow.
 
-A plugin whose folder or permission fields (`capabilities` `ui`, `permissions`)
-changed since it was turned on loads turned off with the warning *Its folder or
-permissions changed since you turned it on*; turn it on again.
+A plugin whose folder, `ui` capability or `permissions` changed since it was
+turned on loads turned off with the warning *Its folder or permissions changed
+since you turned it on*; turn it on again.
 
 ## manifest.json
 
@@ -624,7 +624,8 @@ QtObject {
 - `set()` on a key the schema does not declare, or on an `action` key, is
   ignored. So is a value that does not fit its row: a `toggle` takes a boolean,
   a `select` one of its option values, a `slider` a number from `from` to `to`,
-  `text` a string of up to 4096 characters, `file` a file name. A stored key the schema no longer declares is dropped.
+  `text` a string of up to 4096 characters, `file` a file name. A stored key
+  the schema no longer declares is dropped.
 - Values reach you as soon as they are written.
 - An `action` row shows only while your QML is loaded.
 

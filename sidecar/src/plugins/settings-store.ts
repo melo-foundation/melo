@@ -22,7 +22,8 @@ export function pluginSettings(id: string, schema: SettingsField[]): Record<stri
 }
 
 // A value must fit its row: a toggle a boolean, a select one of its options, a
-// slider a number in range, text and file a string of at most 4096 characters.
+// slider a number in range, text a string of at most 4096 characters, file a
+// file name of that length.
 const MAX_TEXT = 4096;
 export function fitsField(f: SettingsField, v: unknown): boolean {
   switch (f.type) {

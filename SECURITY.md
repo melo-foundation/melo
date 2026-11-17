@@ -15,7 +15,7 @@ A bypass of any of these is a vulnerability:
 | Boundary | A vulnerability is |
 |---|---|
 | Plugin process (Node `--permission`) | A plugin reading files outside its own folder, its data folder and melo's plugin host folder; writing outside its data folder; or starting a process, worker thread or native addon |
-| Plugin folders | A plugin folder or data folder holding a link (symlink or junction) loading |
+| Plugin folders | A plugin loading from a folder or data folder that holds a link (symlink or junction) |
 | Plugin network allowlist | A plugin without `rawNetwork` reaching, through `fetch` or a redirect, a host its manifest does not list, or a local or private address its manifest does not name; or loading a Node builtin outside the list in `docs/plugins.md` |
 | Plugin grants | A plugin running with `ui` or `rawNetwork` after its folder or permission fields changed, without the user turning it on again |
 | Plugin environment | A plugin process seeing an environment variable other than the locale and time zone |
