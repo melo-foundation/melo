@@ -29,7 +29,7 @@ QTBASE="https://download.qt.io/archive/qt/${QT%.*}/$QT/submodules"
 for m in qtbase qtshadertools qtdeclarative qtwayland qtimageformats qt5compat; do
     curl -fsSLo "$S/qt/$m-everywhere-src-$QT.tar.xz" "$QTBASE/$m-everywhere-src-$QT.tar.xz"
 done
-cp "$ROOT/patches/qtdeclarative-$QT-stacking-walk.patch" "$S/qt/"
+cp "$ROOT"/patches/qt*-"$QT"-*.patch "$S/qt/"
 
 # --- projectM: the tag setup-vendor.sh pins, with submodules, and the patch --
 PM="$(sed -n 's/^PM_VER="\(.*\)"$/\1/p' "$ROOT/scripts/setup-vendor.sh")"

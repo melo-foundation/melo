@@ -132,11 +132,15 @@ lite AppImage's runtime links libfuse 3.15.0 statically, with the runtime's own
 
 - **Modifications.** Qt: `patches/qtdeclarative-6.12.0-stacking-walk.patch`,
   written by Tomasz Kalisiak as Qt Gerrit change 736359 (QTBUG-134949, not
-  merged upstream), backported to Qt 6.12.0 by melo-foundation on 2026-10-08.
+  merged upstream), backported to Qt 6.12.0 by melo-foundation on 2026-10-08;
+  `patches/qtbase-6.12.0-http-response-limits.patch` and
+  `patches/qtbase-6.12.0-cbor-url-json.patch`, Qt's own fixes from Qt 6.12.1
+  (CVE-2026-116337, CVE-2026-105924), backported to Qt 6.12.0 by
+  melo-foundation on 2026-11-17.
   projectM: `patches/projectm-caller-fbo.patch`, modified by melo-foundation
   for melo on 2026-09-02.
 - **Source.** Every Linux release has `melo-sources.tar` beside its builds: the
-  source of Qt 6.12.0, projectM 4.1.7 and FFmpeg 7.1.1 with melo's patches, the
+  source of Qt 6.12.0, projectM 4.1.7 and FFmpeg 7.1.5 with melo's patches, the
   type2-runtime 20251108 source with libfuse 3.15.0 and squashfuse 0.5.2, and
   the Ubuntu source package of every library the full AppImage bundles, and
   for the anylinux AppImage: the Arch packaging and upstream sources of every
