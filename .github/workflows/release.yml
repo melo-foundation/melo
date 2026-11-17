@@ -27,12 +27,13 @@ env:
   PNPM_VERSION: 10.30.3
   # 22.04 is the oldest supported LTS, so the builds run on its glibc.
   # No apt cmake: Qt 6.12 needs 3.25, 22.04's is 3.22; the runner's is 3.31.
+  # libbrotli1 and libpcre2-8-0 are named so apt upgrades the runner's copies, which the full AppImage bundles.
   APT_PACKAGES: >-
     ninja-build libgl1-mesa-dev libglew-dev
     libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
     gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
     gstreamer1.0-pulseaudio gstreamer1.0-alsa
-    glib-networking patchelf libsoup-3.0-0 libfuse2
+    glib-networking patchelf libsoup-3.0-0 libfuse2 libbrotli1 libpcre2-8-0
     libwayland-dev libssl-dev zlib1g-dev xvfb
     fontconfig libfontconfig-dev libfreetype-dev
     libx11-dev libxext-dev libxrender-dev libxi-dev libxfixes-dev
