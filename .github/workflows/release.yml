@@ -98,7 +98,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: qt-static
-          key: qt-static-${{ env.QT_VERSION }}-${{ hashFiles(format('patches/qtdeclarative-{0}-stacking-walk.patch', env.QT_VERSION)) }}
+          key: qt-static-${{ env.QT_VERSION }}-${{ hashFiles(format('patches/qt*-{0}-*.patch', env.QT_VERSION)) }}
           lookup-only: true
 
       - name: Packages
@@ -181,6 +181,10 @@ jobs:
           # QTBUG-134949: Gerrit 736359 backported; not merged upstream
           patch -d qtdeclarative-everywhere-src-$V -p1 \
             < "$GITHUB_WORKSPACE/patches/qtdeclarative-$V-stacking-walk.patch"
+          # CVE-2026-116337 and CVE-2026-105924: qtbase's fixes from 6.12.1
+          for p in http-response-limits cbor-url-json; do
+            patch -d qtbase-everywhere-src-$V -p1 < "$GITHUB_WORKSPACE/patches/qtbase-$V-$p.patch"
+          done
           # Qt's host tools and each module's configure must find our ICU
           export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/icu-out/lib:${LD_LIBRARY_PATH:-}"
           export CMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/icu-out"
@@ -249,7 +253,7 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: qt-static
-          key: qt-static-${{ env.QT_VERSION }}-${{ hashFiles(format('patches/qtdeclarative-{0}-stacking-walk.patch', env.QT_VERSION)) }}
+          key: qt-static-${{ env.QT_VERSION }}-${{ hashFiles(format('patches/qt*-{0}-*.patch', env.QT_VERSION)) }}
           fail-on-cache-miss: true
 
       - uses: pnpm/action-setup@v6
