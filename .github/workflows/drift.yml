@@ -11,6 +11,38 @@ permissions:
   contents: read
 
 jobs:
+  # A red scheduled or manual run opens an issue labelled drift, or comments on the open one.
+  issue:
+    needs: [drift]
+    if: failure() && github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - name: Open or update the drift issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "Run: $RUN_URL"
+            for job in $(gh api "repos/$GH_REPO/actions/runs/$RUN/jobs" --jq '.jobs[] | select(.conclusion == "failure") | .id'); do
+              echo
+              echo '```'
+              gh api "repos/$GH_REPO/actions/jobs/$job/logs" | sed 's/^[0-9T:.Z-]* //' \
+                | grep -E '^ *(×|FAIL )|AssertionError|Error:|bot wall' | sort -u | head -20 | cut -c1-200
+              echo '```'
+            done
+          } > body.md
+          gh label create drift --color B60205 2>/dev/null || true
+          n=$(gh issue list --label drift --state open --json number --jq '.[0].number')
+          if [ -n "$n" ]; then gh issue comment "$n" --body-file body.md
+          else gh issue create --title "Drift tests fail" --label drift --body-file body.md; fi
+
   drift:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

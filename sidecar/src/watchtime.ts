@@ -1,6 +1,7 @@
 import { buildHeaders } from "./innertube";
 import type { CookieSource } from "./settings";
 import { captureResponseCookies } from "./guest-cookies";
+import { playerTracking } from "./streams";
 
 const CPN_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
@@ -51,12 +52,20 @@ interface TrackingSession {
   duration: string;
   videoId: string;
   channelId: string;
+  clientName: string;
+  clientVersion: string;
   cookieSource: CookieSource;
   browser: string;
   profile: string;
 }
 
 const sessions = new Map<string, TrackingSession>();
+
+/** The tracking URLs a play was given, empty where none came. */
+export function trackingUrls(cpn: string): { playback: string; watchtime: string; delayplay: string; ptracking: string } {
+  const s = sessions.get(cpn);
+  return { playback: s?.playbackUrl ?? "", watchtime: s?.watchtimeUrl ?? "", delayplay: s?.delayplayUrl ?? "", ptracking: s?.ptrackingUrl ?? "" };
+}
 
 /** Build the extra params appended to tracking base URLs (matching real player behavior) */
 function trackingParams(session: TrackingSession, extra: Record<string, string> = {}): string {
@@ -76,8 +85,8 @@ function trackingParams(session: TrackingSession, extra: Record<string, string> 
     muted: "0",
     cbr: "Firefox",
     cbrver: "137.0",
-    c: "WEB",
-    cver: CVER,
+    c: session.clientName,
+    cver: session.clientVersion,
     cplayer: "UNIPLAYER",
     cos: "X11",
     cplatform: "DESKTOP",
@@ -117,8 +126,29 @@ export async function reportPlayback(
   const cpn = generateCPN();
   const startTime = Date.now();
 
-  // Fetch the watch page to extract real tracking URLs (with ei tokens)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const makeSession = (t: any, o: { lengthSeconds?: unknown; channelId?: unknown; clientName: string; clientVersion: string }): TrackingSession => ({
+    playbackUrl: trackingUrl(t.videostatsPlaybackUrl?.baseUrl),
+    delayplayUrl: trackingUrl(t.videostatsDelayplayUrl?.baseUrl),
+    watchtimeUrl: trackingUrl(t.videostatsWatchtimeUrl?.baseUrl),
+    ptrackingUrl: trackingUrl(t.ptrackingUrl?.baseUrl),
+    atrUrl: trackingUrl(t.atrUrl?.baseUrl),
+    qoeUrl: trackingUrl(t.qoeUrl?.baseUrl),
+    startTime,
+    cpn,
+    duration: String(o.lengthSeconds || Math.round(duration)),
+    videoId,
+    channelId: typeof o.channelId === "string" ? o.channelId : "",
+    clientName: o.clientName,
+    clientVersion: o.clientVersion,
+    cookieSource,
+    browser,
+    profile,
+  });
+
+  // The watch page first, then the player endpoint when the page has no playbackTracking
   let session: TrackingSession | null = null;
+  let visitorData = "";
   try {
     const pageHeaders = await buildHeaders(BASE, cookieSource, browser, profile);
     delete pageHeaders["Content-Type"];
@@ -130,6 +160,8 @@ export async function reportPlayback(
     const pageRes = await fetch(`${BASE}/watch?v=${videoId}`, { headers: pageHeaders });
     if (cookieSource === "guest") captureResponseCookies(profile, pageRes);
     const html = await pageRes.text();
+    const vd = /"visitorData":"([^"]+)"/.exec(html)?.[1];
+    if (vd) try { visitorData = JSON.parse(`"${vd}"`); } catch { /* none */ }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let playerData: any;
@@ -145,33 +177,31 @@ export async function reportPlayback(
     }
 
     if (playerData?.playbackTracking) {
-      const t = playerData.playbackTracking;
-      session = {
-        playbackUrl: trackingUrl(t.videostatsPlaybackUrl?.baseUrl),
-        delayplayUrl: trackingUrl(t.videostatsDelayplayUrl?.baseUrl),
-        watchtimeUrl: trackingUrl(t.videostatsWatchtimeUrl?.baseUrl),
-        ptrackingUrl: trackingUrl(t.ptrackingUrl?.baseUrl),
-        atrUrl: trackingUrl(t.atrUrl?.baseUrl),
-        qoeUrl: trackingUrl(t.qoeUrl?.baseUrl),
-        startTime,
-        cpn,
-        duration: String(playerData?.videoDetails?.lengthSeconds || Math.round(duration)),
-        videoId,
-        channelId: playerData?.videoDetails?.channelId || "",
-        cookieSource,
-        browser,
-        profile,
-      };
-      sessions.set(cpn, session);
-      console.log(
-        `[watchtime] extracted tracking URLs for ${videoId}: ` +
-          `pb=${!!session.playbackUrl} dp=${!!session.delayplayUrl} wt=${!!session.watchtimeUrl} pt=${!!session.ptrackingUrl}`,
-      );
+      session = makeSession(playerData.playbackTracking, {
+        lengthSeconds: playerData.videoDetails?.lengthSeconds, channelId: playerData.videoDetails?.channelId,
+        clientName: "WEB", clientVersion: CVER,
+      });
     } else {
       console.warn(`[watchtime] no playbackTracking in watch page for ${videoId}`);
     }
   } catch (err) {
     console.error("[watchtime] failed to load watch page:", err);
+  }
+
+  if (!session) {
+    try {
+      const p = await playerTracking(videoId, visitorData, cookieSource, browser, profile);
+      if (p) session = makeSession(p.tracking, p);
+    } catch (err) {
+      console.error("[watchtime] player for tracking failed:", err);
+    }
+  }
+  if (session) {
+    sessions.set(cpn, session);
+    console.log(
+      `[watchtime] extracted tracking URLs for ${videoId} (${session.clientName}): ` +
+        `pb=${!!session.playbackUrl} dp=${!!session.delayplayUrl} wt=${!!session.watchtimeUrl} pt=${!!session.ptrackingUrl}`,
+    );
   }
 
   // Fire playback tracking

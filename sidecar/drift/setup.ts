@@ -3,6 +3,10 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { setEnv } from "../src/env";
 import type { CookieSource } from "../src/settings";
+import { setUpFetch } from "../src/proxy";
+
+// youtube.com sends headers over undici's 16 KB limit; this raises it as main.ts does
+setUpFetch();
 
 // Fresh anonymous guest session per run: a temp dataDir means an empty
 // cookie jar — CI has no personalization, and these tests only assert

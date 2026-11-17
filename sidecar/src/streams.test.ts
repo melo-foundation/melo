@@ -37,7 +37,7 @@ import type { SettingsV2 } from "./settings";
 import { invalidateStreamCache, invalidateVideoCache, primeVideoCacheForTest, primeStreamCacheForTest, videoCacheHas, streamCacheHas } from "./streams";
 import { WALL_MESSAGES, forgetWalls, setBrowserSignedInForTest, videoFormatSelector, setSleepForTest, REFUSED_STREAM, pickAudioFormat,
          setPremiumForTest } from "./streams";
-import { withAdPlaybackContext } from "./streams";
+import { withAdPlaybackContext, visitorId } from "./streams";
 import { AUDIO_FORMAT } from "./ytdlp-proc";
 
 describe("needsStreamRelay", () => {
@@ -612,5 +612,16 @@ describe("fetchVideoStreamUrl identities", () => {
     formatsBy(() => ({ err: WALL }));
     await expect(fetchVideoStreamUrl("vidU4", 720, ["vp9"])).rejects.toMatchObject({
       code: -32041, message: WALL_MESSAGES.browser });
+  });
+});
+
+describe("visitorId", () => {
+  it("reads the id out of a visitorData, URL-encoded or not", () => {
+    // field 1 "4mXiS6fY2FI", field 5 a timestamp
+    const vd = Buffer.concat([Buffer.from([0x0a, 11]), Buffer.from("4mXiS6fY2FI"), Buffer.from([0x28, 0x01])]).toString("base64");
+    expect(visitorId(vd)).toBe("4mXiS6fY2FI");
+    expect(visitorId(encodeURIComponent(vd))).toBe("4mXiS6fY2FI");
+    expect(visitorId("")).toBe("");
+    expect(visitorId("%%")).toBe("");
   });
 });

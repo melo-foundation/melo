@@ -230,6 +230,84 @@ async function playableInfo(
   return { why: `playability ${why.join(", ")}` };
 }
 
+export interface PlayerTracking {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tracking: any;
+  lengthSeconds: string;
+  channelId: string;
+  clientName: string;
+  clientVersion: string;
+}
+
+/** The visitor id inside a visitorData (field 1 of its protobuf), "" when it has none. */
+export function visitorId(visitorData: string): string {
+  try {
+    const b = Buffer.from(decodeURIComponent(visitorData), "base64url");
+    return b[0] === 0x0a && b[1] > 0 && b.length >= 2 + b[1] ? b.subarray(2, 2 + b[1]).toString("latin1") : "";
+  } catch { return ""; }
+}
+
+// One session at a time, per identity and visitor: tracking URLs are issued to the visitor that asks.
+let trackSessionKey = "";
+let trackSessionP: Promise<Innertube> | null = null;
+
+function trackSession([source, browser, profile]: Identity, visitorData: string): Promise<Innertube> {
+  const key = `${source}:${browser}:${profile}:${visitorId(visitorData) || visitorData}`;
+  if (trackSessionP && trackSessionKey === key) return trackSessionP;
+  const p = (async () => {
+    const { Innertube, UniversalCache, Platform } = await import("youtubei.js");
+    installEvalShim(Platform);
+    let cookie: string | undefined;
+    try { cookie = sessionCookie(await resolveCookies(source, browser, profile)); } catch { /* anonymous */ }
+    const pot = await poTokenSession();
+    const { hl, gl } = localePref();
+    return Innertube.create({
+      cache: new UniversalCache(true, join(dataDir(), "yjs-cache")),
+      cookie, lang: hl, location: gl, visitor_data: visitorData,
+      ...(pot ? { po_token: await pot.mint(visitorData) } : {}),
+    });
+  })();
+  p.catch(() => { if (trackSessionP === p) trackSessionP = null; });
+  trackSessionKey = key;
+  trackSessionP = p;
+  return p;
+}
+
+/** playbackTracking from /player, which answers where a guest watch page walls the video;
+ *  asked as the watch page's visitor when it named one. */
+export async function playerTracking(
+  videoId: string, visitorData: string, source: CookieSource, browser: string, profile: string,
+): Promise<PlayerTracking | null> {
+  if (!FAST_STREAMS) return null;
+  const yt = visitorData ? await trackSession([source, browser, profile], visitorData) : await getSessionFor([source, browser, profile]);
+  const { Constants } = await import("youtubei.js");
+  for (const client of FAST_CLIENTS) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r: any = await yt.actions.execute("/player", {
+        videoId, client, racyCheckOk: true, contentCheckOk: true, parse: false,
+        // without the ad context the player walls a guest ("not a bot")
+        playbackContext: { adPlaybackContext: { pyv: true }, contentPlaybackContext: {
+          vis: 0, splay: false, lactMilliseconds: "-1", signatureTimestamp: yt.session.player?.signature_timestamp,
+        } },
+      });
+      const d = r?.data;
+      if (d?.playabilityStatus?.status !== "OK" || !d?.playbackTracking) continue;
+      const c = Constants.CLIENTS[client];
+      return {
+        tracking: d.playbackTracking,
+        lengthSeconds: String(d.videoDetails?.lengthSeconds ?? ""),
+        channelId: String(d.videoDetails?.channelId ?? ""),
+        clientName: c.NAME,
+        clientVersion: c.VERSION,
+      };
+    } catch (e) {
+      console.error(`[streams] ${client} player for tracking failed: ${String(e).split("\n")[0]}`);
+    }
+  }
+  return null;
+}
+
 /** Swap the URL's session-bound `pot=` for one bound to this video. */
 function withVideoPot(url: string, token: string): string {
   const stripped = url.replace(/([?&])pot=[^&]*/, "$1");
