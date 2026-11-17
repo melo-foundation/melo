@@ -26,7 +26,7 @@ below carry their own terms. The LGPL texts are in `LICENSES/`.
 | SOIL2 and stb_image (built into projectM) | public domain (stb_image: public domain or MIT) | static |
 | zlib | Zlib | shared |
 | wayland-client | MIT | shared |
-| FFmpeg 7.1.1, minimal build, unmodified | LGPL-2.1-or-later; text in `share/melo/ffmpeg-COPYING.LGPLv2.1` | separate program |
+| FFmpeg 7.1.5, minimal build, unmodified | LGPL-2.1-or-later; text in `share/melo/ffmpeg-COPYING.LGPLv2.1` | separate program |
 
 The full AppImage also ships:
 

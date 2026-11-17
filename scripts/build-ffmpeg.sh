@@ -10,9 +10,9 @@
 #   scripts/build-ffmpeg.sh        -> vendor/ffmpeg/bin/ffmpeg
 set -euo pipefail
 
-VER="7.1.1"
+VER="7.1.5"
 # ffmpeg.org's tarball; its release-key signature was checked when pinned
-SHA256="733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1"
+SHA256="de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/vendor/ffmpeg"
