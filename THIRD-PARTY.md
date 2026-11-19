@@ -139,6 +139,9 @@ lite AppImage's runtime links libfuse 3.15.0 statically, with the runtime's own
   melo-foundation on 2026-11-17.
   projectM: `patches/projectm-caller-fbo.patch`, modified by melo-foundation
   for melo on 2026-09-02.
+  Node.js, in the AppImages and the deb and rpm packages:
+  `patches/node-22.23.5-pointer-compression-ro-heap.patch`, written by
+  melo-foundation for melo on 2026-11-19, built with pointer compression.
 - **Source.** Every Linux release has `melo-sources.tar` beside its builds: the
   source of Qt 6.12.0, projectM 4.1.7 and FFmpeg 7.1.5 with melo's patches, the
   type2-runtime 20251108 source with libfuse 3.15.0 and squashfuse 0.5.2, and

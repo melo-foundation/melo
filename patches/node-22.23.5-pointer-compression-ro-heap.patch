@@ -1,0 +1,25 @@
+From: melo-foundation <333192008+melo-foundation@users.noreply.github.com>
+Subject: [PATCH] configure: keep V8's shared read-only heap with pointer
+ compression
+
+Written by melo-foundation for melo on 2026-11-19.
+
+Node.js 22.23.5 built with --experimental-enable-pointer-compression stops in
+deps/v8/src/ast/ast-value-factory.cc: ReadOnlyHeap::GetReadOnlyRoots() exists
+only with V8_SHARED_RO_HEAP, which this line turns off whenever pointer
+compression is on. V8's own default keeps it on with a shared cage, which is
+what Node's pointer compression builds use. Node.js is MIT; this patch is
+applied to the release's Node source by .github/workflows/linux.yml.
+
+---
+--- a/configure.py
++++ b/configure.py
+@@ -1732,7 +1732,7 @@
+   o['variables']['v8_enable_pointer_compression_shared_cage'] = 1 if options.enable_pointer_compression else 0
+   o['variables']['v8_enable_external_code_space'] = 1 if options.enable_pointer_compression else 0
+   o['variables']['v8_enable_31bit_smis_on_64bit_arch'] = 1 if options.enable_pointer_compression else 0
+-  o['variables']['v8_enable_shared_ro_heap'] = 0 if options.enable_pointer_compression or options.disable_shared_ro_heap else 1
++  o['variables']['v8_enable_shared_ro_heap'] = 0 if options.disable_shared_ro_heap else 1
+   o['variables']['v8_enable_extensible_ro_snapshot'] = 0
+   o['variables']['v8_trace_maps'] = 1 if options.trace_maps else 0
+   o['variables']['node_use_v8_platform'] = b(not options.without_v8_platform)
